@@ -87,3 +87,15 @@ _Avoid_: game session, app lifetime, exit session
 **Language**:
 The user-facing language used by the add-on. Auto follows the SteamVR or Steam runtime language when available, then the operating system UI language, and finally English.
 _Avoid_: game language, locale setting, translation mode
+
+**Safe No-op**:
+The deliberate choice to do nothing when a Current VR Game, Exit Target, tracked Configured Hand, or Opposite Hand Pointer cannot be proven safe and available. It is the correct product result, not a degraded guess.
+_Avoid_: best effort, fallback target, foreground guess
+
+## Reserved State Names
+
+`No Active Flow`, `Idle Visible`, `Confirming`, `Counting Down`, and `Exiting` are product state names and should be used consistently in code, tests, logs, and documentation.
+
+## Scope Boundary
+
+The runtime supports Windows x64 with SteamVR. macOS is an editing and static-validation environment only. The add-on exits only a confirmed Exit Target main process; it must never broaden the target to SteamVR, Steam, SteamVR Home, Dashboard overlays, runtime processes, unrelated utilities, children, or unknown processes.
