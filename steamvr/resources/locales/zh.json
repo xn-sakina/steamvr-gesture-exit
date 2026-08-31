@@ -1,7 +1,0 @@
-{
-  "app_name": "SteamVR Bail Out",
-  "confirm_title": "确认退出游戏",
-  "force_close_notice": "如果游戏无响应，可能会被强制关闭。",
-  "cancel": "取消退出",
-  "failure": "退出失败。请手动关闭游戏。"
-}
