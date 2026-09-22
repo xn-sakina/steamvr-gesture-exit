@@ -9,7 +9,8 @@ namespace bailout::core {
 GestureDetector::GestureDetector(GestureConfig config) : config_(config) {
   if (config_.recognition_window <= std::chrono::milliseconds::zero() ||
       config_.minimum_amplitude_metres <= 0.0 ||
-      config_.reversal_deadband_metres <= 0.0) {
+      config_.reversal_deadband_metres <= 0.0 ||
+      config_.maximum_hand_below_head_metres <= 0.0) {
     throw std::invalid_argument("invalid farewell gesture configuration");
   }
 }
@@ -22,6 +23,9 @@ bool GestureDetector::pose_is_eligible(const GestureSample& sample) const noexce
   const double distance = length(from_head);
   if (distance < config_.minimum_head_distance_metres ||
       distance > config_.maximum_head_distance_metres) {
+    return false;
+  }
+  if (from_head.y < -config_.maximum_hand_below_head_metres) {
     return false;
   }
   const Vec3 head_forward = normalized(sample.headset_forward);

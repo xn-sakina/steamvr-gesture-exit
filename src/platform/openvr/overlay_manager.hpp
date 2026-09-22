@@ -24,6 +24,5 @@ class OverlayManager {
   vr::VROverlayHandle_t dashboard_=vr::k_ulOverlayHandleInvalid,thumbnail_=vr::k_ulOverlayHandleInvalid,wrist_=vr::k_ulOverlayHandleInvalid,hud_=vr::k_ulOverlayHandleInvalid;
   bool wrist_visible_=false;std::string error_;
   SurfaceModel wrist_model_{};
-  bool trigger_was_pressed_=false;
 };
 }

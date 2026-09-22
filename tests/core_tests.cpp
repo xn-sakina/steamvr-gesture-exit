@@ -4,6 +4,7 @@
 #include "core/settings.hpp"
 #include "core/state_machine.hpp"
 #include "core/vr_game_classifier.hpp"
+#include "app/runtime_interfaces.h"
 
 #include <chrono>
 #include <cmath>
@@ -41,17 +42,23 @@ bool has_effect(const Effects& effects, const EffectType type) {
 }
 
 GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1},
-                     bool tracked = true, std::optional<Vec3> palm = std::nullopt) {
-  return {at(milliseconds), tracked, hand, palm.value_or(normalized(hand)), {}, forward};
+                     bool tracked = true, std::optional<Vec3> palm = std::nullopt,
+                     Vec3 headset = {}) {
+  return {at(milliseconds), tracked, hand, palm.value_or(normalized(hand)), headset, forward};
 }
 
 void gesture_recognizes_valid_wave() {
   GestureDetector detector;
-  CHECK(!detector.update(sample(0, {0.10, 0.10, -0.50})));
-  CHECK(!detector.update(sample(200, {0.30, 0.10, -0.50})));
-  CHECK(!detector.update(sample(400, {0.10, 0.10, -0.50})));
-  CHECK(detector.update(sample(600, {0.30, 0.10, -0.50})));
-  CHECK(!detector.update(sample(800, {0.30, 0.10, -0.50})));
+  const Vec3 headset{0.0, 1.65, 0.0};
+  const auto upper_body_sample = [&](int milliseconds, double x) {
+    return sample(milliseconds, {x, 1.20, -0.50}, {0, 0, -1}, true,
+                  Vec3{0, 0, -1}, headset);
+  };
+  CHECK(!detector.update(upper_body_sample(0, 0.10)));
+  CHECK(!detector.update(upper_body_sample(200, 0.30)));
+  CHECK(!detector.update(upper_body_sample(400, 0.10)));
+  CHECK(detector.update(upper_body_sample(600, 0.30)));
+  CHECK(!detector.update(upper_body_sample(800, 0.30)));
 }
 
 void gesture_uses_head_relative_right_axis() {
@@ -77,6 +84,16 @@ void gesture_rejects_unsafe_or_weak_motion() {
   CHECK(!behind.update(sample(0, {0.0, 0.1, 0.5})));
   GestureDetector downward;
   CHECK(!downward.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, true, Vec3{0, -1, 0})));
+  GestureDetector low;
+  const Vec3 headset{0.0, 1.65, 0.0};
+  CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true,
+                           Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(200, {0.30, 0.90, -0.50}, {0, 0, -1}, true,
+                           Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(400, {0.10, 0.90, -0.50}, {0, 0, -1}, true,
+                           Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(600, {0.30, 0.90, -0.50}, {0, 0, -1}, true,
+                           Vec3{0, 0, -1}, headset)));
   GestureDetector untracked;
   CHECK(!untracked.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, false)));
   GestureDetector too_slow;
@@ -157,6 +174,29 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(!is_current_vr_game_candidate({"com.example.internal", "binary", false, false, true, false}));
   CHECK(!is_current_vr_game_candidate({"com.example.hidden", "binary", false, false, false, true}));
   CHECK(!is_current_vr_game_candidate({"com.example.game", "unknown", false, false, false, false}));
+}
+
+void pointer_availability_requires_input_capabilities() {
+  bailout::app::HandPose hand;
+  hand.connected = true;
+  hand.tracked = true;
+  CHECK(!hand.pointer_available());
+  hand.legacy_input_readable = true;
+  CHECK(!hand.pointer_available());
+  hand.trigger_button_supported = true;
+  hand.device_index = 7;
+  CHECK(hand.pointer_available());
+  CHECK(hand.accepts_pointer_event(7));
+  CHECK(!hand.accepts_pointer_event(8));
+  CHECK(!hand.accepts_pointer_event(0xFFFFFFFFU));
+  hand.tracked = false;
+  CHECK(!hand.pointer_available());
+  hand.tracked = true;
+  hand.connected = false;
+  CHECK(!hand.pointer_available());
+  hand.connected = true;
+  hand.legacy_input_readable = false;
+  CHECK(!hand.accepts_pointer_event(7));
 }
 
 void state_machine_requires_all_prerequisites() {
@@ -269,6 +309,7 @@ int main() {
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
+      {"pointer requires input capabilities", pointer_availability_requires_input_capabilities},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},
       {"state timeout and loss", state_machine_timeout_refresh_and_prerequisite_loss},

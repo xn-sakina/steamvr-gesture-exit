@@ -14,6 +14,8 @@ struct GestureConfig {
   double minimum_head_distance_metres{0.20};
   double maximum_head_distance_metres{1.25};
   double maximum_behind_head_metres{0.10};
+  // Head-relative upper-body proxy; the MVP has no anatomical torso tracking.
+  double maximum_hand_below_head_metres{0.55};
   double minimum_outward_palm_dot{0.35};
   double minimum_palm_up_component{-0.45};
 };
