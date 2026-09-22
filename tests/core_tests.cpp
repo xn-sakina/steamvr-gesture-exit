@@ -238,7 +238,16 @@ void diagnostics_are_structured_and_privacy_bounded() {
 void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(is_current_vr_game_candidate({"steam.app.438100", "url", false, false, false, false}));
   CHECK(is_current_vr_game_candidate(
+      {"steam.app.450390", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate(
+      {"steam.app.620980", "url", false, false, false, false}));
+
+  CHECK(!is_current_vr_game_candidate(
+      {"com.example.vr-tool", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate(
       {"com.example.indie-vr-game", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate(
+      {"steam.app.999999", "url", false, false, false, false}));
 
   CHECK(
       !is_current_vr_game_candidate({"steam.app.not-a-number", "url", false, false, false, false}));
@@ -249,13 +258,13 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(!is_current_vr_game_candidate(
       {"system.generated.unknown.exe", "binary", false, false, false, false}));
   CHECK(
-      !is_current_vr_game_candidate({"com.example.overlay", "binary", true, false, false, false}));
+      !is_current_vr_game_candidate({"steam.app.438100", "binary", true, false, false, false}));
   CHECK(
-      !is_current_vr_game_candidate({"com.example.template", "binary", false, true, false, false}));
+      !is_current_vr_game_candidate({"steam.app.438100", "binary", false, true, false, false}));
   CHECK(
-      !is_current_vr_game_candidate({"com.example.internal", "binary", false, false, true, false}));
-  CHECK(!is_current_vr_game_candidate({"com.example.hidden", "binary", false, false, false, true}));
-  CHECK(!is_current_vr_game_candidate({"com.example.game", "unknown", false, false, false, false}));
+      !is_current_vr_game_candidate({"steam.app.438100", "binary", false, false, true, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.438100", "binary", false, false, false, true}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.438100", "unknown", false, false, false, false}));
 }
 
 void pointer_availability_requires_input_capabilities() {

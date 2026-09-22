@@ -6,6 +6,17 @@ namespace {
 constexpr char kDashboardKey[] = "com.steamvr-bail-out.dashboard";
 constexpr char kWristKey[] = "com.steamvr-bail-out.wrist";
 constexpr char kHudKey[] = "com.steamvr-bail-out.hud";
+enum class WristHit { None, Left, Right };
+WristHit wrist_hit(const SurfaceModel& model, const vr::VREvent_t& event) {
+  const float x = event.data.mouse.x, y = 384.0f - event.data.mouse.y;
+  if (y < 272 || y > 330)
+    return WristHit::None;
+  if (!model.left_button.empty() && x >= 42 && x <= 372)
+    return WristHit::Left;
+  if (!model.right_button.empty() && x >= 396 && x <= 726)
+    return WristHit::Right;
+  return WristHit::None;
+}
 vr::HmdMatrix34_t hud_transform() {
   vr::HmdMatrix34_t m = {{{1, 0, 0, 0.30f}, {0, 1, 0, 0.17f}, {0, 0, 1, -0.70f}}};
   return m;
@@ -141,7 +152,8 @@ bool OverlayManager::show_wrist(const app::HandPose& hand, core::TimePoint sampl
                       wrist_model_.right_button == m.right_button &&
                       wrist_model_.progress == m.progress;
   SurfaceModel next = m;
-  if (same_content) {
+  if (wrist_visible_ && wrist_model_.left_button == m.left_button &&
+      wrist_model_.right_button == m.right_button) {
     next.left_hover = wrist_model_.left_hover;
     next.right_hover = wrist_model_.right_hover;
   }
@@ -238,23 +250,28 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
     if (!wrist_visible_ || !hand.accepts_pointer_event(event.trackedDeviceIndex))
       continue;
     if (event.eventType == vr::VREvent_MouseMove) {
-      const float x = event.data.mouse.x, y = 384.0f - event.data.mouse.y;
-      left = y >= 272 && y <= 330 && x >= 42 && x <= 372;
-      right = y >= 272 && y <= 330 && x >= 396 && x <= 726;
+      const auto hit = wrist_hit(wrist_model_, event);
+      left = hit == WristHit::Left;
+      right = hit == WristHit::Right;
     } else if (event.eventType == vr::VREvent_MouseButtonDown &&
                event.data.mouse.button == vr::VRMouseButton_Left) {
+      // The click carries its own position. Countdown text may be submitted
+      // without a new MouseMove, so saved hover must never decide the action.
+      const auto hit = wrist_hit(wrist_model_, event);
+      left = hit == WristHit::Left;
+      right = hit == WristHit::Right;
       if (counting) {
-        if (right)
+        if (hit == WristHit::Right)
           out.push_back(OverlayAction::Cancel);
       } else if (confirming) {
-        if (left)
+        if (hit == WristHit::Left)
           out.push_back(OverlayAction::Confirm);
-        else if (right)
+        else if (hit == WristHit::Right)
           out.push_back(OverlayAction::Dismiss);
       } else {
-        if (left)
+        if (hit == WristHit::Left)
           out.push_back(OverlayAction::Primary);
-        else if (right)
+        else if (hit == WristHit::Right)
           out.push_back(OverlayAction::Dismiss);
       }
     }

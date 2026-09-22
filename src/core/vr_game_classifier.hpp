@@ -13,9 +13,8 @@ struct VrApplicationEvidence {
   bool hidden_application = false;
 };
 
-// Classifies only metadata that SteamVR exposes through IVRApplications. The
-// caller must additionally prove that this is the running scene application
-// and that its application key maps back to the same Windows process.
+// Admits reviewed game keys using SteamVR metadata. The caller must also
+// prove that this is the running scene app and maps to the same Windows process.
 bool is_current_vr_game_candidate(const VrApplicationEvidence& evidence);
 
 }  // namespace bailout::core
