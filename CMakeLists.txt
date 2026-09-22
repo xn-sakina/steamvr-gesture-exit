@@ -14,6 +14,7 @@ add_library(bailout_core STATIC
     src/core/localization.cpp
     src/core/vr_game_classifier.cpp
     src/core/dashboard_ui.cpp
+    src/core/wrist_pose_smoother.cpp
 )
 target_include_directories(bailout_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(bailout_core PUBLIC cxx_std_20)

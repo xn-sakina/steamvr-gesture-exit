@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.hpp"
+#include "core/state_machine.hpp"
 
 #include <string_view>
 
@@ -57,11 +58,24 @@ enum class StringId {
   ProcessPathUnavailable,
   UnsafeProcess,
   DashboardExitDisabled,
+  PleaseWait,
+  ThumbnailTitle,
+  ThumbnailDescription,
+  UnknownGame,
+  SecondsUnit,
+  On,
+  Off,
+  LastExitSucceeded,
+  LastExitCancelled,
+  LastExitFailed,
+  LastExitTargetUnavailable,
 };
 
 [[nodiscard]] Language resolve_language(Language configured,
                                         std::string_view steam_language,
                                         std::string_view os_language) noexcept;
 [[nodiscard]] std::string_view localize(StringId id, Language resolved_language) noexcept;
+[[nodiscard]] std::string_view localize_last_exit(LastExitStatus status,
+                                                  Language resolved_language) noexcept;
 
 }  // namespace bailout::core

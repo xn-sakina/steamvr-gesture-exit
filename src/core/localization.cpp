@@ -9,7 +9,7 @@ namespace {
 
 struct TextPair { std::string_view english; std::string_view chinese; };
 
-constexpr std::array<TextPair, 52> strings{{
+constexpr std::array<TextPair, 61> strings{{
     {"SteamVR Bail Out", "SteamVR 告别退出"},
     {"Exit game", "退出游戏"},
     {"Exit this game?", "要退出这个游戏吗？"},
@@ -45,7 +45,19 @@ constexpr std::array<TextPair, 52> strings{{
     {"The game executable path could not be read.", "无法读取游戏可执行文件路径。"},
     {"The mapped process was rejected by the safety denylist.", "映射的进程被安全拒绝列表拦截。"},
     {"Dashboard is open; gesture and exit controls are disabled.", "Dashboard 已打开；手势和退出控件已禁用。"},
+    {"Please wait", "请稍候"},
+    {"Bail Out", "安全退场"},
+    {"Safe VR game exit", "安全退出 VR 游戏"},
+    {"game", "游戏"},
+    {"s", "秒"},
+    {"On", "开"},
+    {"Off", "关"},
+    {"Succeeded", "成功"},
+    {"Cancelled", "已取消"},
+    {"Failed", "失败"},
+    {"Target unavailable", "目标不可用"},
 }};
+static_assert(strings.size() == static_cast<std::size_t>(StringId::LastExitTargetUnavailable) + 1);
 
 bool is_chinese(std::string_view tag) {
   std::string lower(tag);
@@ -68,6 +80,19 @@ std::string_view localize(const StringId id, const Language resolved_language) n
   if (index >= strings.size()) return {};
   return resolved_language == Language::ChineseSimplified ? strings[index].chinese
                                                           : strings[index].english;
+}
+
+std::string_view localize_last_exit(const LastExitStatus status,
+                                    const Language resolved_language) noexcept {
+  switch (status) {
+    case LastExitStatus::Never: return localize(StringId::Never, resolved_language);
+    case LastExitStatus::Succeeded: return localize(StringId::LastExitSucceeded, resolved_language);
+    case LastExitStatus::Cancelled: return localize(StringId::LastExitCancelled, resolved_language);
+    case LastExitStatus::Failed: return localize(StringId::LastExitFailed, resolved_language);
+    case LastExitStatus::TargetUnavailable:
+      return localize(StringId::LastExitTargetUnavailable, resolved_language);
+  }
+  return {};
 }
 
 }  // namespace bailout::core

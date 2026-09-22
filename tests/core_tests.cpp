@@ -5,6 +5,7 @@
 #include "core/settings.hpp"
 #include "core/state_machine.hpp"
 #include "core/vr_game_classifier.hpp"
+#include "core/wrist_pose_smoother.hpp"
 #include "app/runtime_interfaces.h"
 
 #include <algorithm>
@@ -145,6 +146,16 @@ void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::English, "schinese", "zh-CN") == Language::English);
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
+  CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
+  CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "安全退场");
+  CHECK(localize(StringId::ThumbnailDescription, Language::ChineseSimplified) == "安全退出 VR 游戏");
+  CHECK(localize(StringId::SecondsUnit, Language::ChineseSimplified) == "秒");
+  CHECK(localize_last_exit(LastExitStatus::Never, Language::ChineseSimplified) == "从未");
+  CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::ChineseSimplified) == "成功");
+  CHECK(localize_last_exit(LastExitStatus::Cancelled, Language::ChineseSimplified) == "已取消");
+  CHECK(localize_last_exit(LastExitStatus::Failed, Language::ChineseSimplified) == "失败");
+  CHECK(localize_last_exit(LastExitStatus::TargetUnavailable, Language::ChineseSimplified) == "目标不可用");
+  CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::English) == "Succeeded");
 }
 
 void diagnostics_are_structured_and_privacy_bounded() {
@@ -203,6 +214,25 @@ void pointer_availability_requires_input_capabilities() {
   hand.connected = true;
   hand.legacy_input_readable = false;
   CHECK(!hand.accepts_pointer_event(7));
+}
+
+void wrist_pose_smoothing_follows_and_resets_safely() {
+  WristPoseSmoother smoother;
+  const WristPose origin{{0, 1, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+  const WristPose moved{{0.1, 1, 0}, {0, 0, -1}, {0, 1, 0}, {1, 0, 0}};
+  CHECK(std::abs(smoother.update(origin, at(0)).position.x) < 1e-9);
+  const auto filtered = smoother.update(moved, at(75));
+  CHECK(filtered.position.x > 0.05 && filtered.position.x < 0.1);
+  CHECK(std::abs(length(filtered.right) - 1.0) < 1e-9);
+  CHECK(std::abs(length(filtered.up) - 1.0) < 1e-9);
+  CHECK(std::abs(length(filtered.back) - 1.0) < 1e-9);
+  CHECK(std::abs(dot(filtered.right, filtered.up)) < 1e-9);
+  CHECK(smoother.update(moved, at(150)).position.x > filtered.position.x);
+  CHECK(std::abs(smoother.update(origin, at(500)).position.x) < 1e-9);
+  CHECK(std::abs(smoother.update({{2, 1, 0}, origin.right, origin.up, origin.back},
+                                 at(510)).position.x - 2.0) < 1e-9);
+  smoother.reset();
+  CHECK(std::abs(smoother.update(origin, at(520)).position.x) < 1e-9);
 }
 
 void dashboard_controls_are_visible_semantic_targets() {
@@ -363,6 +393,7 @@ int main() {
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer requires input capabilities", pointer_availability_requires_input_capabilities},
+      {"wrist pose smoothing", wrist_pose_smoothing_follows_and_resets_safely},
       {"dashboard semantic targets", dashboard_controls_are_visible_semantic_targets},
       {"dashboard actions", dashboard_actions_change_only_the_intended_setting},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
