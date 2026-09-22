@@ -6,6 +6,9 @@
 #include <fstream>
 #include <sstream>
 #include <system_error>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace bailout::core {
 namespace {
@@ -186,15 +189,15 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
       return false;
     }
   }
-  std::filesystem::rename(temporary, path_, ec);
-  if (ec) {
-    // Windows rename does not replace existing files, so remove just the known
-    // settings destination and retry. The temporary file remains recoverable if
-    // the second operation fails.
-    std::filesystem::remove(path_, ec);
-    ec.clear();
-    std::filesystem::rename(temporary, path_, ec);
+  // Keep the existing settings file intact if replacing it fails.
+#ifdef _WIN32
+  if (!MoveFileExW(temporary.c_str(), path_.c_str(),
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    ec = std::error_code(static_cast<int>(GetLastError()), std::system_category());
   }
+#else
+  std::filesystem::rename(temporary, path_, ec);
+#endif
   if (ec) {
     if (error) *error = "SETTINGS_REPLACE_FAILED";
     return false;

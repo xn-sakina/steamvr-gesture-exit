@@ -128,6 +128,17 @@ void settings_round_trip_and_recovery() {
   CHECK(loaded.status == SettingsLoadStatus::Loaded);
   CHECK(loaded.settings == settings);
 
+  // A failed write must leave the last committed settings readable.
+  auto blocked_temporary = store.path();
+  blocked_temporary += ".tmp";
+  std::filesystem::create_directory(blocked_temporary);
+  auto changed = settings;
+  changed.countdown_seconds = 10;
+  CHECK(!store.save(changed, &error));
+  CHECK(error == "SETTINGS_WRITE_FAILED");
+  CHECK(store.load().settings == settings);
+  std::filesystem::remove(blocked_temporary, ec);
+
   settings.countdown_seconds = 2;
   CHECK(!store.save(settings, &error));
   CHECK(error == "SETTINGS_COUNTDOWN_INVALID");
@@ -174,6 +185,7 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
   CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
+  CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) == "无法保存设置，修改未生效。");
   CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "安全退场");
   CHECK(localize(StringId::ThumbnailDescription, Language::ChineseSimplified) == "安全退出 VR 游戏");
   CHECK(localize(StringId::SecondsUnit, Language::ChineseSimplified) == "秒");

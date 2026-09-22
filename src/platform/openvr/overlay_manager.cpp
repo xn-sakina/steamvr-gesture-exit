@@ -6,6 +6,14 @@ vr::HmdMatrix34_t hud_transform(){vr::HmdMatrix34_t m={{{1,0,0,0.30f},{0,1,0,0.1
 }
 bool OverlayManager::initialize(){if(!overlays_){error_="IVROverlay unavailable";return false;}if(!renderer_.initialize()){error_=renderer_.error();return false;}if(!renderer_.create_surface("dashboard",1024,640)||!renderer_.create_surface("thumbnail",256,256)||!renderer_.create_surface("wrist",768,384)||!renderer_.create_surface("hud",768,256)){error_="overlay texture creation failed";return false;}
  if(overlays_->CreateDashboardOverlay(kDashboardKey,"SteamVR Bail Out",&dashboard_,&thumbnail_)!=vr::VROverlayError_None||overlays_->CreateOverlay(kWristKey,"Bail Out Wrist",&wrist_)!=vr::VROverlayError_None||overlays_->CreateOverlay(kHudKey,"Bail Out HUD",&hud_)!=vr::VROverlayError_None){error_="OpenVR overlay creation failed";shutdown();return false;}
+ // Every renderer surface uses premultiplied alpha, including the thumbnail.
+ for(const auto handle:{dashboard_,thumbnail_,wrist_,hud_}){
+  if(overlays_->SetOverlayFlag(handle,vr::VROverlayFlags_IsPremultiplied,true)!=vr::VROverlayError_None){
+   error_="OpenVR premultiplied alpha setup failed";
+   shutdown();
+   return false;
+  }
+ }
  overlays_->SetOverlayWidthInMeters(dashboard_,1.5f);overlays_->SetOverlayInputMethod(dashboard_,vr::VROverlayInputMethod_Mouse);vr::HmdVector2_t dashboard_scale{{1024,640}};overlays_->SetOverlayMouseScale(dashboard_,&dashboard_scale);
  overlays_->SetOverlayWidthInMeters(wrist_,0.27f);overlays_->SetOverlayInputMethod(wrist_,vr::VROverlayInputMethod_Mouse);vr::HmdVector2_t wrist_scale{{768,384}};overlays_->SetOverlayMouseScale(wrist_,&wrist_scale);overlays_->SetOverlayFlag(wrist_,vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible,true);overlays_->SetOverlayFlag(wrist_,vr::VROverlayFlags_EnableClickStabilization,true);overlays_->SetOverlayFlag(wrist_,vr::VROverlayFlags_MultiCursor,true);
  overlays_->SetOverlayWidthInMeters(hud_,0.42f);overlays_->SetOverlayInputMethod(hud_,vr::VROverlayInputMethod_None);auto hm=hud_transform();overlays_->SetOverlayTransformTrackedDeviceRelative(hud_,vr::k_unTrackedDeviceIndex_Hmd,&hm);

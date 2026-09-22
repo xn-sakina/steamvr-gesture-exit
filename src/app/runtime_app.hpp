@@ -24,7 +24,7 @@ class RuntimeApp {
   void apply(core::Effects,std::chrono::steady_clock::time_point,const TrackingFrame&);
   void update_dashboard(const platform::windows::TargetResolution&,const TrackingFrame&,bool dashboard_visible);
   void dashboard_input(const std::vector<core::DashboardAction>&);
-  void save_setting(const char*,const std::string&);
+  bool save_setting(const core::Settings&,const char*,const std::string&);
   std::wstring text(core::StringId)const;
   core::SettingsStore settings_store_;core::Settings settings_;core::Language language_=core::Language::English;
   core::DiagnosticLog log_;core::GestureDetector gesture_;std::unique_ptr<core::FlowStateMachine> flow_;
@@ -34,5 +34,6 @@ class RuntimeApp {
   std::string steam_language_,os_language_,availability_signature_;
   bool recovery_notice_pending_=false;
   std::chrono::steady_clock::time_point recovery_notice_until_{};
+  std::chrono::steady_clock::time_point save_failure_notice_until_{};
 };
 }

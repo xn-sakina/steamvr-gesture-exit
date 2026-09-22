@@ -9,7 +9,7 @@ namespace {
 
 struct TextPair { std::string_view english; std::string_view chinese; };
 
-constexpr std::array<TextPair, 61> strings{{
+constexpr std::array<TextPair, 62> strings{{
     {"SteamVR Bail Out", "SteamVR 告别退出"},
     {"Exit game", "退出游戏"},
     {"Exit this game?", "要退出这个游戏吗？"},
@@ -28,6 +28,7 @@ constexpr std::array<TextPair, 61> strings{{
     {"Opposite hand pointer", "另一只手的指针"}, {"Last exit", "上次退出"},
     {"Available", "可用"}, {"Unavailable", "不可用"}, {"Never", "从未"},
     {"Settings were reset to safe defaults.", "设置已恢复为安全默认值。"},
+    {"Could not save settings. Change was not applied.", "无法保存设置，修改未生效。"},
     {"Quick guide", "快速指南"}, {"Left", "左手"}, {"Right", "右手"},
     {"Auto", "自动"}, {"English", "英文"}, {"Chinese", "中文"},
     {"Ready", "就绪"},

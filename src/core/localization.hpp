@@ -37,6 +37,7 @@ enum class StringId {
   Unavailable,
   Never,
   SettingsRecovered,
+  SettingsSaveFailed,
   QuickGuide,
   Left,
   Right,
