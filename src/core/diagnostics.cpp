@@ -73,6 +73,8 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
   field("from", record.from_state);
   field("to", record.to_state);
   field("status", record.status);
+  field("current_game_status", record.current_game_status);
+  field("exit_target_status", record.exit_target_status);
   field("setting", record.setting_name);
   field("value", record.setting_value);
   field("target", record.target_name);

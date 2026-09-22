@@ -28,6 +28,8 @@ struct DiagnosticRecord {
   std::string from_state;
   std::string to_state;
   std::string status;
+  std::string current_game_status;
+  std::string exit_target_status;
   std::string setting_name;
   std::string setting_value;
   std::string target_name;

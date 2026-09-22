@@ -1,4 +1,5 @@
 #include "core/diagnostics.hpp"
+#include "core/dashboard_ui.hpp"
 #include "core/gesture_detector.hpp"
 #include "core/localization.hpp"
 #include "core/settings.hpp"
@@ -6,6 +7,7 @@
 #include "core/vr_game_classifier.hpp"
 #include "app/runtime_interfaces.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -151,10 +153,14 @@ void diagnostics_are_structured_and_privacy_bounded() {
   record.code = "FLOW_\"OK\"\n";
   record.from_state = "idle_visible";
   record.to_state = "confirming";
+  record.current_game_status = "AVAILABLE";
+  record.exit_target_status = "PROCESS_ACCESS_DENIED";
   record.target_name = "Example Game";
   const std::string json = serialize_diagnostic_record(record, "2026-01-01T00:00:00Z");
   CHECK(json.find("\"event\":\"state_transition\"") != std::string::npos);
   CHECK(json.find("FLOW_\\\"OK\\\"\\n") != std::string::npos);
+  CHECK(json.find("\"current_game_status\":\"AVAILABLE\"") != std::string::npos);
+  CHECK(json.find("\"exit_target_status\":\"PROCESS_ACCESS_DENIED\"") != std::string::npos);
   CHECK(json.find("pose") == std::string::npos);
   CHECK(json.find("chat") == std::string::npos);
   CHECK(json.find("audio") == std::string::npos);
@@ -197,6 +203,53 @@ void pointer_availability_requires_input_capabilities() {
   hand.connected = true;
   hand.legacy_input_readable = false;
   CHECK(!hand.accepts_pointer_event(7));
+}
+
+void dashboard_controls_are_visible_semantic_targets() {
+  Settings settings;
+  const auto buttons = dashboard_buttons(settings);
+  CHECK(buttons.size() == 14);
+  for (const auto& button : buttons) {
+    const float x = (button.bounds.left + button.bounds.right) * 0.5F;
+    const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
+    const auto hit = dashboard_hit_test(buttons, x, y);
+    if (button.enabled) CHECK(hit && *hit == button.action);
+  }
+  CHECK(!dashboard_hit_test(buttons, 80.0F, 130.0F));
+  CHECK(!dashboard_hit_test(buttons, 610.0F, 130.0F));
+  CHECK(!dashboard_hit_test(buttons, 228.0F, 173.0F));
+
+  int selected = 0;
+  for (const auto& button : buttons) if (button.selected) ++selected;
+  CHECK(selected == 4);
+}
+
+void dashboard_actions_change_only_the_intended_setting() {
+  Settings settings;
+  CHECK(apply_dashboard_action(settings, DashboardAction::SetRightHand));
+  CHECK(settings.configured_hand == Hand::Right);
+  CHECK(settings.countdown_seconds == 5);
+  CHECK(apply_dashboard_action(settings, DashboardAction::SetCountdown15));
+  CHECK(settings.countdown_seconds == 15);
+  CHECK(apply_dashboard_action(settings, DashboardAction::DecreaseControlTimeout));
+  CHECK(settings.control_timeout_seconds == 7);
+  CHECK(apply_dashboard_action(settings, DashboardAction::DisableCountdownSound));
+  CHECK(!settings.countdown_sound);
+  CHECK(apply_dashboard_action(settings, DashboardAction::SetLanguageChinese));
+  CHECK(settings.language == Language::ChineseSimplified);
+  CHECK(!apply_dashboard_action(settings, DashboardAction::SetLanguageChinese));
+
+  settings.control_timeout_seconds = 3;
+  CHECK(!apply_dashboard_action(settings, DashboardAction::DecreaseControlTimeout));
+  auto buttons = dashboard_buttons(settings);
+  const auto disabled_minus = std::find_if(buttons.begin(), buttons.end(), [](const auto& button) {
+    return button.action == DashboardAction::DecreaseControlTimeout;
+  });
+  CHECK(disabled_minus != buttons.end());
+  CHECK(!disabled_minus->enabled);
+  CHECK(!dashboard_hit_test(buttons,
+                            (disabled_minus->bounds.left + disabled_minus->bounds.right) * 0.5F,
+                            (disabled_minus->bounds.top + disabled_minus->bounds.bottom) * 0.5F));
 }
 
 void state_machine_requires_all_prerequisites() {
@@ -310,6 +363,8 @@ int main() {
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer requires input capabilities", pointer_availability_requires_input_capabilities},
+      {"dashboard semantic targets", dashboard_controls_are_visible_semantic_targets},
+      {"dashboard actions", dashboard_actions_change_only_the_intended_setting},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},
       {"state timeout and loss", state_machine_timeout_refresh_and_prerequisite_loss},

@@ -9,7 +9,7 @@ namespace {
 
 struct TextPair { std::string_view english; std::string_view chinese; };
 
-constexpr std::array<TextPair, 29> strings{{
+constexpr std::array<TextPair, 52> strings{{
     {"SteamVR Bail Out", "SteamVR 告别退出"},
     {"Exit game", "退出游戏"},
     {"Exit this game?", "要退出这个游戏吗？"},
@@ -28,6 +28,23 @@ constexpr std::array<TextPair, 29> strings{{
     {"Opposite hand pointer", "另一只手的指针"}, {"Last exit", "上次退出"},
     {"Available", "可用"}, {"Unavailable", "不可用"}, {"Never", "从未"},
     {"Settings were reset to safe defaults.", "设置已恢复为安全默认值。"},
+    {"Quick guide", "快速指南"}, {"Left", "左手"}, {"Right", "右手"},
+    {"Auto", "自动"}, {"English", "英文"}, {"Chinese", "中文"},
+    {"Ready", "就绪"},
+    {"OpenVR applications interface is unavailable.", "OpenVR 应用接口不可用。"},
+    {"No VR scene application is running.", "当前没有运行 VR 场景应用。"},
+    {"SteamVR did not provide a scene process.", "SteamVR 未提供场景进程。"},
+    {"The add-on process cannot be a game.", "附加组件自身不能作为游戏。"},
+    {"SteamVR could not map the scene process to an app key.", "SteamVR 无法将场景进程映射到应用键。"},
+    {"Required SteamVR application properties could not be read.", "无法读取所需的 SteamVR 应用属性。"},
+    {"The scene application was rejected by the game safety rules.", "场景应用未通过游戏安全规则。"},
+    {"A Current VR Game could not be identified safely.", "无法安全识别当前 VR 游戏。"},
+    {"The game process exited or cannot be opened.", "游戏进程已退出或无法打开。"},
+    {"Access to the game process was denied.", "访问游戏进程被拒绝。"},
+    {"The game process identity could not be read.", "无法读取游戏进程身份。"},
+    {"The game executable path could not be read.", "无法读取游戏可执行文件路径。"},
+    {"The mapped process was rejected by the safety denylist.", "映射的进程被安全拒绝列表拦截。"},
+    {"Dashboard is open; gesture and exit controls are disabled.", "Dashboard 已打开；手势和退出控件已禁用。"},
 }};
 
 bool is_chinese(std::string_view tag) {

@@ -3,10 +3,48 @@
 #include <optional>
 namespace vr { class IVRApplications; }
 namespace bailout::platform::windows {
+
+enum class CurrentVrGameStatus {
+  Available,
+  ApplicationsUnavailable,
+  SceneNotRunning,
+  SceneProcessUnavailable,
+  SelfProcessRejected,
+  ApplicationKeyUnavailable,
+  ApplicationMetadataUnavailable,
+  UnsafeApplication,
+};
+
+enum class ExitTargetStatus {
+  Available,
+  CurrentGameUnavailable,
+  ProcessUnavailable,
+  ProcessAccessDenied,
+  ProcessIdentityUnavailable,
+  ProcessPathUnavailable,
+  UnsafeProcess,
+};
+
+struct CurrentVrGame {
+  std::uint32_t pid = 0;
+  std::string app_key;
+  std::wstring display_name;
+};
+
+struct TargetResolution {
+  CurrentVrGameStatus game_status = CurrentVrGameStatus::ApplicationsUnavailable;
+  ExitTargetStatus target_status = ExitTargetStatus::CurrentGameUnavailable;
+  std::optional<CurrentVrGame> game;
+  std::optional<app::RuntimeTarget> target;
+};
+
+[[nodiscard]] const char* diagnostic_code(CurrentVrGameStatus status) noexcept;
+[[nodiscard]] const char* diagnostic_code(ExitTargetStatus status) noexcept;
+
 class ExitTargetResolver {
  public:
   explicit ExitTargetResolver(vr::IVRApplications* applications);
-  std::optional<app::RuntimeTarget> resolve_foreground() const;
+  TargetResolution resolve_foreground() const;
   bool revalidate(const app::RuntimeTarget& target) const;
  private:
   bool app_is_safe_scene(const std::string& app_key, std::uint32_t expected_pid) const;
