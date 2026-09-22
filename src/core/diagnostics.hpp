@@ -41,7 +41,9 @@ class DiagnosticLog {
   explicit DiagnosticLog(std::filesystem::path path);
 
   [[nodiscard]] bool append(const DiagnosticRecord& record, std::string* error = nullptr);
-  [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+  [[nodiscard]] const std::filesystem::path& path() const noexcept {
+    return path_;
+  }
 
  private:
   std::filesystem::path path_;

@@ -78,7 +78,9 @@ class FlowStateMachine {
   explicit FlowStateMachine(std::chrono::seconds control_timeout = std::chrono::seconds{8},
                             std::chrono::seconds exit_grace_period = std::chrono::seconds{5});
 
-  [[nodiscard]] FlowState state() const noexcept { return state_; }
+  [[nodiscard]] FlowState state() const noexcept {
+    return state_;
+  }
   [[nodiscard]] FlowSnapshot snapshot(TimePoint now) const;
 
   [[nodiscard]] Effects on_gesture(TimePoint now, const Prerequisites& prerequisites);
@@ -92,7 +94,7 @@ class FlowStateMachine {
   [[nodiscard]] Effects on_graceful_result(TimePoint now, CloseRequestResult result,
                                            std::string error_code = {});
   [[nodiscard]] Effects on_force_result(TimePoint now, CloseRequestResult result,
-                                         std::string error_code = {});
+                                        std::string error_code = {});
   [[nodiscard]] Effects on_overlay_failure(std::string error_code);
   [[nodiscard]] Effects tick(TimePoint now);
 

@@ -24,12 +24,19 @@ using namespace bailout::core;
 
 namespace {
 
-struct Failure : std::runtime_error { using std::runtime_error::runtime_error; };
+struct Failure : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
 
-#define CHECK(expression) \
-  do { if (!(expression)) throw Failure(std::string{"CHECK failed: "} + #expression); } while (false)
+#define CHECK(expression)                                         \
+  do {                                                            \
+    if (!(expression))                                            \
+      throw Failure(std::string{"CHECK failed: "} + #expression); \
+  } while (false)
 
-TimePoint at(const int milliseconds) { return TimePoint{} + std::chrono::milliseconds{milliseconds}; }
+TimePoint at(const int milliseconds) {
+  return TimePoint{} + std::chrono::milliseconds{milliseconds};
+}
 
 TargetIdentity target(std::uint32_t pid = 42, std::uint64_t token = 7) {
   return {pid, token, "C:\\Games\\Example.exe", "Example Game"};
@@ -40,13 +47,14 @@ Prerequisites ready(const TargetIdentity& identity = target()) {
 }
 
 bool has_effect(const Effects& effects, const EffectType type) {
-  for (const auto& effect : effects) if (effect.type == type) return true;
+  for (const auto& effect : effects)
+    if (effect.type == type)
+      return true;
   return false;
 }
 
-GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1},
-                     bool tracked = true, std::optional<Vec3> palm = std::nullopt,
-                     Vec3 headset = {}) {
+GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1}, bool tracked = true,
+                     std::optional<Vec3> palm = std::nullopt, Vec3 headset = {}) {
   return {at(milliseconds), tracked, hand, palm.value_or(normalized(hand)), headset, forward};
 }
 
@@ -54,8 +62,7 @@ void gesture_recognizes_valid_wave() {
   GestureDetector detector;
   const Vec3 headset{0.0, 1.65, 0.0};
   const auto upper_body_sample = [&](int milliseconds, double x) {
-    return sample(milliseconds, {x, 1.20, -0.50}, {0, 0, -1}, true,
-                  Vec3{0, 0, -1}, headset);
+    return sample(milliseconds, {x, 1.20, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset);
   };
   CHECK(!detector.update(upper_body_sample(0, 0.10)));
   CHECK(!detector.update(upper_body_sample(200, 0.30)));
@@ -89,14 +96,10 @@ void gesture_rejects_unsafe_or_weak_motion() {
   CHECK(!downward.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, true, Vec3{0, -1, 0})));
   GestureDetector low;
   const Vec3 headset{0.0, 1.65, 0.0};
-  CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true,
-                           Vec3{0, 0, -1}, headset)));
-  CHECK(!low.update(sample(200, {0.30, 0.90, -0.50}, {0, 0, -1}, true,
-                           Vec3{0, 0, -1}, headset)));
-  CHECK(!low.update(sample(400, {0.10, 0.90, -0.50}, {0, 0, -1}, true,
-                           Vec3{0, 0, -1}, headset)));
-  CHECK(!low.update(sample(600, {0.30, 0.90, -0.50}, {0, 0, -1}, true,
-                           Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(200, {0.30, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(400, {0.10, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(600, {0.30, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
   GestureDetector untracked;
   CHECK(!untracked.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, false)));
   GestureDetector too_slow;
@@ -143,11 +146,18 @@ void settings_round_trip_and_recovery() {
   CHECK(!store.save(settings, &error));
   CHECK(error == "SETTINGS_COUNTDOWN_INVALID");
 
-  { std::ofstream output(store.path()); output << "{broken"; }
+  {
+    std::ofstream output(store.path());
+    output << "{broken";
+  }
   CHECK(store.load().status == SettingsLoadStatus::RecoveredCorrupt);
-  { std::ofstream output(store.path()); output << R"({"version":99})"; }
+  {
+    std::ofstream output(store.path());
+    output << R"({"version":99})";
+  }
   CHECK(store.load().status == SettingsLoadStatus::RecoveredIncompatible);
-  const std::string valid = R"({"version":1,"configuredHand":"right","countdownSeconds":15,"controlTimeoutSeconds":12,"countdownSound":false,"language":"zh-CN"})";
+  const std::string valid =
+      R"({"version":1,"configuredHand":"right","countdownSeconds":15,"controlTimeoutSeconds":12,"countdownSound":false,"language":"zh-CN"})";
   const std::vector<std::string> invalid_documents{
       "garbage " + valid,
       valid + " garbage",
@@ -163,7 +173,10 @@ void settings_round_trip_and_recovery() {
       valid.substr(0, valid.size() - 1) + R"(,"unknown":true})",
   };
   for (const auto& document : invalid_documents) {
-    { std::ofstream output(store.path()); output << document; }
+    {
+      std::ofstream output(store.path());
+      output << document;
+    }
     const auto result = store.load();
     if (result.status != SettingsLoadStatus::RecoveredCorrupt) {
       throw Failure("invalid settings document accepted: " + document);
@@ -171,29 +184,34 @@ void settings_round_trip_and_recovery() {
     CHECK(result.settings == Settings::defaults());
     CHECK(result.diagnostic_code == "SETTINGS_JSON_INVALID");
   }
-  { std::ofstream output(store.path()); output << " \n " << valid << " \n "; }
+  {
+    std::ofstream output(store.path());
+    output << " \n " << valid << " \n ";
+  }
   CHECK(store.load().settings == loaded.settings);
   std::filesystem::remove_all(root, ec);
 }
 
 void localization_resolves_auto_and_manual() {
-  CHECK(resolve_language(Language::Auto, "schinese", "en-US") ==
-        Language::ChineseSimplified);
+  CHECK(resolve_language(Language::Auto, "schinese", "en-US") == Language::ChineseSimplified);
   CHECK(resolve_language(Language::Auto, "", "zh-SG") == Language::ChineseSimplified);
   CHECK(resolve_language(Language::Auto, "english", "zh-CN") == Language::English);
   CHECK(resolve_language(Language::English, "schinese", "zh-CN") == Language::English);
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
   CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
-  CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) == "无法保存设置，修改未生效。");
+  CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
+        "无法保存设置，修改未生效。");
   CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "安全退场");
-  CHECK(localize(StringId::ThumbnailDescription, Language::ChineseSimplified) == "安全退出 VR 游戏");
+  CHECK(localize(StringId::ThumbnailDescription, Language::ChineseSimplified) ==
+        "安全退出 VR 游戏");
   CHECK(localize(StringId::SecondsUnit, Language::ChineseSimplified) == "秒");
   CHECK(localize_last_exit(LastExitStatus::Never, Language::ChineseSimplified) == "从未");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::ChineseSimplified) == "成功");
   CHECK(localize_last_exit(LastExitStatus::Cancelled, Language::ChineseSimplified) == "已取消");
   CHECK(localize_last_exit(LastExitStatus::Failed, Language::ChineseSimplified) == "失败");
-  CHECK(localize_last_exit(LastExitStatus::TargetUnavailable, Language::ChineseSimplified) == "目标不可用");
+  CHECK(localize_last_exit(LastExitStatus::TargetUnavailable, Language::ChineseSimplified) ==
+        "目标不可用");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::English) == "Succeeded");
 }
 
@@ -219,15 +237,23 @@ void diagnostics_are_structured_and_privacy_bounded() {
 
 void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(is_current_vr_game_candidate({"steam.app.438100", "url", false, false, false, false}));
-  CHECK(is_current_vr_game_candidate({"com.example.indie-vr-game", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate(
+      {"com.example.indie-vr-game", "binary", false, false, false, false}));
 
-  CHECK(!is_current_vr_game_candidate({"steam.app.not-a-number", "url", false, false, false, false}));
-  CHECK(!is_current_vr_game_candidate({"openvr.tool.steamvr_environments", "binary", false, false, false, false}));
-  CHECK(!is_current_vr_game_candidate({"steam.overlay.1009850", "binary", false, false, false, false}));
-  CHECK(!is_current_vr_game_candidate({"system.generated.unknown.exe", "binary", false, false, false, false}));
-  CHECK(!is_current_vr_game_candidate({"com.example.overlay", "binary", true, false, false, false}));
-  CHECK(!is_current_vr_game_candidate({"com.example.template", "binary", false, true, false, false}));
-  CHECK(!is_current_vr_game_candidate({"com.example.internal", "binary", false, false, true, false}));
+  CHECK(
+      !is_current_vr_game_candidate({"steam.app.not-a-number", "url", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate(
+      {"openvr.tool.steamvr_environments", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate(
+      {"steam.overlay.1009850", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate(
+      {"system.generated.unknown.exe", "binary", false, false, false, false}));
+  CHECK(
+      !is_current_vr_game_candidate({"com.example.overlay", "binary", true, false, false, false}));
+  CHECK(
+      !is_current_vr_game_candidate({"com.example.template", "binary", false, true, false, false}));
+  CHECK(
+      !is_current_vr_game_candidate({"com.example.internal", "binary", false, false, true, false}));
   CHECK(!is_current_vr_game_candidate({"com.example.hidden", "binary", false, false, false, true}));
   CHECK(!is_current_vr_game_candidate({"com.example.game", "unknown", false, false, false, false}));
 }
@@ -268,8 +294,9 @@ void wrist_pose_smoothing_follows_and_resets_safely() {
   CHECK(std::abs(dot(filtered.right, filtered.up)) < 1e-9);
   CHECK(smoother.update(moved, at(150)).position.x > filtered.position.x);
   CHECK(std::abs(smoother.update(origin, at(500)).position.x) < 1e-9);
-  CHECK(std::abs(smoother.update({{2, 1, 0}, origin.right, origin.up, origin.back},
-                                 at(510)).position.x - 2.0) < 1e-9);
+  CHECK(std::abs(
+            smoother.update({{2, 1, 0}, origin.right, origin.up, origin.back}, at(510)).position.x -
+            2.0) < 1e-9);
   smoother.reset();
   CHECK(std::abs(smoother.update(origin, at(520)).position.x) < 1e-9);
 }
@@ -282,14 +309,17 @@ void dashboard_controls_are_visible_semantic_targets() {
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
     const auto hit = dashboard_hit_test(buttons, x, y);
-    if (button.enabled) CHECK(hit && *hit == button.action);
+    if (button.enabled)
+      CHECK(hit && *hit == button.action);
   }
   CHECK(!dashboard_hit_test(buttons, 80.0F, 130.0F));
   CHECK(!dashboard_hit_test(buttons, 610.0F, 130.0F));
   CHECK(!dashboard_hit_test(buttons, 228.0F, 173.0F));
 
   int selected = 0;
-  for (const auto& button : buttons) if (button.selected) ++selected;
+  for (const auto& button : buttons)
+    if (button.selected)
+      ++selected;
   CHECK(selected == 4);
 }
 
@@ -323,9 +353,10 @@ void dashboard_actions_change_only_the_intended_setting() {
 
 void state_machine_requires_all_prerequisites() {
   const auto identity = target();
-  const std::vector<Prerequisites> unavailable{
-      {false, true, true, identity}, {true, false, true, identity},
-      {true, true, false, identity}, {true, true, true, std::nullopt}};
+  const std::vector<Prerequisites> unavailable{{false, true, true, identity},
+                                               {true, false, true, identity},
+                                               {true, true, false, identity},
+                                               {true, true, true, std::nullopt}};
   for (const auto& prerequisites : unavailable) {
     FlowStateMachine machine;
     CHECK(machine.on_gesture(at(0), prerequisites).empty());
@@ -424,8 +455,7 @@ void state_machine_overlay_failure_aborts_before_exit() {
   FlowStateMachine machine;
   (void)machine.on_gesture(at(0), ready());
   CHECK(machine.state() == FlowState::IdleVisible);
-  CHECK(has_effect(machine.on_overlay_failure("OVERLAY_PRESENT_FAILED"),
-                   EffectType::HideControl));
+  CHECK(has_effect(machine.on_overlay_failure("OVERLAY_PRESENT_FAILED"), EffectType::HideControl));
   CHECK(machine.state() == FlowState::NoActiveFlow);
   CHECK(machine.snapshot(at(1)).last_exit == LastExitStatus::Never);
 

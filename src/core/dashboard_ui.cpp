@@ -27,8 +27,8 @@ void add_segment(std::vector<DashboardButton>& result, const DashboardSettingRow
   const int count = static_cast<int>(actions.size());
   int column = 0;
   for (const auto action : actions) {
-    result.push_back({action, row, button_rect(row_index, column, count), {},
-                      column == selected_index, true});
+    result.push_back(
+        {action, row, button_rect(row_index, column, count), {}, column == selected_index, true});
     ++column;
   }
 }
@@ -43,8 +43,8 @@ std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
               settings.configured_hand == Hand::Left ? 0 : 1);
 
   constexpr std::array<int, 5> countdown_values{1, 3, 5, 10, 15};
-  const auto countdown = std::find(countdown_values.begin(), countdown_values.end(),
-                                   settings.countdown_seconds);
+  const auto countdown =
+      std::find(countdown_values.begin(), countdown_values.end(), settings.countdown_seconds);
   const int countdown_index = countdown == countdown_values.end()
                                   ? 2
                                   : static_cast<int>(countdown - countdown_values.begin());
@@ -57,19 +57,24 @@ std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
   const auto minus = button_rect(2, 0, 3);
   const auto plus = button_rect(2, 2, 3);
   result.push_back({DashboardAction::DecreaseControlTimeout,
-                    DashboardSettingRow::ControlTimeout, minus, {}, false,
+                    DashboardSettingRow::ControlTimeout,
+                    minus,
+                    {},
+                    false,
                     settings.control_timeout_seconds > 3});
   result.push_back({DashboardAction::IncreaseControlTimeout,
-                    DashboardSettingRow::ControlTimeout, plus, {}, false,
+                    DashboardSettingRow::ControlTimeout,
+                    plus,
+                    {},
+                    false,
                     settings.control_timeout_seconds < 30});
 
   add_segment(result, DashboardSettingRow::CountdownSound, 3,
-              {DashboardAction::EnableCountdownSound,
-               DashboardAction::DisableCountdownSound},
+              {DashboardAction::EnableCountdownSound, DashboardAction::DisableCountdownSound},
               settings.countdown_sound ? 0 : 1);
-  const int language = settings.language == Language::Auto
-                           ? 0
-                           : settings.language == Language::English ? 1 : 2;
+  const int language = settings.language == Language::Auto      ? 0
+                       : settings.language == Language::English ? 1
+                                                                : 2;
   add_segment(result, DashboardSettingRow::Language, 4,
               {DashboardAction::SetLanguageAuto, DashboardAction::SetLanguageEnglish,
                DashboardAction::SetLanguageChinese},
@@ -77,10 +82,11 @@ std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
   return result;
 }
 
-std::optional<DashboardAction> dashboard_hit_test(
-    const std::vector<DashboardButton>& buttons, const float x, const float y) noexcept {
+std::optional<DashboardAction> dashboard_hit_test(const std::vector<DashboardButton>& buttons,
+                                                  const float x, const float y) noexcept {
   for (const auto& button : buttons) {
-    if (button.enabled && button.bounds.contains(x, y)) return button.action;
+    if (button.enabled && button.bounds.contains(x, y))
+      return button.action;
   }
   return std::nullopt;
 }
@@ -88,23 +94,45 @@ std::optional<DashboardAction> dashboard_hit_test(
 bool apply_dashboard_action(Settings& settings, const DashboardAction action) noexcept {
   const Settings before = settings;
   switch (action) {
-    case DashboardAction::SetLeftHand: settings.configured_hand = Hand::Left; break;
-    case DashboardAction::SetRightHand: settings.configured_hand = Hand::Right; break;
-    case DashboardAction::SetCountdown1: settings.countdown_seconds = 1; break;
-    case DashboardAction::SetCountdown3: settings.countdown_seconds = 3; break;
-    case DashboardAction::SetCountdown5: settings.countdown_seconds = 5; break;
-    case DashboardAction::SetCountdown10: settings.countdown_seconds = 10; break;
-    case DashboardAction::SetCountdown15: settings.countdown_seconds = 15; break;
+    case DashboardAction::SetLeftHand:
+      settings.configured_hand = Hand::Left;
+      break;
+    case DashboardAction::SetRightHand:
+      settings.configured_hand = Hand::Right;
+      break;
+    case DashboardAction::SetCountdown1:
+      settings.countdown_seconds = 1;
+      break;
+    case DashboardAction::SetCountdown3:
+      settings.countdown_seconds = 3;
+      break;
+    case DashboardAction::SetCountdown5:
+      settings.countdown_seconds = 5;
+      break;
+    case DashboardAction::SetCountdown10:
+      settings.countdown_seconds = 10;
+      break;
+    case DashboardAction::SetCountdown15:
+      settings.countdown_seconds = 15;
+      break;
     case DashboardAction::DecreaseControlTimeout:
       settings.control_timeout_seconds = std::max(3, settings.control_timeout_seconds - 1);
       break;
     case DashboardAction::IncreaseControlTimeout:
       settings.control_timeout_seconds = std::min(30, settings.control_timeout_seconds + 1);
       break;
-    case DashboardAction::EnableCountdownSound: settings.countdown_sound = true; break;
-    case DashboardAction::DisableCountdownSound: settings.countdown_sound = false; break;
-    case DashboardAction::SetLanguageAuto: settings.language = Language::Auto; break;
-    case DashboardAction::SetLanguageEnglish: settings.language = Language::English; break;
+    case DashboardAction::EnableCountdownSound:
+      settings.countdown_sound = true;
+      break;
+    case DashboardAction::DisableCountdownSound:
+      settings.countdown_sound = false;
+      break;
+    case DashboardAction::SetLanguageAuto:
+      settings.language = Language::Auto;
+      break;
+    case DashboardAction::SetLanguageEnglish:
+      settings.language = Language::English;
+      break;
     case DashboardAction::SetLanguageChinese:
       settings.language = Language::ChineseSimplified;
       break;

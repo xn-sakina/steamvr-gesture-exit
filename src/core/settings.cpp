@@ -13,15 +13,14 @@
 namespace bailout::core {
 namespace {
 
-bool json_document_boundaries_valid(const std::string& document,
-                                    const Json::Value& root) {
+bool json_document_boundaries_valid(const std::string& document, const Json::Value& root) {
   const auto end = root.getOffsetLimit();
-  if (end > document.size()) return false;
-  const auto whitespace = [](char c) {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-  };
+  if (end > document.size())
+    return false;
+  const auto whitespace = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
   for (size_t i = end; i < document.size(); ++i) {
-    if (!whitespace(document[i])) return false;
+    if (!whitespace(document[i]))
+      return false;
   }
 
   // The bundled JsonCpp version accepts a comma immediately before a closing
@@ -31,17 +30,23 @@ bool json_document_boundaries_valid(const std::string& document,
   for (size_t i = 0; i < end; ++i) {
     const char c = document[i];
     if (in_string) {
-      if (static_cast<unsigned char>(c) < 0x20) return false;
-      if (escaped) escaped = false;
-      else if (c == '\\') escaped = true;
-      else if (c == '"') in_string = false;
+      if (static_cast<unsigned char>(c) < 0x20)
+        return false;
+      if (escaped)
+        escaped = false;
+      else if (c == '\\')
+        escaped = true;
+      else if (c == '"')
+        in_string = false;
     } else if (c == '"') {
       in_string = true;
     } else {
-      if (static_cast<unsigned char>(c) < 0x20 && !whitespace(c)) return false;
+      if (static_cast<unsigned char>(c) < 0x20 && !whitespace(c))
+        return false;
       if (c == ',') {
         size_t next = i + 1;
-        while (next < end && whitespace(document[next])) ++next;
+        while (next < end && whitespace(document[next]))
+          ++next;
         if (next < end && (document[next] == '}' || document[next] == ']')) {
           return false;
         }
@@ -52,28 +57,38 @@ bool json_document_boundaries_valid(const std::string& document,
 }
 
 std::optional<Hand> parse_hand(const std::string& value) {
-  if (value == "left") return Hand::Left;
-  if (value == "right") return Hand::Right;
+  if (value == "left")
+    return Hand::Left;
+  if (value == "right")
+    return Hand::Right;
   return std::nullopt;
 }
 
 std::optional<Language> parse_language(const std::string& value) {
-  if (value == "auto") return Language::Auto;
-  if (value == "en") return Language::English;
-  if (value == "zh-CN") return Language::ChineseSimplified;
+  if (value == "auto")
+    return Language::Auto;
+  if (value == "en")
+    return Language::English;
+  if (value == "zh-CN")
+    return Language::ChineseSimplified;
   return std::nullopt;
 }
 
 }  // namespace
 
-Settings Settings::defaults() noexcept { return {}; }
+Settings Settings::defaults() noexcept {
+  return {};
+}
 
 std::optional<std::string> Settings::validation_error() const {
-  if (version != current_version) return "SETTINGS_VERSION_UNSUPPORTED";
+  if (version != current_version)
+    return "SETTINGS_VERSION_UNSUPPORTED";
   constexpr std::array allowed_countdowns{1, 3, 5, 10, 15};
   bool allowed = false;
-  for (const int value : allowed_countdowns) allowed |= countdown_seconds == value;
-  if (!allowed) return "SETTINGS_COUNTDOWN_INVALID";
+  for (const int value : allowed_countdowns)
+    allowed |= countdown_seconds == value;
+  if (!allowed)
+    return "SETTINGS_COUNTDOWN_INVALID";
   if (control_timeout_seconds < 3 || control_timeout_seconds > 30) {
     return "SETTINGS_CONTROL_TIMEOUT_INVALID";
   }
@@ -86,9 +101,12 @@ std::string to_string(const Hand value) {
 
 std::string to_string(const Language value) {
   switch (value) {
-    case Language::Auto: return "auto";
-    case Language::English: return "en";
-    case Language::ChineseSimplified: return "zh-CN";
+    case Language::Auto:
+      return "auto";
+    case Language::English:
+      return "en";
+    case Language::ChineseSimplified:
+      return "zh-CN";
   }
   return "auto";
 }
@@ -122,13 +140,11 @@ SettingsLoadResult SettingsStore::load() const {
     parsed = false;
   }
   if (!parsed || !root.isObject() || !json_document_boundaries_valid(document, root)) {
-    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
-            "SETTINGS_JSON_INVALID"};
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_JSON_INVALID"};
   }
   const auto& version = root["version"];
   if (!version.isInt()) {
-    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
-            "SETTINGS_JSON_INVALID"};
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_JSON_INVALID"};
   }
   if (version.asInt() != Settings::current_version) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredIncompatible,
@@ -139,19 +155,17 @@ SettingsLoadResult SettingsStore::load() const {
   const auto& timeout = root["controlTimeoutSeconds"];
   const auto& sound = root["countdownSound"];
   const auto& language_text = root["language"];
-  if (root.size() != 6 || !hand_text.isString() || !countdown.isInt() ||
-      !timeout.isInt() || !sound.isBool() || !language_text.isString()) {
-    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
-            "SETTINGS_JSON_INVALID"};
+  if (root.size() != 6 || !hand_text.isString() || !countdown.isInt() || !timeout.isInt() ||
+      !sound.isBool() || !language_text.isString()) {
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_JSON_INVALID"};
   }
   const auto hand = parse_hand(hand_text.asString());
   const auto language = parse_language(language_text.asString());
   if (!hand || !language) {
-    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
-            "SETTINGS_VALUE_INVALID"};
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_VALUE_INVALID"};
   }
-  Settings settings{version.asInt(), *hand, countdown.asInt(), timeout.asInt(),
-                    sound.asBool(), *language};
+  Settings settings{version.asInt(), *hand,          countdown.asInt(),
+                    timeout.asInt(), sound.asBool(), *language};
   if (const auto error = settings.validation_error()) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, *error};
   }
@@ -160,14 +174,16 @@ SettingsLoadResult SettingsStore::load() const {
 
 bool SettingsStore::save(const Settings& settings, std::string* error) const {
   if (const auto validation = settings.validation_error()) {
-    if (error) *error = *validation;
+    if (error)
+      *error = *validation;
     return false;
   }
   std::error_code ec;
   if (!path_.parent_path().empty()) {
     std::filesystem::create_directories(path_.parent_path(), ec);
     if (ec) {
-      if (error) *error = "SETTINGS_CREATE_DIRECTORY_FAILED";
+      if (error)
+        *error = "SETTINGS_CREATE_DIRECTORY_FAILED";
       return false;
     }
   }
@@ -185,7 +201,8 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
            << "}\n";
     output.flush();
     if (!output) {
-      if (error) *error = "SETTINGS_WRITE_FAILED";
+      if (error)
+        *error = "SETTINGS_WRITE_FAILED";
       return false;
     }
   }
@@ -199,7 +216,8 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
   std::filesystem::rename(temporary, path_, ec);
 #endif
   if (ec) {
-    if (error) *error = "SETTINGS_REPLACE_FAILED";
+    if (error)
+      *error = "SETTINGS_REPLACE_FAILED";
     return false;
   }
   return true;

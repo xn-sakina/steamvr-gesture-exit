@@ -8,8 +8,7 @@ namespace bailout::core {
 
 GestureDetector::GestureDetector(GestureConfig config) : config_(config) {
   if (config_.recognition_window <= std::chrono::milliseconds::zero() ||
-      config_.minimum_amplitude_metres <= 0.0 ||
-      config_.reversal_deadband_metres <= 0.0 ||
+      config_.minimum_amplitude_metres <= 0.0 || config_.reversal_deadband_metres <= 0.0 ||
       config_.maximum_hand_below_head_metres <= 0.0) {
     throw std::invalid_argument("invalid farewell gesture configuration");
   }
@@ -65,7 +64,8 @@ bool GestureDetector::motion_matches() const noexcept {
   }
   const Vec3 forward = normalized(samples_.back().headset_forward);
   Vec3 head_right = normalized({forward.z, 0.0, -forward.x});
-  if (length(head_right) < 0.5) head_right = {1.0, 0.0, 0.0};
+  if (length(head_right) < 0.5)
+    head_right = {1.0, 0.0, 0.0};
   const auto coordinate = [head_right](const GestureSample& sample) {
     return dot(sample.hand_position - sample.headset_position, head_right);
   };
@@ -95,6 +95,8 @@ bool GestureDetector::motion_matches() const noexcept {
   return reversals >= 2;
 }
 
-void GestureDetector::reset() noexcept { samples_.clear(); }
+void GestureDetector::reset() noexcept {
+  samples_.clear();
+}
 
 }  // namespace bailout::core

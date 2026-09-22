@@ -22,9 +22,7 @@ Vec3 blend(Vec3 a, Vec3 b, double alpha) noexcept {
 }
 
 Vec3 cross(Vec3 a, Vec3 b) noexcept {
-  return {a.y * b.z - a.z * b.y,
-          a.z * b.x - a.x * b.z,
-          a.x * b.y - a.y * b.x};
+  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
 WristPose orthonormalized(WristPose pose) noexcept {
@@ -47,9 +45,10 @@ WristPose WristPoseSmoother::update(WristPose target, TimePoint time) noexcept {
     next.position = blend(pose_->position, target.position, alpha);
     next.right = blend(pose_->right, target.right, alpha);
     next.up = blend(pose_->up, target.up, alpha);
-    if (length(next.right) < 1e-6) next.right = target.right;
-    if (length(next.up - scale(normalized(next.right),
-                               dot(next.up, normalized(next.right)))) < 1e-6) {
+    if (length(next.right) < 1e-6)
+      next.right = target.right;
+    if (length(next.up - scale(normalized(next.right), dot(next.up, normalized(next.right)))) <
+        1e-6) {
       next.up = target.up;
     }
     pose_ = orthonormalized(next);

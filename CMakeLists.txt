@@ -12,6 +12,31 @@ endif()
 option(BAILOUT_BUILD_TESTS "Build portable core tests" ON)
 option(BAILOUT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 
+find_program(BAILOUT_CLANG_FORMAT NAMES clang-format clang-format-20 clang-format-19 clang-format-18 clang-format-17)
+if(BAILOUT_CLANG_FORMAT)
+    file(GLOB_RECURSE BAILOUT_FORMAT_FILES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/*.h"
+    )
+    add_custom_target(format
+        COMMAND "${BAILOUT_CLANG_FORMAT}" -i ${BAILOUT_FORMAT_FILES}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VERBATIM
+    )
+    add_custom_target(format-check
+        COMMAND "${BAILOUT_CLANG_FORMAT}" --dry-run --Werror ${BAILOUT_FORMAT_FILES}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VERBATIM
+    )
+else()
+    message(STATUS "clang-format not found; format targets are unavailable (set BAILOUT_CLANG_FORMAT)")
+endif()
+
 add_library(bailout_jsoncpp STATIC openvr/src/jsoncpp.cpp)
 target_include_directories(bailout_jsoncpp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/openvr/src")
 

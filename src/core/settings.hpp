@@ -42,7 +42,9 @@ class SettingsStore {
 
   [[nodiscard]] SettingsLoadResult load() const;
   [[nodiscard]] bool save(const Settings& settings, std::string* error = nullptr) const;
-  [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+  [[nodiscard]] const std::filesystem::path& path() const noexcept {
+    return path_;
+  }
 
  private:
   std::filesystem::path path_;

@@ -17,27 +17,44 @@ namespace bailout::app {
 class RuntimeApp {
  public:
   RuntimeApp();
-  int run(); void request_stop(){stop_=true;}
+  int run();
+  void request_stop() {
+    stop_ = true;
+  }
+
  private:
-  core::TargetIdentity core_target(const RuntimeTarget&)const;
-  core::Prerequisites prerequisites(const TrackingFrame&,const platform::windows::TargetResolution&,bool dashboard_visible=false)const;
-  void apply(core::Effects,std::chrono::steady_clock::time_point,const TrackingFrame&);
-  void update_dashboard(const platform::windows::TargetResolution&,const TrackingFrame&,bool dashboard_visible);
+  core::TargetIdentity core_target(const RuntimeTarget&) const;
+  core::Prerequisites prerequisites(const TrackingFrame&,
+                                    const platform::windows::TargetResolution&,
+                                    bool dashboard_visible = false) const;
+  void apply(core::Effects, std::chrono::steady_clock::time_point, const TrackingFrame&);
+  void update_dashboard(const platform::windows::TargetResolution&, const TrackingFrame&,
+                        bool dashboard_visible);
   void dashboard_input(const std::vector<core::DashboardAction>&);
-  bool save_setting(const core::Settings&,const char*,const std::string&);
+  bool save_setting(const core::Settings&, const char*, const std::string&);
   void log_overlay_error(std::chrono::steady_clock::time_point);
-  void abort_overlay_flow(std::chrono::steady_clock::time_point,const TrackingFrame&);
-  std::wstring text(core::StringId)const;
-  core::SettingsStore settings_store_;core::Settings settings_;core::Language language_=core::Language::English;
-  core::DiagnosticLog log_;core::GestureDetector gesture_;std::unique_ptr<core::FlowStateMachine> flow_;
-  platform::openvr::OpenVrRuntime vr_;std::unique_ptr<platform::openvr::OverlayManager> overlays_;
-  std::unique_ptr<platform::windows::ExitTargetResolver> targets_;platform::windows::ProcessController process_;platform::windows::CountdownSound sound_;
-  platform::windows::TargetResolution latest_resolution_{};std::optional<RuntimeTarget> locked_native_;int last_beep_second_=-1;std::atomic_bool stop_=false;
-  std::string steam_language_,os_language_,availability_signature_;
-  bool recovery_notice_pending_=false;
+  void abort_overlay_flow(std::chrono::steady_clock::time_point, const TrackingFrame&);
+  std::wstring text(core::StringId) const;
+  core::SettingsStore settings_store_;
+  core::Settings settings_;
+  core::Language language_ = core::Language::English;
+  core::DiagnosticLog log_;
+  core::GestureDetector gesture_;
+  std::unique_ptr<core::FlowStateMachine> flow_;
+  platform::openvr::OpenVrRuntime vr_;
+  std::unique_ptr<platform::openvr::OverlayManager> overlays_;
+  std::unique_ptr<platform::windows::ExitTargetResolver> targets_;
+  platform::windows::ProcessController process_;
+  platform::windows::CountdownSound sound_;
+  platform::windows::TargetResolution latest_resolution_{};
+  std::optional<RuntimeTarget> locked_native_;
+  int last_beep_second_ = -1;
+  std::atomic_bool stop_ = false;
+  std::string steam_language_, os_language_, availability_signature_;
+  bool recovery_notice_pending_ = false;
   std::chrono::steady_clock::time_point recovery_notice_until_{};
   std::chrono::steady_clock::time_point save_failure_notice_until_{};
   std::string last_overlay_error_;
   std::chrono::steady_clock::time_point last_overlay_error_at_{};
 };
-}
+}  // namespace bailout::app

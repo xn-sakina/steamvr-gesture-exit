@@ -4,7 +4,9 @@
 
 namespace bailout::core {
 
-double length(const Vec3 value) noexcept { return std::sqrt(dot(value, value)); }
+double length(const Vec3 value) noexcept {
+  return std::sqrt(dot(value, value));
+}
 
 Vec3 normalized(const Vec3 value) noexcept {
   const double magnitude = length(value);

@@ -72,8 +72,7 @@ enum class StringId {
   LastExitTargetUnavailable,
 };
 
-[[nodiscard]] Language resolve_language(Language configured,
-                                        std::string_view steam_language,
+[[nodiscard]] Language resolve_language(Language configured, std::string_view steam_language,
                                         std::string_view os_language) noexcept;
 [[nodiscard]] std::string_view localize(StringId id, Language resolved_language) noexcept;
 [[nodiscard]] std::string_view localize_last_exit(LastExitStatus status,

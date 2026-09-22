@@ -8,7 +8,9 @@
 namespace bailout::app {
 
 enum class Hand { Left, Right };
-struct Vec3 { float x = 0, y = 0, z = 0; };
+struct Vec3 {
+  float x = 0, y = 0, z = 0;
+};
 struct HandPose {
   bool connected = false;
   bool tracked = false;
@@ -22,8 +24,7 @@ struct HandPose {
   std::uint64_t buttons = 0;
 
   [[nodiscard]] constexpr bool pointer_available() const noexcept {
-    return connected && tracked && legacy_input_readable &&
-           trigger_button_supported;
+    return connected && tracked && legacy_input_readable && trigger_button_supported;
   }
 
   [[nodiscard]] constexpr bool accepts_pointer_event(

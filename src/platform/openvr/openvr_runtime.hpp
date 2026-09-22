@@ -5,15 +5,25 @@
 namespace bailout::platform::openvr {
 class OpenVrRuntime {
  public:
-  bool initialize(vr::EVRApplicationType type=vr::VRApplication_Overlay);
+  bool initialize(vr::EVRApplicationType type = vr::VRApplication_Overlay);
   void shutdown();
   app::TrackingFrame sample_tracking() const;
-  vr::IVRSystem* system()const{return vr::VRSystem();}
-  vr::IVRApplications* applications()const{return vr::VRApplications();}
-  vr::IVROverlay* overlays()const{return vr::VROverlay();}
-  const std::string& error()const{return error_;}
+  vr::IVRSystem* system() const {
+    return vr::VRSystem();
+  }
+  vr::IVRApplications* applications() const {
+    return vr::VRApplications();
+  }
+  vr::IVROverlay* overlays() const {
+    return vr::VROverlay();
+  }
+  const std::string& error() const {
+    return error_;
+  }
+
  private:
-  app::HandPose sample_hand(vr::ETrackedControllerRole role)const;
-  bool initialized_=false; std::string error_;
+  app::HandPose sample_hand(vr::ETrackedControllerRole role) const;
+  bool initialized_ = false;
+  std::string error_;
 };
-}
+}  // namespace bailout::platform::openvr
