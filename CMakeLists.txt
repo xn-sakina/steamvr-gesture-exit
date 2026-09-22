@@ -36,6 +36,7 @@ else()
 endif()
 
 if(WIN32)
+    enable_language(RC)
     set(OPENVR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/openvr")
     if(NOT EXISTS "${OPENVR_ROOT}/headers/openvr.h")
         message(FATAL_ERROR "The bundled OpenVR SDK is required at ${OPENVR_ROOT}")
@@ -48,6 +49,9 @@ if(WIN32)
         INTERFACE_INCLUDE_DIRECTORIES "${OPENVR_ROOT}/headers"
     )
 
+    set_source_files_properties(assets/brand/app.rc PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.ico")
+
     add_executable(steamvr_bail_out
         src/app/main.cpp
         src/app/runtime_app.cpp
@@ -58,7 +62,9 @@ if(WIN32)
         src/platform/windows/process_controller.cpp
         src/platform/windows/paths.cpp
         src/platform/windows/countdown_sound.cpp
+        assets/brand/app.rc
     )
+    target_include_directories(steamvr_bail_out PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand")
     target_compile_features(steamvr_bail_out PRIVATE cxx_std_20)
     target_compile_definitions(steamvr_bail_out PRIVATE
         NOMINMAX

@@ -5,6 +5,7 @@
 #include "openvr.h"
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 namespace bailout::platform::openvr {
 enum class OverlayAction { Primary,Confirm,Dismiss,Cancel };
@@ -12,20 +13,26 @@ class OverlayManager {
  public:
   explicit OverlayManager(vr::IVROverlay* overlays):overlays_(overlays){}
   bool initialize(); void shutdown();
-  void show_wrist(const app::HandPose& hand,core::TimePoint sampled_at,const SurfaceModel&);void hide_wrist();
-  void update_wrist_pose(const app::HandPose& hand,core::TimePoint sampled_at);
-  void show_hud(const SurfaceModel&);void hide_hud();
-  void update_dashboard(const DashboardSurfaceModel&);
+  [[nodiscard]] bool show_wrist(const app::HandPose& hand,core::TimePoint sampled_at,const SurfaceModel&);
+  [[nodiscard]] bool hide_wrist();
+  [[nodiscard]] bool update_wrist_pose(const app::HandPose& hand,core::TimePoint sampled_at);
+  [[nodiscard]] bool show_hud(const SurfaceModel&);
+  [[nodiscard]] bool hide_hud();
+  [[nodiscard]] bool update_dashboard(const DashboardSurfaceModel&);
   [[nodiscard]] bool dashboard_visible() const {
     return overlays_ && dashboard_ != vr::k_ulOverlayHandleInvalid &&
            overlays_->IsOverlayVisible(dashboard_);
   }
-  void update_thumbnail(const std::wstring& title,const std::wstring& description,const std::string& friendly_name);
+  [[nodiscard]] bool update_thumbnail(const std::wstring& title,const std::wstring& description,const std::string& friendly_name);
   std::vector<OverlayAction> poll_wrist_events(const app::HandPose& opposite_hand,bool confirming,bool counting_down);
   std::vector<core::DashboardAction> poll_dashboard_events();
   bool wrist_visible()const{return wrist_visible_;} const std::string& error()const{return error_;}
+  std::string take_error(){auto result=std::move(error_);error_.clear();return result;}
  private:
   bool submit(vr::VROverlayHandle_t,const std::string&,const SurfaceModel&);
+  bool submit_dashboard();
+  bool fail(const char* operation,vr::EVROverlayError result);
+  bool fail(const char* operation);
   vr::IVROverlay* overlays_=nullptr;D3dOverlayRenderer renderer_;
   vr::VROverlayHandle_t dashboard_=vr::k_ulOverlayHandleInvalid,thumbnail_=vr::k_ulOverlayHandleInvalid,wrist_=vr::k_ulOverlayHandleInvalid,hud_=vr::k_ulOverlayHandleInvalid;
   bool wrist_visible_=false;std::string error_;

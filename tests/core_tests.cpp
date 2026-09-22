@@ -420,6 +420,28 @@ void state_machine_force_fallback_and_failure_hud() {
   CHECK(has_effect(machine.tick(at(11000)), EffectType::HideHud));
 }
 
+void state_machine_overlay_failure_aborts_before_exit() {
+  FlowStateMachine machine;
+  (void)machine.on_gesture(at(0), ready());
+  CHECK(machine.state() == FlowState::IdleVisible);
+  CHECK(has_effect(machine.on_overlay_failure("OVERLAY_PRESENT_FAILED"),
+                   EffectType::HideControl));
+  CHECK(machine.state() == FlowState::NoActiveFlow);
+  CHECK(machine.snapshot(at(1)).last_exit == LastExitStatus::Never);
+
+  (void)machine.on_gesture(at(100), ready());
+  (void)machine.on_control_clicked(at(101));
+  (void)machine.on_confirm(at(102), target(), 1s);
+  CHECK(machine.state() == FlowState::CountingDown);
+  const auto effects = machine.on_overlay_failure("OVERLAY_PRESENT_FAILED");
+  CHECK(has_effect(effects, EffectType::HideHud));
+  CHECK(!has_effect(effects, EffectType::RequestGracefulClose));
+  CHECK(machine.state() == FlowState::NoActiveFlow);
+  CHECK(machine.snapshot(at(103)).last_exit == LastExitStatus::Failed);
+  CHECK(machine.snapshot(at(103)).last_error_code == "OVERLAY_PRESENT_FAILED");
+  CHECK(!has_effect(machine.tick(at(2000)), EffectType::RequestGracefulClose));
+}
+
 }  // namespace
 
 int main() {
@@ -441,6 +463,7 @@ int main() {
       {"state countdown rules", state_machine_countdown_rules_and_target_lock},
       {"state target change", state_machine_target_change_is_safe_noop},
       {"state force failure", state_machine_force_fallback_and_failure_hud},
+      {"state overlay failure", state_machine_overlay_failure_aborts_before_exit},
   };
   int failures = 0;
   for (const auto& [name, test] : tests) {

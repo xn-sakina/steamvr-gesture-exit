@@ -33,6 +33,7 @@ class D3dOverlayRenderer {
   bool initialize();
   bool create_surface(const std::string& id,uint32_t width,uint32_t height);
   bool render(const std::string& id,const SurfaceModel& model);
+  bool render_thumbnail(const std::string& id,const std::wstring& title,const std::wstring& description);
   bool render_dashboard(const std::string& id,const DashboardSurfaceModel& model);
   void* texture(const std::string& id)const;
   const std::string& error()const;

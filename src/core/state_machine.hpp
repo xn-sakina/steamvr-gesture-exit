@@ -92,7 +92,8 @@ class FlowStateMachine {
   [[nodiscard]] Effects on_graceful_result(TimePoint now, CloseRequestResult result,
                                            std::string error_code = {});
   [[nodiscard]] Effects on_force_result(TimePoint now, CloseRequestResult result,
-                                        std::string error_code = {});
+                                         std::string error_code = {});
+  [[nodiscard]] Effects on_overlay_failure(std::string error_code);
   [[nodiscard]] Effects tick(TimePoint now);
 
  private:

@@ -145,6 +145,21 @@ Effects FlowStateMachine::on_cancel() {
   return effects;
 }
 
+Effects FlowStateMachine::on_overlay_failure(std::string error_code) {
+  Effects effects;
+  if (state_ == FlowState::NoActiveFlow) return effects;
+  effects.push_back({EffectType::HideControl});
+  effects.push_back({EffectType::HideHud});
+  failure_hud_visible_ = false;
+  if (state_ == FlowState::CountingDown || state_ == FlowState::Exiting) {
+    last_exit_ = LastExitStatus::Failed;
+    last_error_code_ = error_code;
+  }
+  transition(FlowState::NoActiveFlow, effects, std::move(error_code));
+  reset_flow();
+  return effects;
+}
+
 Effects FlowStateMachine::on_prerequisites(const TimePoint,
                                            const Prerequisites& prerequisites) {
   Effects effects;

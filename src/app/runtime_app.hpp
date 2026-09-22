@@ -25,6 +25,8 @@ class RuntimeApp {
   void update_dashboard(const platform::windows::TargetResolution&,const TrackingFrame&,bool dashboard_visible);
   void dashboard_input(const std::vector<core::DashboardAction>&);
   bool save_setting(const core::Settings&,const char*,const std::string&);
+  void log_overlay_error(std::chrono::steady_clock::time_point);
+  void abort_overlay_flow(std::chrono::steady_clock::time_point,const TrackingFrame&);
   std::wstring text(core::StringId)const;
   core::SettingsStore settings_store_;core::Settings settings_;core::Language language_=core::Language::English;
   core::DiagnosticLog log_;core::GestureDetector gesture_;std::unique_ptr<core::FlowStateMachine> flow_;
@@ -35,5 +37,7 @@ class RuntimeApp {
   bool recovery_notice_pending_=false;
   std::chrono::steady_clock::time_point recovery_notice_until_{};
   std::chrono::steady_clock::time_point save_failure_notice_until_{};
+  std::string last_overlay_error_;
+  std::chrono::steady_clock::time_point last_overlay_error_at_{};
 };
 }
