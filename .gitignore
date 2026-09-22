@@ -3,3 +3,4 @@
 /.stfolder
 node_modules/
 /openvr
+/build

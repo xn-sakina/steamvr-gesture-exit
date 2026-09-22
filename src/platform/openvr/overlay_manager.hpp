@@ -16,6 +16,10 @@ class OverlayManager {
   void update_wrist_pose(const app::HandPose& hand,core::TimePoint sampled_at);
   void show_hud(const SurfaceModel&);void hide_hud();
   void update_dashboard(const DashboardSurfaceModel&);
+  [[nodiscard]] bool dashboard_visible() const {
+    return overlays_ && dashboard_ != vr::k_ulOverlayHandleInvalid &&
+           overlays_->IsOverlayVisible(dashboard_);
+  }
   void update_thumbnail(const std::wstring& title,const std::wstring& description,const std::string& friendly_name);
   std::vector<OverlayAction> poll_wrist_events(const app::HandPose& opposite_hand,bool confirming,bool counting_down);
   std::vector<core::DashboardAction> poll_dashboard_events();

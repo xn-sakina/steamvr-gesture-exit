@@ -5,6 +5,9 @@ project(steamvr_bail_out VERSION 0.1.0 LANGUAGES CXX)
 option(BAILOUT_BUILD_TESTS "Build portable core tests" ON)
 option(BAILOUT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 
+add_library(bailout_jsoncpp STATIC openvr/src/jsoncpp.cpp)
+target_include_directories(bailout_jsoncpp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/openvr/src")
+
 add_library(bailout_core STATIC
     src/core/types.cpp
     src/core/gesture_detector.cpp
@@ -18,6 +21,7 @@ add_library(bailout_core STATIC
 )
 target_include_directories(bailout_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(bailout_core PUBLIC cxx_std_20)
+target_link_libraries(bailout_core PRIVATE bailout_jsoncpp)
 
 if(MSVC)
     target_compile_options(bailout_core PRIVATE /W4 /permissive- /utf-8)

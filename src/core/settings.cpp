@@ -1,43 +1,51 @@
 #include "core/settings.hpp"
+#include "json/json.h"
 
 #include <array>
+#include <exception>
 #include <fstream>
-#include <regex>
 #include <sstream>
 #include <system_error>
 
 namespace bailout::core {
 namespace {
 
-std::optional<std::string> string_value(const std::string& json, const char* key) {
-  const std::regex pattern(std::string{"\""} + key + "\"\\s*:\\s*\"([^\"]*)\"");
-  std::smatch match;
-  if (!std::regex_search(json, match, pattern)) {
-    return std::nullopt;
+bool json_document_boundaries_valid(const std::string& document,
+                                    const Json::Value& root) {
+  const auto end = root.getOffsetLimit();
+  if (end > document.size()) return false;
+  const auto whitespace = [](char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+  };
+  for (size_t i = end; i < document.size(); ++i) {
+    if (!whitespace(document[i])) return false;
   }
-  return match[1].str();
-}
 
-std::optional<int> integer_value(const std::string& json, const char* key) {
-  const std::regex pattern(std::string{"\""} + key + "\"\\s*:\\s*(-?[0-9]+)");
-  std::smatch match;
-  if (!std::regex_search(json, match, pattern)) {
-    return std::nullopt;
+  // The bundled JsonCpp version accepts a comma immediately before a closing
+  // bracket. Reject that syntax while retaining its JSON string decoding.
+  bool in_string = false;
+  bool escaped = false;
+  for (size_t i = 0; i < end; ++i) {
+    const char c = document[i];
+    if (in_string) {
+      if (static_cast<unsigned char>(c) < 0x20) return false;
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == '"') in_string = false;
+    } else if (c == '"') {
+      in_string = true;
+    } else {
+      if (static_cast<unsigned char>(c) < 0x20 && !whitespace(c)) return false;
+      if (c == ',') {
+        size_t next = i + 1;
+        while (next < end && whitespace(document[next])) ++next;
+        if (next < end && (document[next] == '}' || document[next] == ']')) {
+          return false;
+        }
+      }
+    }
   }
-  try {
-    return std::stoi(match[1].str());
-  } catch (...) {
-    return std::nullopt;
-  }
-}
-
-std::optional<bool> boolean_value(const std::string& json, const char* key) {
-  const std::regex pattern(std::string{"\""} + key + "\"\\s*:\\s*(true|false)");
-  std::smatch match;
-  if (!std::regex_search(json, match, pattern)) {
-    return std::nullopt;
-  }
-  return match[1].str() == "true";
+  return !in_string;
 }
 
 std::optional<Hand> parse_hand(const std::string& value) {
@@ -95,28 +103,52 @@ SettingsLoadResult SettingsStore::load() const {
   if (!input.good() && !input.eof()) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_READ_FAILED"};
   }
-  const std::string json = buffer.str();
-  const auto version = integer_value(json, "version");
-  if (version && *version != Settings::current_version) {
-    return {Settings::defaults(), SettingsLoadStatus::RecoveredIncompatible,
-            "SETTINGS_VERSION_UNSUPPORTED"};
+  Json::CharReaderBuilder parser;
+  parser["allowComments"] = false;
+  parser["strictRoot"] = true;
+  parser["failIfExtra"] = true;
+  parser["rejectDupKeys"] = true;
+  Json::Value root;
+  std::string parse_error;
+  const std::string document = buffer.str();
+  std::istringstream json(document);
+  bool parsed = false;
+  try {
+    parsed = Json::parseFromStream(parser, json, &root, &parse_error);
+  } catch (const std::exception&) {
+    parsed = false;
   }
-  const auto hand_text = string_value(json, "configuredHand");
-  const auto countdown = integer_value(json, "countdownSeconds");
-  const auto timeout = integer_value(json, "controlTimeoutSeconds");
-  const auto sound = boolean_value(json, "countdownSound");
-  const auto language_text = string_value(json, "language");
-  if (!version || !hand_text || !countdown || !timeout || !sound || !language_text) {
+  if (!parsed || !root.isObject() || !json_document_boundaries_valid(document, root)) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
             "SETTINGS_JSON_INVALID"};
   }
-  const auto hand = parse_hand(*hand_text);
-  const auto language = parse_language(*language_text);
+  const auto& version = root["version"];
+  if (!version.isInt()) {
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
+            "SETTINGS_JSON_INVALID"};
+  }
+  if (version.asInt() != Settings::current_version) {
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredIncompatible,
+            "SETTINGS_VERSION_UNSUPPORTED"};
+  }
+  const auto& hand_text = root["configuredHand"];
+  const auto& countdown = root["countdownSeconds"];
+  const auto& timeout = root["controlTimeoutSeconds"];
+  const auto& sound = root["countdownSound"];
+  const auto& language_text = root["language"];
+  if (root.size() != 6 || !hand_text.isString() || !countdown.isInt() ||
+      !timeout.isInt() || !sound.isBool() || !language_text.isString()) {
+    return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
+            "SETTINGS_JSON_INVALID"};
+  }
+  const auto hand = parse_hand(hand_text.asString());
+  const auto language = parse_language(language_text.asString());
   if (!hand || !language) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt,
             "SETTINGS_VALUE_INVALID"};
   }
-  Settings settings{*version, *hand, *countdown, *timeout, *sound, *language};
+  Settings settings{version.asInt(), *hand, countdown.asInt(), timeout.asInt(),
+                    sound.asBool(), *language};
   if (const auto error = settings.validation_error()) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, *error};
   }

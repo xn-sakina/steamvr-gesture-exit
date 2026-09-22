@@ -32,6 +32,7 @@ class RuntimeApp {
   std::unique_ptr<platform::windows::ExitTargetResolver> targets_;platform::windows::ProcessController process_;platform::windows::CountdownSound sound_;
   platform::windows::TargetResolution latest_resolution_{};std::optional<RuntimeTarget> locked_native_;int last_beep_second_=-1;std::atomic_bool stop_=false;
   std::string steam_language_,os_language_,availability_signature_;
+  bool recovery_notice_pending_=false;
   std::chrono::steady_clock::time_point recovery_notice_until_{};
 };
 }

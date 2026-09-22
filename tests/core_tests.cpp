@@ -114,6 +114,7 @@ void settings_round_trip_and_recovery() {
   auto missing = store.load();
   CHECK(missing.status == SettingsLoadStatus::DefaultsMissing);
   CHECK(missing.settings == Settings::defaults());
+  CHECK(missing.diagnostic_code == "SETTINGS_MISSING");
 
   Settings settings;
   settings.configured_hand = Hand::Right;
@@ -135,6 +136,32 @@ void settings_round_trip_and_recovery() {
   CHECK(store.load().status == SettingsLoadStatus::RecoveredCorrupt);
   { std::ofstream output(store.path()); output << R"({"version":99})"; }
   CHECK(store.load().status == SettingsLoadStatus::RecoveredIncompatible);
+  const std::string valid = R"({"version":1,"configuredHand":"right","countdownSeconds":15,"controlTimeoutSeconds":12,"countdownSound":false,"language":"zh-CN"})";
+  const std::vector<std::string> invalid_documents{
+      "garbage " + valid,
+      valid + " garbage",
+      valid + " {}",
+      valid.substr(0, valid.size() - 1) + R"(,"version":1})",
+      valid.substr(0, valid.size() - 1) + ",}",
+      valid.substr(0, valid.size() - 1) + ",\n }",
+      "/* comment */ " + valid,
+      valid + "\v",
+      "[" + valid + "]",
+      R"({"wrapper":)" + valid + "}",
+      R"({"version":1,"configuredHand":"right","countdownSeconds":"15","controlTimeoutSeconds":12,"countdownSound":false,"language":"zh-CN"})",
+      valid.substr(0, valid.size() - 1) + R"(,"unknown":true})",
+  };
+  for (const auto& document : invalid_documents) {
+    { std::ofstream output(store.path()); output << document; }
+    const auto result = store.load();
+    if (result.status != SettingsLoadStatus::RecoveredCorrupt) {
+      throw Failure("invalid settings document accepted: " + document);
+    }
+    CHECK(result.settings == Settings::defaults());
+    CHECK(result.diagnostic_code == "SETTINGS_JSON_INVALID");
+  }
+  { std::ofstream output(store.path()); output << " \n " << valid << " \n "; }
+  CHECK(store.load().settings == loaded.settings);
   std::filesystem::remove_all(root, ec);
 }
 
