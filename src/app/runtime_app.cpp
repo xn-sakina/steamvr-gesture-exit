@@ -184,9 +184,8 @@ void RuntimeApp::dashboard_input(const std::vector<core::DashboardAction>& actio
     settings_ = candidate;
     if (hand_changed)
       gesture_.reset();
-    if (timeout_changed && flow_->state() == core::FlowState::NoActiveFlow)
-      flow_ = std::make_unique<core::FlowStateMachine>(
-          std::chrono::seconds(settings_.control_timeout_seconds));
+    if (timeout_changed)
+      flow_->set_control_timeout(std::chrono::seconds(settings_.control_timeout_seconds));
     if (language_changed) {
       language_ = core::resolve_language(settings_.language, steam_language_, os_language_);
       if (!overlays_->update_thumbnail(
@@ -411,10 +410,12 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           append(flow_->on_target_status(now, core::TargetStatus::IdentityMismatch));
         else if (status == platform::windows::CloseStatus::ExitedGracefully)
           append(flow_->on_target_status(now, core::TargetStatus::Exited));
+        else if (status == platform::windows::CloseStatus::ForcePending)
+          append(flow_->on_force_result(now, core::CloseRequestResult::Accepted));
         else
           append(flow_->on_force_result(now,
                                         status == platform::windows::CloseStatus::ForceSucceeded
-                                            ? core::CloseRequestResult::Accepted
+                                            ? core::CloseRequestResult::TargetExited
                                             : core::CloseRequestResult::Failed,
                                         "EXIT_TERMINATE_PROCESS_FAILED"));
         break;
@@ -563,12 +564,21 @@ int RuntimeApp::run() {
     const auto process_status = process_.poll(now);
     if (flow_->state() == core::FlowState::Exiting &&
         (process_status == platform::windows::CloseStatus::ExitedGracefully ||
-         process_status == platform::windows::CloseStatus::IdentityInvalid))
-      apply(flow_->on_target_status(
-                now, process_status == platform::windows::CloseStatus::ExitedGracefully
-                         ? core::TargetStatus::Exited
-                         : core::TargetStatus::IdentityMismatch),
-            now, frame);
+         process_status == platform::windows::CloseStatus::ForceSucceeded ||
+         process_status == platform::windows::CloseStatus::Failed ||
+         process_status == platform::windows::CloseStatus::IdentityInvalid)) {
+      if (process_status == platform::windows::CloseStatus::ForceSucceeded)
+        apply(flow_->on_force_result(now, core::CloseRequestResult::TargetExited), now, frame);
+      else if (process_status == platform::windows::CloseStatus::Failed)
+        apply(flow_->on_force_result(now, core::CloseRequestResult::Failed,
+                                     "EXIT_PROCESS_WAIT_FAILED"), now, frame);
+      else
+        apply(flow_->on_target_status(
+                  now, process_status == platform::windows::CloseStatus::ExitedGracefully
+                           ? core::TargetStatus::Exited
+                           : core::TargetStatus::IdentityMismatch),
+              now, frame);
+    }
     apply(flow_->tick(now), now, frame);
     if (dashboard_visible) {
       if (!overlays_->hide_wrist())

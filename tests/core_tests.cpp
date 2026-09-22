@@ -408,6 +408,26 @@ void state_machine_timeout_refresh_and_prerequisite_loss() {
   CHECK(machine.state() == FlowState::NoActiveFlow);
 }
 
+void state_machine_timeout_update_during_exit_applies_to_next_control() {
+  FlowStateMachine machine(8s, 5s);
+  (void)machine.on_gesture(at(0), ready());
+  (void)machine.on_control_clicked(at(1));
+  (void)machine.on_confirm(at(2), target(), 1s);
+  (void)machine.tick(at(1002));
+  CHECK(machine.state() == FlowState::Exiting);
+
+  machine.set_control_timeout(3s);
+  CHECK(machine.state() == FlowState::Exiting);
+  CHECK(!has_effect(machine.tick(at(4000)), EffectType::RequestForceClose));
+  (void)machine.on_target_status(at(4100), TargetStatus::Exited);
+  CHECK(machine.state() == FlowState::NoActiveFlow);
+
+  (void)machine.on_gesture(at(5000), ready());
+  CHECK(machine.state() == FlowState::IdleVisible);
+  CHECK(machine.tick(at(7999)).empty());
+  CHECK(has_effect(machine.tick(at(8000)), EffectType::HideControl));
+}
+
 void state_machine_countdown_rules_and_target_lock() {
   FlowStateMachine machine;
   (void)machine.on_gesture(at(0), ready());
@@ -460,6 +480,23 @@ void state_machine_force_fallback_and_failure_hud() {
   CHECK(has_effect(machine.tick(at(11000)), EffectType::HideHud));
 }
 
+void state_machine_force_request_remains_pending_until_exit() {
+  FlowStateMachine machine(8s, 5s);
+  (void)machine.on_gesture(at(0), ready());
+  (void)machine.on_control_clicked(at(1));
+  (void)machine.on_confirm(at(2), target(), 1s);
+  (void)machine.tick(at(1002));
+  CHECK(has_effect(machine.tick(at(6002)), EffectType::RequestForceClose));
+  CHECK(has_effect(machine.on_force_result(at(6002), CloseRequestResult::Accepted),
+                   EffectType::Diagnostic));
+  CHECK(machine.state() == FlowState::Exiting);
+  CHECK(machine.tick(at(10000)).empty());
+  CHECK(machine.snapshot(at(10000)).last_exit == LastExitStatus::Never);
+  CHECK(has_effect(machine.on_force_result(at(11000), CloseRequestResult::TargetExited),
+                   EffectType::HideHud));
+  CHECK(machine.snapshot(at(11000)).last_exit == LastExitStatus::Succeeded);
+}
+
 void state_machine_overlay_failure_aborts_before_exit() {
   FlowStateMachine machine;
   (void)machine.on_gesture(at(0), ready());
@@ -499,9 +536,12 @@ int main() {
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},
       {"state timeout and loss", state_machine_timeout_refresh_and_prerequisite_loss},
+      {"state timeout update during exit",
+       state_machine_timeout_update_during_exit_applies_to_next_control},
       {"state countdown rules", state_machine_countdown_rules_and_target_lock},
       {"state target change", state_machine_target_change_is_safe_noop},
       {"state force failure", state_machine_force_fallback_and_failure_hud},
+      {"state force pending", state_machine_force_request_remains_pending_until_exit},
       {"state overlay failure", state_machine_overlay_failure_aborts_before_exit},
   };
   int failures = 0;

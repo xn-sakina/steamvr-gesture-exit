@@ -52,6 +52,12 @@ FlowStateMachine::FlowStateMachine(const std::chrono::seconds control_timeout,
   }
 }
 
+void FlowStateMachine::set_control_timeout(const std::chrono::seconds timeout) {
+  if (timeout <= std::chrono::seconds::zero())
+    throw std::invalid_argument("control timeout must be positive");
+  control_timeout_ = timeout;
+}
+
 void FlowStateMachine::transition(const FlowState next, Effects& effects, std::string code) {
   const FlowState previous = state_;
   state_ = next;
@@ -261,7 +267,10 @@ Effects FlowStateMachine::on_force_result(const TimePoint now, const CloseReques
   Effects effects;
   if (state_ != FlowState::Exiting || !force_requested_)
     return effects;
-  if (result == CloseRequestResult::Accepted || result == CloseRequestResult::TargetExited) {
+  if (result == CloseRequestResult::Accepted) {
+    effects.push_back({EffectType::Diagnostic, locked_target_, {}, 0.0,
+                       "EXIT_FORCE_CLOSE_REQUESTED", state_, state_});
+  } else if (result == CloseRequestResult::TargetExited) {
     finish_success(effects, "EXIT_FORCE_CLOSE_SUCCEEDED");
   } else {
     finish_failure(now, effects,

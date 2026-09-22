@@ -28,8 +28,7 @@ uint64_t token(HANDLE h) {
 bool ProcessController::request_graceful_close(const app::RuntimeTarget& t,
                                                std::chrono::steady_clock::time_point now) {
   clear();
-  HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE | PROCESS_TERMINATE, FALSE,
-                         t.pid);
+  HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, t.pid);
   if (!h) {
     status_ = CloseStatus::Failed;
     return false;
@@ -49,6 +48,14 @@ bool ProcessController::request_graceful_close(const app::RuntimeTarget& t,
   return true;
 }
 CloseStatus ProcessController::poll(std::chrono::steady_clock::time_point now) {
+  if (status_ == CloseStatus::ForcePending) {
+    const DWORD result = WaitForSingleObject(static_cast<HANDLE>(process_), 0);
+    if (result == WAIT_OBJECT_0)
+      status_ = CloseStatus::ForceSucceeded;
+    else if (result != WAIT_TIMEOUT)
+      status_ = CloseStatus::Failed;
+    return status_;
+  }
   if (status_ != CloseStatus::GracefulRequested)
     return status_;
   if (!is_alive()) {
@@ -71,13 +78,24 @@ CloseStatus ProcessController::force_close() {
     status_ = CloseStatus::IdentityInvalid;
     return status_;
   }
-  if (!TerminateProcess(static_cast<HANDLE>(process_), 1)) {
+  HANDLE termination = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, FALSE,
+                                   target_->pid);
+  if (!termination) {
     status_ = is_alive() ? CloseStatus::Failed : CloseStatus::ForceSucceeded;
     return status_;
   }
-  status_ = WaitForSingleObject(static_cast<HANDLE>(process_), 1000) == WAIT_OBJECT_0
-                ? CloseStatus::ForceSucceeded
-                : CloseStatus::Failed;
+  if (token(termination) != target_->creation_token) {
+    CloseHandle(termination);
+    status_ = CloseStatus::IdentityInvalid;
+    return status_;
+  }
+  const bool requested = TerminateProcess(termination, 1) != 0;
+  CloseHandle(termination);
+  if (!requested) {
+    status_ = is_alive() ? CloseStatus::Failed : CloseStatus::ForceSucceeded;
+    return status_;
+  }
+  status_ = CloseStatus::ForcePending;
   return status_;
 }
 void ProcessController::clear() {

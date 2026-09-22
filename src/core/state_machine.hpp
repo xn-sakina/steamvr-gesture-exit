@@ -82,6 +82,7 @@ class FlowStateMachine {
     return state_;
   }
   [[nodiscard]] FlowSnapshot snapshot(TimePoint now) const;
+  void set_control_timeout(std::chrono::seconds timeout);
 
   [[nodiscard]] Effects on_gesture(TimePoint now, const Prerequisites& prerequisites);
   [[nodiscard]] Effects on_control_clicked(TimePoint now);

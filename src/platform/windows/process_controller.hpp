@@ -8,6 +8,7 @@ enum class CloseStatus {
   GracefulRequested,
   ExitedGracefully,
   ForceRequired,
+  ForcePending,
   ForceSucceeded,
   Failed,
   IdentityInvalid
