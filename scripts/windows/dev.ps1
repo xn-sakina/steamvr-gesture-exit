@@ -17,6 +17,7 @@ $script:ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $script:BuildDirectory = Join-Path $script:ProjectRoot "out\build\windows-x64"
 $script:PackageDirectory = Join-Path $script:ProjectRoot "out\package\steamvr-bail-out"
 $script:ExecutablePath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out.exe"
+$script:CliPath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out_cli.exe"
 $script:ManifestPath = Join-Path $script:PackageDirectory "manifest\steamvr_bail_out.vrmanifest"
 $script:AppKey = "com.steamvr-bail-out.overlay"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
@@ -123,6 +124,9 @@ function Require-Package {
     if (-not (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf)) {
         throw "Runtime executable is missing: $script:ExecutablePath. Run 'package' first."
     }
+    if (-not (Test-Path -LiteralPath $script:CliPath -PathType Leaf)) {
+        throw "Command-line helper is missing: $script:CliPath. Run 'package' first."
+    }
     if (-not (Test-Path -LiteralPath $script:ManifestPath -PathType Leaf)) {
         throw "Application manifest is missing: $script:ManifestPath. Run 'package' first."
     }
@@ -201,24 +205,25 @@ function Invoke-Register {
         $previousManifest = (Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim()
         if ($previousManifest -and $previousManifest -ne $script:ManifestPath) {
             Write-Step "Removing the manifest registration from the previous package location"
-            Invoke-Checked $script:ExecutablePath @("--unregister-manifest", $previousManifest)
+            Invoke-Checked $script:CliPath @("--unregister-manifest", $previousManifest)
         }
     }
     Write-Step "Registering the SteamVR application manifest and enabling auto-launch"
-    Invoke-Checked $script:ExecutablePath @("--register-manifest", $script:ManifestPath)
-    Invoke-Checked $script:ExecutablePath @("--manifest-status", $script:AppKey)
+    Invoke-Checked $script:CliPath @("--register-manifest", $script:ManifestPath)
+    Invoke-Checked $script:CliPath @("--manifest-status", $script:AppKey)
     New-Item -ItemType Directory -Path $script:UserDataDirectory -Force | Out-Null
     Set-Content -LiteralPath $script:RegistrationReceiptPath -Value $script:ManifestPath -Encoding UTF8
     Write-Host "Registered: $script:ManifestPath" -ForegroundColor Green
 }
 
 function Invoke-Unregister {
-    if (-not (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf)) {
-        throw "The packaged executable is missing, so clean cannot prove that the manifest was unregistered. Run 'package', then 'unregister', then 'clean'. No files were removed."
+    if (-not (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $script:CliPath -PathType Leaf)) {
+        throw "The packaged runtime or command-line helper is missing, so clean cannot prove that the manifest was unregistered. Run 'package', then 'unregister', then 'clean'. No files were removed."
     }
     Start-SteamVrIfNeeded
     Stop-AddOn
-    & $script:ExecutablePath "--manifest-status" $script:AppKey
+    & $script:CliPath "--manifest-status" $script:AppKey
     $manifestState = $LASTEXITCODE
     if ($manifestState -eq 2) {
         Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force -ErrorAction SilentlyContinue
@@ -234,8 +239,8 @@ function Invoke-Unregister {
         if ($receiptValue) { $registeredManifest = $receiptValue }
     }
     Write-Step "Disabling auto-launch and unregistering the application manifest"
-    Invoke-Checked $script:ExecutablePath @("--unregister-manifest", $registeredManifest)
-    & $script:ExecutablePath "--manifest-status" $script:AppKey
+    Invoke-Checked $script:CliPath @("--unregister-manifest", $registeredManifest)
+    & $script:CliPath "--manifest-status" $script:AppKey
     if ($LASTEXITCODE -ne 2) {
         throw "Manifest removal could not be verified (status exit code $LASTEXITCODE); no build or user data was removed."
     }
@@ -267,8 +272,8 @@ function Invoke-Status {
     if (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) {
         Write-Host "Registration path: $((Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim())"
     }
-    if ((Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf) -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
-        & $script:ExecutablePath "--manifest-status" $script:AppKey
+    if ((Test-Path -LiteralPath $script:CliPath -PathType Leaf) -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
+        & $script:CliPath "--manifest-status" $script:AppKey
         switch ($LASTEXITCODE) {
             0 { Write-Host "Manifest state:    registered" -ForegroundColor Green }
             2 { Write-Host "Manifest state:    not registered" -ForegroundColor Yellow }

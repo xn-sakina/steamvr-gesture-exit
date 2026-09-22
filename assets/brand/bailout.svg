@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Bail Out icon">
-  <rect x="8" y="8" width="240" height="240" rx="52" fill="#061322"/>
-  <rect x="10" y="10" width="236" height="236" rx="50" fill="none" stroke="#24475e" stroke-width="4"/>
-  <path d="M184 75 A78 78 0 1 0 184 181" fill="none" stroke="#27b6df" stroke-width="18" stroke-linecap="round"/>
-  <path d="M91 128 H174 M145 99 L174 128 L145 157" fill="none" stroke="#f5fbff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

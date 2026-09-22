@@ -1,3 +1,4 @@
-#define IDI_BAILOUT 101
+#include "resource_ids.h"
 
 IDI_BAILOUT ICON "bailout.ico"
+IDR_BAILOUT_PNG RCDATA "bailout.png"

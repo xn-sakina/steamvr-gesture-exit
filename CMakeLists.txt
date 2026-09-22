@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.24)
 
 project(steamvr_bail_out VERSION 0.1.0 LANGUAGES CXX)
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/package.json")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" BAILOUT_PACKAGE_JSON)
+string(JSON BAILOUT_PACKAGE_VERSION GET "${BAILOUT_PACKAGE_JSON}" version)
+if(NOT "${BAILOUT_PACKAGE_VERSION}" STREQUAL "${PROJECT_VERSION}")
+    message(FATAL_ERROR "package.json version ${BAILOUT_PACKAGE_VERSION} must match CMake project version ${PROJECT_VERSION}")
+endif()
+
 option(BAILOUT_BUILD_TESTS "Build portable core tests" ON)
 option(BAILOUT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 
@@ -50,9 +57,9 @@ if(WIN32)
     )
 
     set_source_files_properties(assets/brand/app.rc PROPERTIES
-        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.ico")
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.ico;${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.png")
 
-    add_executable(steamvr_bail_out
+    add_executable(steamvr_bail_out WIN32
         src/app/main.cpp
         src/app/runtime_app.cpp
         src/platform/openvr/openvr_runtime.cpp
@@ -71,7 +78,6 @@ if(WIN32)
         WIN32_LEAN_AND_MEAN
         UNICODE
         _UNICODE
-        BAILOUT_VERSION="${PROJECT_VERSION}"
     )
     if(MSVC)
         target_compile_options(steamvr_bail_out PRIVATE /W4 /permissive- /utf-8)
@@ -104,6 +110,39 @@ if(WIN32)
         winmm
     )
 
+    add_executable(steamvr_bail_out_cli
+        src/app/cli_main.cpp
+        src/platform/openvr/openvr_runtime.cpp
+        src/platform/windows/paths.cpp
+    )
+    target_include_directories(steamvr_bail_out_cli PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${OPENVR_ROOT}/headers"
+    )
+    target_compile_features(steamvr_bail_out_cli PRIVATE cxx_std_20)
+    target_compile_definitions(steamvr_bail_out_cli PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        UNICODE
+        _UNICODE
+        BAILOUT_VERSION="${PROJECT_VERSION}"
+    )
+    if(MSVC)
+        target_compile_options(steamvr_bail_out_cli PRIVATE /W4 /permissive- /utf-8)
+        if(BAILOUT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_bail_out_cli PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(steamvr_bail_out_cli PRIVATE -Wall -Wextra -Wpedantic)
+        if(BAILOUT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_bail_out_cli PRIVATE -Werror)
+        endif()
+    endif()
+    if(MINGW)
+        target_link_options(steamvr_bail_out_cli PRIVATE -municode -static)
+    endif()
+    target_link_libraries(steamvr_bail_out_cli PRIVATE openvr_api shell32 ole32)
+
     add_custom_command(TARGET steamvr_bail_out POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${OPENVR_ROOT}/bin/win64/openvr_api.dll"
@@ -112,6 +151,7 @@ if(WIN32)
     )
 
     install(TARGETS steamvr_bail_out RUNTIME DESTINATION bin/win64)
+    install(TARGETS steamvr_bail_out_cli RUNTIME DESTINATION bin/win64)
     install(FILES "${OPENVR_ROOT}/bin/win64/openvr_api.dll" DESTINATION bin/win64)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/manifest/steamvr_bail_out.vrmanifest"
         DESTINATION manifest)

@@ -1,31 +1,7 @@
 #include "app/runtime_app.hpp"
-#include "platform/openvr/openvr_runtime.hpp"
-#include "platform/windows/paths.hpp"
-#include "openvr.h"
 #include <windows.h>
-#include <filesystem>
-#include <iostream>
-#include <string_view>
 
-namespace {
-constexpr char kAppKey[]="com.steamvr-bail-out.overlay";
-bailout::app::RuntimeApp* g_app=nullptr;
-BOOL WINAPI console_control(DWORD event){if((event==CTRL_C_EVENT||event==CTRL_BREAK_EVENT||event==CTRL_CLOSE_EVENT||event==CTRL_SHUTDOWN_EVENT)&&g_app){g_app->request_stop();return TRUE;}return FALSE;}
-int application_command(int argc,wchar_t**argv){
-  if(argc<2)return -1;std::wstring_view command=argv[1];
-  if(command==L"--version"){std::cout<<"steamvr-bail-out 0.1.0\n";return 0;}
-  if(command==L"--diagnostics"){std::wcout<<L"settings="<<bailout::platform::windows::settings_path()<<L"\nlogs="<<bailout::platform::windows::log_directory()<<L"\nexecutable="<<bailout::platform::windows::executable_path()<<L"\n";return 0;}
-  const bool manifest_command=command==L"--register-manifest"||command==L"--unregister-manifest";
-  const bool auto_command=command==L"--enable-autolaunch"||command==L"--disable-autolaunch";
-  const bool status_command=command==L"--manifest-status";
-  if(!manifest_command&&!auto_command&&!status_command)return -1;
-  if(manifest_command&&argc!=3){std::cerr<<"manifest command requires an absolute manifest path\n";return 1;}
-  if(status_command&&argc!=3){std::cerr<<"--manifest-status requires an app key\n";return 1;}
-  bailout::platform::openvr::OpenVrRuntime runtime;if(!runtime.initialize(vr::VRApplication_Utility)){std::cerr<<runtime.error()<<"\n";return 1;}auto* apps=runtime.applications();int result=1;
-  if(manifest_command){std::filesystem::path path(argv[2]);if(!path.is_absolute()){std::cerr<<"manifest path must be absolute\n";}else{auto utf8=path.u8string();std::string native(reinterpret_cast<const char*>(utf8.data()),utf8.size());vr::EVRApplicationError error;if(command==L"--register-manifest"){error=apps->AddApplicationManifest(native.c_str(),false);if(error==vr::VRApplicationError_None){error=apps->SetApplicationAutoLaunch(kAppKey,true);if(error!=vr::VRApplicationError_None)apps->RemoveApplicationManifest(native.c_str());}}else{auto disable=apps->SetApplicationAutoLaunch(kAppKey,false);auto remove=apps->RemoveApplicationManifest(native.c_str());error=remove!=vr::VRApplicationError_None?remove:disable;}if(error==vr::VRApplicationError_None)result=0;else std::cerr<<apps->GetApplicationsErrorNameFromEnum(error)<<"\n";}}
-  else if(auto_command){auto error=apps->SetApplicationAutoLaunch(kAppKey,command==L"--enable-autolaunch");if(error==vr::VRApplicationError_None)result=0;else std::cerr<<apps->GetApplicationsErrorNameFromEnum(error)<<"\n";}
-  else if(status_command){std::wstring key_w(argv[2]);int n=WideCharToMultiByte(CP_UTF8,0,key_w.data(),static_cast<int>(key_w.size()),nullptr,0,nullptr,nullptr);std::string key(static_cast<size_t>(n),'\0');WideCharToMultiByte(CP_UTF8,0,key_w.data(),static_cast<int>(key_w.size()),key.data(),n,nullptr,nullptr);result=apps->IsApplicationInstalled(key.c_str())?0:2;}
-  runtime.shutdown();return result;
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+  bailout::app::RuntimeApp app;
+  return app.run();
 }
-}
-int wmain(int argc,wchar_t**argv){int command=application_command(argc,argv);if(command>=0)return command;bailout::app::RuntimeApp app;g_app=&app;SetConsoleCtrlHandler(console_control,TRUE);int result=app.run();SetConsoleCtrlHandler(console_control,FALSE);g_app=nullptr;return result;}
