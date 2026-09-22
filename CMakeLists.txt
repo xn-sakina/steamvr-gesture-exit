@@ -12,6 +12,7 @@ add_library(bailout_core STATIC
     src/core/state_machine.cpp
     src/core/diagnostics.cpp
     src/core/localization.cpp
+    src/core/vr_game_classifier.cpp
 )
 target_include_directories(bailout_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(bailout_core PUBLIC cxx_std_20)

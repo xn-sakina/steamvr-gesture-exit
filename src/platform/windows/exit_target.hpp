@@ -9,7 +9,7 @@ class ExitTargetResolver {
   std::optional<app::RuntimeTarget> resolve_foreground() const;
   bool revalidate(const app::RuntimeTarget& target) const;
  private:
-  bool app_is_safe_scene(const std::string& app_key) const;
+  bool app_is_safe_scene(const std::string& app_key, std::uint32_t expected_pid) const;
   bool process_is_safe(const std::wstring& executable_path) const;
   vr::IVRApplications* applications_ = nullptr;
 };

@@ -3,6 +3,7 @@
 #include "core/localization.hpp"
 #include "core/settings.hpp"
 #include "core/state_machine.hpp"
+#include "core/vr_game_classifier.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -143,6 +144,21 @@ void diagnostics_are_structured_and_privacy_bounded() {
   CHECK(json.find("processes") == std::string::npos);
 }
 
+void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
+  CHECK(is_current_vr_game_candidate({"steam.app.438100", "url", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"com.example.indie-vr-game", "binary", false, false, false, false}));
+
+  CHECK(!is_current_vr_game_candidate({"steam.app.not-a-number", "url", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"openvr.tool.steamvr_environments", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.overlay.1009850", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"system.generated.unknown.exe", "binary", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"com.example.overlay", "binary", true, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"com.example.template", "binary", false, true, false, false}));
+  CHECK(!is_current_vr_game_candidate({"com.example.internal", "binary", false, false, true, false}));
+  CHECK(!is_current_vr_game_candidate({"com.example.hidden", "binary", false, false, false, true}));
+  CHECK(!is_current_vr_game_candidate({"com.example.game", "unknown", false, false, false, false}));
+}
+
 void state_machine_requires_all_prerequisites() {
   const auto identity = target();
   const std::vector<Prerequisites> unavailable{
@@ -252,6 +268,7 @@ int main() {
       {"settings round trip and recovery", settings_round_trip_and_recovery},
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
+      {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},
       {"state timeout and loss", state_machine_timeout_refresh_and_prerequisite_loss},

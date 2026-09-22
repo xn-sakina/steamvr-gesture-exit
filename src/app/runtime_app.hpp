@@ -19,7 +19,7 @@ class RuntimeApp {
   int run(); void request_stop(){stop_=true;}
  private:
   core::TargetIdentity core_target(const RuntimeTarget&)const;
-  core::Prerequisites prerequisites(const TrackingFrame&,const std::optional<RuntimeTarget>&)const;
+  core::Prerequisites prerequisites(const TrackingFrame&,const std::optional<RuntimeTarget>&,bool dashboard_visible=false)const;
   void apply(core::Effects,std::chrono::steady_clock::time_point,const TrackingFrame&);
   void update_dashboard(const std::optional<RuntimeTarget>&,const TrackingFrame&);
   void dashboard_input(const std::vector<platform::openvr::DashboardEvent>&);
