@@ -164,11 +164,8 @@ function Start-SteamVrIfNeeded {
 function Invoke-Configure {
     Write-Step "Configuring a Windows x64 Visual Studio build"
     $cmake = Find-CMake
-    New-Item -ItemType Directory -Path $script:BuildDirectory -Force | Out-Null
     Invoke-Checked $cmake @(
-        "-S", $script:ProjectRoot, "-B", $script:BuildDirectory,
-        "-G", "Visual Studio 17 2022", "-A", "x64",
-        "-DCMAKE_INSTALL_PREFIX=$script:PackageDirectory"
+        "-S", $script:ProjectRoot, "--preset", "windows-x64"
     )
 }
 
