@@ -140,12 +140,39 @@ function Require-Package {
     }
 }
 
+function Get-PackagedAddOnProcesses {
+    $expectedPath = [IO.Path]::GetFullPath($script:ExecutablePath)
+    foreach ($process in @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)) {
+        try {
+            $actualPath = $process.Path
+            if ($actualPath -and [IO.Path]::GetFullPath($actualPath) -ieq $expectedPath) {
+                $process
+            }
+        } catch {
+            # An inaccessible executable path cannot establish package ownership.
+        }
+    }
+}
+
 function Stop-AddOn {
-    $processes = Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue
-    if ($processes) {
-        Write-Step "Stopping the add-on process (SteamVR and games are not touched)"
-        $processes | Stop-Process -Force
-        $processes | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+    $processes = @(Get-PackagedAddOnProcesses)
+    if ($processes.Count -eq 0) { return }
+    Write-Step "Requesting graceful shutdown of the packaged add-on"
+    foreach ($process in $processes) {
+        if ($process.HasExited) { continue }
+        try { $creationToken = $process.StartTime.ToFileTimeUtc() }
+        catch { throw "Cannot identify packaged add-on PID $($process.Id); package was not modified." }
+        $eventName = "Local\SteamVRBailOut.Stop.$($process.Id).$creationToken"
+        try { $stopEvent = [Threading.EventWaitHandle]::OpenExisting($eventName) }
+        catch {
+            if ($process.HasExited) { continue }
+            throw "Packaged add-on PID $($process.Id) has no cooperative stop signal; package was not modified. $($_.Exception.Message)"
+        }
+        try { [void]$stopEvent.Set() }
+        finally { $stopEvent.Dispose() }
+        if (-not $process.WaitForExit(20000)) {
+            throw "Packaged add-on PID $($process.Id) did not finish shutdown within 20 seconds; package was not modified."
+        }
     }
 }
 
@@ -248,7 +275,7 @@ function Invoke-Unregister {
 function Invoke-Launch {
     Require-Package
     Start-SteamVrIfNeeded
-    if (Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue) {
+    if (Get-PackagedAddOnProcesses) {
         Write-Host "SteamVR Bail Out is already running."
         return
     }
@@ -264,7 +291,7 @@ function Invoke-Status {
     Write-Host "Package directory: $script:PackageDirectory ($(if (Test-Path -LiteralPath $script:PackageDirectory) { 'present' } else { 'absent' }))"
     Write-Host "Manifest:          $script:ManifestPath ($(if (Test-Path -LiteralPath $script:ManifestPath) { 'present' } else { 'absent' }))"
     Write-Host "SteamVR process:   $(if (Get-Process -Name 'vrserver' -ErrorAction SilentlyContinue) { 'running' } else { 'stopped' })"
-    Write-Host "Add-on process:    $(if (Get-Process -Name 'steamvr_bail_out' -ErrorAction SilentlyContinue) { 'running' } else { 'stopped' })"
+    Write-Host "Add-on process:    $(if (Get-PackagedAddOnProcesses) { 'running' } else { 'stopped' })"
     Write-Host "User data:         $script:UserDataDirectory ($(if (Test-Path -LiteralPath $script:UserDataDirectory) { 'present' } else { 'absent' }))"
     if (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) {
         Write-Host "Registration path: $((Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim())"

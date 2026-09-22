@@ -1,14 +1,41 @@
 #include "app/runtime_app.hpp"
 #include "platform/windows/paths.hpp"
 #include <windows.h>
+#include <tlhelp32.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <sstream>
 
 namespace bailout::app {
 namespace {
+class ScopedHandle {
+ public:
+  explicit ScopedHandle(HANDLE value = nullptr) : value_(value) {}
+  ~ScopedHandle() {
+    if (value_ && value_ != INVALID_HANDLE_VALUE)
+      CloseHandle(value_);
+  }
+  ScopedHandle(const ScopedHandle&) = delete;
+  ScopedHandle& operator=(const ScopedHandle&) = delete;
+  HANDLE get() const { return value_; }
+
+ private:
+  HANDLE value_;
+};
+
+uint64_t process_creation_token() {
+  FILETIME created{}, exited{}, kernel{}, user{};
+  if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+    return 0;
+  ULARGE_INTEGER token{};
+  token.LowPart = created.dwLowDateTime;
+  token.HighPart = created.dwHighDateTime;
+  return token.QuadPart;
+}
+
 std::string narrow(const std::wstring& w) {
   if (w.empty())
     return {};
@@ -27,6 +54,63 @@ std::wstring widen(std::string_view s) {
   MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
   return w;
 }
+
+class SteamVrServerMonitor {
+ public:
+  bool attach() {
+    std::array<char, 4096> runtime_path{};
+    uint32_t required = 0;
+    if (!vr::VR_GetRuntimePath(runtime_path.data(), static_cast<uint32_t>(runtime_path.size()),
+                               &required))
+      return false;
+    const auto expected =
+        (std::filesystem::path(widen(runtime_path.data())) / L"bin" / L"win64" /
+         L"vrserver.exe")
+            .lexically_normal()
+            .wstring();
+    ScopedHandle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
+    if (snapshot.get() == INVALID_HANDLE_VALUE)
+      return false;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    if (!Process32FirstW(snapshot.get(), &entry))
+      return false;
+    do {
+      if (_wcsicmp(entry.szExeFile, L"vrserver.exe") != 0)
+        continue;
+      HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE,
+                                   entry.th32ProcessID);
+      if (!process)
+        continue;
+      std::array<wchar_t, 32768> image{};
+      DWORD length = static_cast<DWORD>(image.size());
+      const bool matches =
+          QueryFullProcessImageNameW(process, 0, image.data(), &length) &&
+          _wcsicmp(std::filesystem::path(std::wstring(image.data(), length))
+                        .lexically_normal()
+                        .c_str(),
+                    expected.c_str()) == 0;
+      if (matches && WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
+        process_ = process;
+        return true;
+      }
+      CloseHandle(process);
+    } while (Process32NextW(snapshot.get(), &entry));
+    return false;
+  }
+  ~SteamVrServerMonitor() {
+    if (process_)
+      CloseHandle(process_);
+  }
+  SteamVrServerMonitor(const SteamVrServerMonitor&) = delete;
+  SteamVrServerMonitor& operator=(const SteamVrServerMonitor&) = delete;
+  SteamVrServerMonitor() = default;
+  bool alive() const { return process_ && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT; }
+
+ private:
+  HANDLE process_ = nullptr;
+};
+
 core::Vec3 cv(Vec3 v) {
   return {v.x, v.y, v.z};
 }
@@ -436,8 +520,30 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
   }
 }
 int RuntimeApp::run() {
+  const uint64_t creation_token = process_creation_token();
+  if (creation_token == 0) {
+    (void)log_.append({core::DiagnosticEventType::Error, "STOP_SIGNAL_INIT_FAILED"});
+    return 1;
+  }
+  const std::wstring stop_name = L"Local\\SteamVRBailOut.Stop." +
+                                 std::to_wstring(GetCurrentProcessId()) + L"." +
+                                 std::to_wstring(creation_token);
+  ScopedHandle stop_event(CreateEventW(nullptr, TRUE, FALSE, stop_name.c_str()));
+  if (!stop_event.get()) {
+    (void)log_.append({core::DiagnosticEventType::Error, "STOP_SIGNAL_INIT_FAILED"});
+    return 1;
+  }
   if (!vr_.initialize()) {
     log_.append({core::DiagnosticEventType::Error, "OPENVR_INIT_FAILED"});
+    return 1;
+  }
+  SteamVrServerMonitor server;
+  const auto server_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (!server.attach() && std::chrono::steady_clock::now() < server_deadline)
+    Sleep(100);
+  if (!server.alive()) {
+    (void)log_.append({core::DiagnosticEventType::Error, "STEAMVR_SERVER_MONITOR_UNAVAILABLE"});
+    vr_.shutdown();
     return 1;
   }
   overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays());
@@ -472,15 +578,32 @@ int RuntimeApp::run() {
     log_overlay_error(std::chrono::steady_clock::now());
   log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
   auto next_target = std::chrono::steady_clock::now();
-  while (!stop_) {
+  auto next_server_check = next_target;
+  while (true) {
+    if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
+      stop_ = true;
+      (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STOP_REQUESTED"});
+    }
+    if (stop_ && flow_->state() != core::FlowState::Exiting)
+      break;
+    const auto loop_start = std::chrono::steady_clock::now();
+    if (loop_start >= next_server_check) {
+      if (!server.alive()) {
+        (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_EXITED"});
+        break;
+      }
+      next_server_check = loop_start + std::chrono::milliseconds(250);
+    }
     vr::VREvent_t system_event{};
+    bool vr_quit = false;
     while (vr_.system()->PollNextEvent(&system_event, sizeof(system_event))) {
       if (system_event.eventType == vr::VREvent_Quit) {
         vr_.system()->AcknowledgeQuit_Exiting();
-        stop_ = true;
+        vr_quit = true;
+        break;
       }
     }
-    if (stop_)
+    if (vr_quit)
       break;
     const auto now = std::chrono::steady_clock::now();
     const auto frame = vr_.sample_tracking();
