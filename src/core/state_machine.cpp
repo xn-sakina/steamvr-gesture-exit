@@ -69,6 +69,7 @@ void FlowStateMachine::reset_flow() noexcept {
   visible_target_.reset();
   locked_target_.reset();
   force_requested_ = false;
+  force_deadline_ = {};
 }
 
 std::chrono::milliseconds FlowStateMachine::remaining(const TimePoint now) const noexcept {
@@ -302,6 +303,9 @@ Effects FlowStateMachine::tick(const TimePoint now) {
     }
   } else if (state_ == FlowState::Exiting && !force_requested_ && now >= grace_deadline_) {
     force_requested_ = true;
+    // Backstop the platform adapter's shorter wait so an exit flow cannot
+    // block cooperative shutdown indefinitely if no result arrives.
+    force_deadline_ = now + std::chrono::seconds{6};
     effects.push_back({EffectType::RequestForceClose, locked_target_});
     effects.push_back({EffectType::Diagnostic,
                        locked_target_,
@@ -310,6 +314,8 @@ Effects FlowStateMachine::tick(const TimePoint now) {
                        "EXIT_GRACE_PERIOD_EXPIRED",
                        state_,
                        state_});
+  } else if (state_ == FlowState::Exiting && force_requested_ && now >= force_deadline_) {
+    finish_failure(now, effects, "EXIT_FORCE_WAIT_TIMEOUT");
   }
   return effects;
 }

@@ -116,6 +116,7 @@ class FlowStateMachine {
   TimePoint countdown_started_{};
   TimePoint countdown_deadline_{};
   TimePoint grace_deadline_{};
+  TimePoint force_deadline_{};
   TimePoint failure_hud_deadline_{};
   std::chrono::seconds control_timeout_;
   std::chrono::seconds exit_grace_period_;

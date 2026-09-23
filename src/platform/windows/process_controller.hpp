@@ -9,6 +9,7 @@ enum class CloseStatus {
   ExitedGracefully,
   ForceRequired,
   ForcePending,
+  ForceTimedOut,
   ForceSucceeded,
   Failed,
   IdentityInvalid
@@ -16,12 +17,13 @@ enum class CloseStatus {
 class ProcessController {
  public:
   static constexpr auto kGracePeriod = std::chrono::seconds(5);
+  static constexpr auto kForceWait = std::chrono::seconds(5);
   ~ProcessController() {
     clear();
   }
   bool request_graceful_close(const app::RuntimeTarget&, std::chrono::steady_clock::time_point);
   CloseStatus poll(std::chrono::steady_clock::time_point);
-  CloseStatus force_close();
+  CloseStatus force_close(std::chrono::steady_clock::time_point);
   void clear();
   CloseStatus status() const {
     return status_;
@@ -29,10 +31,10 @@ class ProcessController {
 
  private:
   bool identity_matches() const;
-  bool is_alive() const;
   std::optional<app::RuntimeTarget> target_;
   void* process_ = nullptr;
   std::chrono::steady_clock::time_point deadline_{};
+  std::chrono::steady_clock::time_point force_deadline_{};
   CloseStatus status_ = CloseStatus::Idle;
 };
 }  // namespace bailout::platform::windows

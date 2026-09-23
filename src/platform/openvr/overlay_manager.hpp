@@ -45,6 +45,7 @@ class OverlayManager {
  private:
   bool submit(vr::VROverlayHandle_t, const std::string&, const SurfaceModel&);
   bool submit_dashboard();
+  bool refresh_recreated_textures();
   bool fail(const char* operation, vr::EVROverlayError result);
   bool fail(const char* operation);
   vr::IVROverlay* overlays_ = nullptr;
@@ -55,6 +56,10 @@ class OverlayManager {
   bool wrist_visible_ = false;
   bool dashboard_texture_initialized_ = false;
   bool dashboard_texture_dirty_ = true;
+  bool thumbnail_requested_ = false;
+  uint64_t renderer_generation_seen_ = 0;
+  std::wstring thumbnail_title_, thumbnail_description_;
+  SurfaceModel hud_model_{};
   std::string error_;
   uint32_t wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
   core::WristPoseSmoother wrist_smoother_;

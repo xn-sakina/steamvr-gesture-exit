@@ -542,6 +542,25 @@ void state_machine_force_request_remains_pending_until_exit() {
   CHECK(machine.snapshot(at(11000)).last_exit == LastExitStatus::Succeeded);
 }
 
+void state_machine_force_wait_timeout_releases_exiting() {
+  FlowStateMachine machine(8s, 5s);
+  (void)machine.on_gesture(at(0), ready());
+  (void)machine.on_control_clicked(at(1));
+  (void)machine.on_confirm(at(2), target(), 1s);
+  (void)machine.tick(at(1002));
+  CHECK(has_effect(machine.tick(at(6002)), EffectType::RequestForceClose));
+  (void)machine.on_force_result(at(6002), CloseRequestResult::Accepted);
+  CHECK(machine.tick(at(12001)).empty());
+  CHECK(machine.state() == FlowState::Exiting);
+  CHECK(has_effect(machine.tick(at(12002)), EffectType::ShowFailureHud));
+  const auto snapshot = machine.snapshot(at(12002));
+  CHECK(snapshot.state == FlowState::NoActiveFlow);
+  CHECK(snapshot.last_exit == LastExitStatus::Failed);
+  CHECK(snapshot.last_error_code == "EXIT_FORCE_WAIT_TIMEOUT");
+  CHECK(machine.on_force_result(at(12003), CloseRequestResult::TargetExited).empty());
+  CHECK(has_effect(machine.tick(at(16002)), EffectType::HideHud));
+}
+
 void state_machine_overlay_failure_aborts_before_exit() {
   FlowStateMachine machine;
   (void)machine.on_gesture(at(0), ready());
@@ -588,6 +607,7 @@ int main() {
       {"state target change", state_machine_target_change_is_safe_noop},
       {"state force failure", state_machine_force_fallback_and_failure_hud},
       {"state force pending", state_machine_force_request_remains_pending_until_exit},
+      {"state force wait timeout", state_machine_force_wait_timeout_releases_exiting},
       {"state overlay failure", state_machine_overlay_failure_aborts_before_exit},
   };
   int failures = 0;

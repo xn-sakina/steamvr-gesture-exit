@@ -116,12 +116,17 @@ bool OverlayManager::update_thumbnail(const std::wstring& title, const std::wstr
   auto result = overlays_->SetOverlayName(dashboard_, friendly_name.c_str());
   if (result != vr::VROverlayError_None)
     return fail("SetOverlayName(dashboard)", result);
+  thumbnail_title_ = title;
+  thumbnail_description_ = description;
+  thumbnail_requested_ = true;
   if (!renderer_.render_thumbnail("thumbnail", title, description))
     return fail("render thumbnail failed");
   vr::Texture_t texture{renderer_.texture("thumbnail"), vr::TextureType_DirectX,
                         vr::ColorSpace_Auto};
   result = overlays_->SetOverlayTexture(thumbnail_, &texture);
-  return result == vr::VROverlayError_None || fail("SetOverlayTexture(thumbnail)", result);
+  if (result != vr::VROverlayError_None)
+    return fail("SetOverlayTexture(thumbnail)", result);
+  return true;
 }
 void OverlayManager::shutdown() {
   if (!overlays_)
@@ -133,6 +138,8 @@ void OverlayManager::shutdown() {
   wrist_visible_ = false;
   dashboard_texture_initialized_ = false;
   dashboard_texture_dirty_ = true;
+  thumbnail_requested_ = false;
+  renderer_generation_seen_ = renderer_.generation();
   wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
   wrist_smoother_.reset();
 }
@@ -214,6 +221,7 @@ bool OverlayManager::hide_wrist() {
 bool OverlayManager::show_hud(const SurfaceModel& m) {
   if (!submit(hud_, "hud", m))
     return false;
+  hud_model_ = m;
   auto result = overlays_->ShowOverlay(hud_);
   return result == vr::VROverlayError_None || fail("ShowOverlay(hud)", result);
 }
@@ -236,16 +244,50 @@ bool OverlayManager::submit_dashboard() {
   dashboard_texture_dirty_ = false;
   return true;
 }
+bool OverlayManager::refresh_recreated_textures() {
+  const auto generation = renderer_.generation();
+  if (generation == renderer_generation_seen_)
+    return true;
+  // A device reset replaces every texture. A D2D target reset replaces one texture.
+  // Refreshing all submitted overlays also covers either case without exposing
+  // renderer internals to OpenVR.
+  if (thumbnail_requested_) {
+    if (!renderer_.render_thumbnail("thumbnail", thumbnail_title_, thumbnail_description_))
+      return fail("render thumbnail after device recovery failed");
+    vr::Texture_t t{renderer_.texture("thumbnail"), vr::TextureType_DirectX, vr::ColorSpace_Auto};
+    const auto result = overlays_->SetOverlayTexture(thumbnail_, &t);
+    if (result != vr::VROverlayError_None)
+      return fail("SetOverlayTexture(thumbnail after recovery)", result);
+  }
+  if (wrist_visible_ && !submit(wrist_, "wrist", wrist_model_))
+    return false;
+  if (hud_ != vr::k_ulOverlayHandleInvalid && overlays_->IsOverlayVisible(hud_) &&
+      !submit(hud_, "hud", hud_model_))
+    return false;
+  dashboard_texture_initialized_ = false;
+  dashboard_texture_dirty_ = true;
+  renderer_generation_seen_ = generation;
+  return true;
+}
 bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
+  const bool recovered = renderer_.retry_pending_recovery();
+  if (!recovered)
+    fail("renderer recovery failed");
+  if (renderer_.generation() != renderer_generation_seen_) {
+    dashboard_texture_initialized_ = false;
+    dashboard_texture_dirty_ = true;
+  }
+  const bool refreshed = recovered && refresh_recreated_textures();
   auto next = m;
   next.hovered_action = dashboard_model_.hovered_action;
   if (next != dashboard_model_) {
     dashboard_model_ = std::move(next);
     dashboard_texture_dirty_ = true;
   }
-  if (!dashboard_texture_initialized_ || (dashboard_texture_dirty_ && dashboard_visible()))
-    return submit_dashboard();
-  return true;
+  if ((!dashboard_texture_initialized_ || (dashboard_texture_dirty_ && dashboard_visible())) &&
+      !submit_dashboard())
+    return false;
+  return recovered && refreshed;
 }
 std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose& hand,
                                                              bool confirming, bool counting) {

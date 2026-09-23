@@ -24,29 +24,72 @@ struct D3dOverlayRenderer::Impl {
   ComPtr<IDWriteTextFormat> title, body, button, section, label, small;
   std::map<std::string, Surface> surfaces;
   std::string error;
+  HRESULT resource_status = S_OK;
+  std::string pending_recovery_id;
+  HRESULT pending_recovery_status = S_OK;
+  uint64_t generation = 0;
+  bool create_device(ComPtr<ID3D11Device>& next_device, ComPtr<ID3D11DeviceContext>& next_context) {
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+    D3D_FEATURE_LEVEL got{};
+    constexpr D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
+                                            D3D_FEATURE_LEVEL_10_1};
+    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, levels, 3,
+                                   D3D11_SDK_VERSION, &next_device, &got, &next_context);
+    if (FAILED(hr)) {
+      next_device.Reset();
+      next_context.Reset();
+      hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags, levels, 3,
+                             D3D11_SDK_VERSION, &next_device, &got, &next_context);
+    }
+    if (FAILED(hr))
+      error = "D3D11CreateDevice failed";
+    return SUCCEEDED(hr);
+  }
+  bool make_surface(ID3D11Device* source, uint32_t w, uint32_t h, Surface& s) {
+    D3D11_TEXTURE2D_DESC d{};
+    d.Width = w;
+    d.Height = h;
+    d.MipLevels = 1;
+    d.ArraySize = 1;
+    d.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    d.SampleDesc.Count = 1;
+    d.Usage = D3D11_USAGE_DEFAULT;
+    d.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    s.w = w;
+    s.h = h;
+    if (FAILED(source->CreateTexture2D(&d, nullptr, &s.texture))) {
+      error = "CreateTexture2D failed";
+      return false;
+    }
+    ComPtr<IDXGISurface> dxgi;
+    if (FAILED(s.texture.As(&dxgi))) {
+      error = "IDXGISurface query failed";
+      return false;
+    }
+    auto props = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    if (FAILED(d2d->CreateDxgiSurfaceRenderTarget(dxgi.Get(), &props, &s.target))) {
+      error = "CreateDxgiSurfaceRenderTarget failed";
+      return false;
+    }
+    return true;
+  }
   ComPtr<ID2D1SolidColorBrush> brush(ID2D1RenderTarget* t, D2D1_COLOR_F c) {
     ComPtr<ID2D1SolidColorBrush> b;
-    if (FAILED(t->CreateSolidColorBrush(c, &b)))
+    const auto result = t->CreateSolidColorBrush(c, &b);
+    if (FAILED(result)) {
+      resource_status = result;
       error = "CreateSolidColorBrush failed";
+    }
     return b;
   }
 };
 D3dOverlayRenderer::D3dOverlayRenderer() : impl_(std::make_unique<Impl>()) {}
 D3dOverlayRenderer::~D3dOverlayRenderer() = default;
 bool D3dOverlayRenderer::initialize() {
-  UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-  D3D_FEATURE_LEVEL got{};
-  constexpr D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
-                                          D3D_FEATURE_LEVEL_10_1};
-  HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, levels, 3,
-                                 D3D11_SDK_VERSION, &impl_->device, &got, &impl_->context);
-  if (FAILED(hr))
-    hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags, levels, 3,
-                           D3D11_SDK_VERSION, &impl_->device, &got, &impl_->context);
-  if (FAILED(hr)) {
-    impl_->error = "D3D11CreateDevice failed";
+  if (!impl_->create_device(impl_->device, impl_->context))
     return false;
-  }
   if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, impl_->d2d.GetAddressOf())) ||
       FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                                  reinterpret_cast<IUnknown**>(impl_->write.GetAddressOf())))) {
@@ -82,37 +125,69 @@ bool D3dOverlayRenderer::initialize() {
 }
 bool D3dOverlayRenderer::create_surface(const std::string& id, uint32_t w, uint32_t h) {
   impl_->error.clear();
-  D3D11_TEXTURE2D_DESC d{};
-  d.Width = w;
-  d.Height = h;
-  d.MipLevels = 1;
-  d.ArraySize = 1;
-  d.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-  d.SampleDesc.Count = 1;
-  d.Usage = D3D11_USAGE_DEFAULT;
-  d.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-  Impl::Surface s{w, h};
-  if (FAILED(impl_->device->CreateTexture2D(&d, nullptr, &s.texture))) {
-    impl_->error = "CreateTexture2D failed";
+  Impl::Surface s{};
+  if (!impl_->make_surface(impl_->device.Get(), w, h, s))
     return false;
-  }
-  ComPtr<IDXGISurface> dxgi;
-  if (FAILED(s.texture.As(&dxgi))) {
-    impl_->error = "IDXGISurface query failed";
-    return false;
-  }
-  auto props = D2D1::RenderTargetProperties(
-      D2D1_RENDER_TARGET_TYPE_DEFAULT,
-      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-  if (FAILED(impl_->d2d->CreateDxgiSurfaceRenderTarget(dxgi.Get(), &props, &s.target))) {
-    impl_->error = "CreateDxgiSurfaceRenderTarget failed";
-    return false;
-  }
   impl_->surfaces[id] = std::move(s);
   return true;
 }
-bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m) {
+bool D3dOverlayRenderer::recover_target(const std::string& id, long result) {
+  const auto status = static_cast<HRESULT>(result);
+  const bool device_lost = status == DXGI_ERROR_DEVICE_REMOVED ||
+                           status == DXGI_ERROR_DEVICE_RESET || status == DXGI_ERROR_DEVICE_HUNG ||
+                           status == DXGI_ERROR_DRIVER_INTERNAL_ERROR ||
+                           FAILED(impl_->device->GetDeviceRemovedReason());
+  if (status != static_cast<HRESULT>(D2DERR_RECREATE_TARGET) && !device_lost) {
+    if (impl_->error.empty())
+      impl_->error = "render target failed";
+    return false;
+  }
+  impl_->pending_recovery_id = id;
+  impl_->pending_recovery_status = status;
+  if (!device_lost) {
+    const auto it = impl_->surfaces.find(id);
+    Impl::Surface next{};
+    if (it != impl_->surfaces.end() &&
+        impl_->make_surface(impl_->device.Get(), it->second.w, it->second.h, next)) {
+      it->second = std::move(next);
+      ++impl_->generation;
+      impl_->error.clear();
+      impl_->pending_recovery_id.clear();
+      return true;
+    }
+    if (SUCCEEDED(impl_->device->GetDeviceRemovedReason()))
+      return false;
+  }
+  ComPtr<ID3D11Device> next_device;
+  ComPtr<ID3D11DeviceContext> next_context;
+  if (!impl_->create_device(next_device, next_context))
+    return false;
+  std::map<std::string, Impl::Surface> next_surfaces;
+  for (const auto& [key, surface] : impl_->surfaces) {
+    Impl::Surface next{};
+    if (!impl_->make_surface(next_device.Get(), surface.w, surface.h, next))
+      return false;
+    next_surfaces.emplace(key, std::move(next));
+  }
+  impl_->surfaces = std::move(next_surfaces);
+  impl_->context = std::move(next_context);
+  impl_->device = std::move(next_device);
+  ++impl_->generation;
   impl_->error.clear();
+  impl_->pending_recovery_id.clear();
+  return true;
+}
+bool D3dOverlayRenderer::retry_pending_recovery() {
+  if (impl_->pending_recovery_id.empty())
+    return true;
+  return recover_target(impl_->pending_recovery_id, impl_->pending_recovery_status);
+}
+bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m) {
+  return render(id, m, false);
+}
+bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bool retried) {
+  impl_->error.clear();
+  impl_->resource_status = S_OK;
   auto it = impl_->surfaces.find(id);
   if (it == impl_->surfaces.end()) {
     impl_->error = "surface unavailable";
@@ -126,8 +201,11 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m) {
   auto panel = impl_->brush(t, D2D1::ColorF(0.035f, 0.055f, 0.085f, 0.94f));
   auto hover = impl_->brush(t, D2D1::ColorF(0.12f, 0.34f, 0.45f, 1));
   auto normal = impl_->brush(t, D2D1::ColorF(0.08f, 0.15f, 0.22f, 1));
-  if (!white || !muted || !accent || !panel || !hover || !normal)
+  if (!white || !muted || !accent || !panel || !hover || !normal) {
+    if (recover_target(id, impl_->resource_status) && !retried)
+      return render(id, m, true);
     return false;
+  }
   t->BeginDraw();
   t->Clear(D2D1::ColorF(0, 0, 0, 0));
   t->FillRoundedRectangle(
@@ -158,13 +236,22 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m) {
                  impl_->button.Get(), r.rect, white.Get());
   }
   auto result = t->EndDraw();
-  if (FAILED(result))
+  if (FAILED(result)) {
+    if (recover_target(id, result) && !retried)
+      return render(id, m, true);
+  }
+  if (FAILED(result) && impl_->error.empty())
     impl_->error = "EndDraw failed";
   return SUCCEEDED(result);
 }
 bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstring& title,
                                           const std::wstring& description) {
+  return render_thumbnail(id, title, description, false);
+}
+bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstring& title,
+                                          const std::wstring& description, bool retried) {
   impl_->error.clear();
+  impl_->resource_status = S_OK;
   const auto it = impl_->surfaces.find(id);
   if (it == impl_->surfaces.end() || it->second.w != 256 || it->second.h != 256) {
     impl_->error = "thumbnail surface unavailable";
@@ -207,6 +294,7 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
   ComPtr<IWICFormatConverter> converter;
   ComPtr<ID2D1Bitmap> icon;
   auto* target = it->second.target.Get();
+  HRESULT bitmap_status = S_OK;
   if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                               IID_PPV_ARGS(&factory))) ||
       FAILED(factory->CreateStream(&stream)) ||
@@ -217,8 +305,10 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
       FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
                                    WICBitmapDitherTypeNone, nullptr, 0,
                                    WICBitmapPaletteTypeCustom)) ||
-      FAILED(target->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &icon))) {
+      FAILED(bitmap_status = target->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &icon))) {
     impl_->error = "decode embedded thumbnail PNG failed";
+    if (FAILED(bitmap_status) && recover_target(id, bitmap_status) && !retried)
+      return render_thumbnail(id, title, description, true);
     return false;
   }
   auto panel = impl_->brush(target, D2D1::ColorF(0x061322, 0.98f));
@@ -237,6 +327,10 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
       FAILED(description_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)) ||
       FAILED(description_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER))) {
     impl_->error = "thumbnail text setup failed";
+    if (!panel || !white || !muted) {
+      if (recover_target(id, impl_->resource_status) && !retried)
+        return render_thumbnail(id, title, description, true);
+    }
     return false;
   }
   target->BeginDraw();
@@ -249,12 +343,21 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
   target->DrawTextW(description.c_str(), static_cast<UINT32>(description.size()),
                     description_format.Get(), D2D1::RectF(12, 217, 244, 245), muted.Get());
   const auto result = target->EndDraw();
-  if (FAILED(result))
+  if (FAILED(result)) {
+    if (recover_target(id, result) && !retried)
+      return render_thumbnail(id, title, description, true);
+  }
+  if (FAILED(result) && impl_->error.empty())
     impl_->error = "EndDraw(thumbnail) failed";
   return SUCCEEDED(result);
 }
 bool D3dOverlayRenderer::render_dashboard(const std::string& id, const DashboardSurfaceModel& m) {
+  return render_dashboard(id, m, false);
+}
+bool D3dOverlayRenderer::render_dashboard(const std::string& id, const DashboardSurfaceModel& m,
+                                          bool retried) {
   impl_->error.clear();
+  impl_->resource_status = S_OK;
   auto it = impl_->surfaces.find(id);
   if (it == impl_->surfaces.end())
     return false;
@@ -271,8 +374,11 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   auto good = impl_->brush(t, D2D1::ColorF(0.35f, 0.86f, 0.62f, 1));
   auto bad = impl_->brush(t, D2D1::ColorF(0.98f, 0.55f, 0.38f, 1));
   if (!white || !muted || !faint || !accent || !hover || !normal || !card || !panel || !good ||
-      !bad)
+      !bad) {
+    if (recover_target(id, impl_->resource_status) && !retried)
+      return render_dashboard(id, m, true);
     return false;
+  }
   t->BeginDraw();
   t->Clear(D2D1::ColorF(0, 0, 0, 0));
   t->FillRoundedRectangle(
@@ -333,11 +439,21 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
                  impl_->small.Get(), D2D1::RectF(48, top, 978, top + 34), muted.Get());
   }
-  return SUCCEEDED(t->EndDraw());
+  const auto result = t->EndDraw();
+  if (FAILED(result)) {
+    if (recover_target(id, result) && !retried)
+      return render_dashboard(id, m, true);
+  }
+  if (FAILED(result) && impl_->error.empty())
+    impl_->error = "EndDraw(dashboard) failed";
+  return SUCCEEDED(result);
 }
 void* D3dOverlayRenderer::texture(const std::string& id) const {
   auto it = impl_->surfaces.find(id);
   return it == impl_->surfaces.end() ? nullptr : it->second.texture.Get();
+}
+uint64_t D3dOverlayRenderer::generation() const {
+  return impl_->generation;
 }
 const std::string& D3dOverlayRenderer::error() const {
   return impl_->error;

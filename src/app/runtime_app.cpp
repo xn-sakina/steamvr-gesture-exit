@@ -489,7 +489,7 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           append(flow_->on_target_status(now, core::TargetStatus::IdentityMismatch));
           break;
         }
-        auto status = process_.force_close();
+        auto status = process_.force_close(now);
         if (status == platform::windows::CloseStatus::IdentityInvalid)
           append(flow_->on_target_status(now, core::TargetStatus::IdentityMismatch));
         else if (status == platform::windows::CloseStatus::ExitedGracefully)
@@ -688,13 +688,19 @@ int RuntimeApp::run() {
     if (flow_->state() == core::FlowState::Exiting &&
         (process_status == platform::windows::CloseStatus::ExitedGracefully ||
          process_status == platform::windows::CloseStatus::ForceSucceeded ||
+         process_status == platform::windows::CloseStatus::ForceTimedOut ||
          process_status == platform::windows::CloseStatus::Failed ||
          process_status == platform::windows::CloseStatus::IdentityInvalid)) {
       if (process_status == platform::windows::CloseStatus::ForceSucceeded)
         apply(flow_->on_force_result(now, core::CloseRequestResult::TargetExited), now, frame);
+      else if (process_status == platform::windows::CloseStatus::ForceTimedOut)
+        apply(flow_->on_force_result(now, core::CloseRequestResult::Failed,
+                                     "EXIT_FORCE_WAIT_TIMEOUT"),
+              now, frame);
       else if (process_status == platform::windows::CloseStatus::Failed)
         apply(flow_->on_force_result(now, core::CloseRequestResult::Failed,
-                                     "EXIT_PROCESS_WAIT_FAILED"), now, frame);
+                                     "EXIT_PROCESS_WAIT_FAILED"),
+              now, frame);
       else
         apply(flow_->on_target_status(
                   now, process_status == platform::windows::CloseStatus::ExitedGracefully

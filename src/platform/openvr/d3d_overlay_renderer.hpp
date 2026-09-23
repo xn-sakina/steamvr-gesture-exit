@@ -44,9 +44,16 @@ class D3dOverlayRenderer {
                         const std::wstring& description);
   bool render_dashboard(const std::string& id, const DashboardSurfaceModel& model);
   void* texture(const std::string& id) const;
+  uint64_t generation() const;
+  bool retry_pending_recovery();
   const std::string& error() const;
 
  private:
+  bool render(const std::string& id, const SurfaceModel& model, bool retried);
+  bool render_thumbnail(const std::string& id, const std::wstring& title,
+                        const std::wstring& description, bool retried);
+  bool render_dashboard(const std::string& id, const DashboardSurfaceModel& model, bool retried);
+  bool recover_target(const std::string& id, long result);
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
