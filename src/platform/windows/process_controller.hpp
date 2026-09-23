@@ -2,6 +2,7 @@
 #include "app/runtime_interfaces.h"
 #include <chrono>
 #include <optional>
+#include <string_view>
 namespace bailout::platform::windows {
 enum class CloseStatus {
   Idle,
@@ -28,6 +29,9 @@ class ProcessController {
   CloseStatus status() const {
     return status_;
   }
+  std::string_view error_code() const {
+    return error_code_;
+  }
 
  private:
   bool identity_matches() const;
@@ -36,5 +40,6 @@ class ProcessController {
   std::chrono::steady_clock::time_point deadline_{};
   std::chrono::steady_clock::time_point force_deadline_{};
   CloseStatus status_ = CloseStatus::Idle;
+  std::string_view error_code_{};
 };
 }  // namespace bailout::platform::windows

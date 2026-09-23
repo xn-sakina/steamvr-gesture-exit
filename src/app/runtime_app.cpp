@@ -482,9 +482,13 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           break;
         }
         bool ok = process_.request_graceful_close(*locked_native_, now);
+        if (!ok && process_.status() == platform::windows::CloseStatus::IdentityInvalid) {
+          append(flow_->on_target_status(now, core::TargetStatus::IdentityMismatch));
+          break;
+        }
         append(flow_->on_graceful_result(
             now, ok ? core::CloseRequestResult::Accepted : core::CloseRequestResult::Failed,
-            "EXIT_OPEN_PROCESS_FAILED"));
+            std::string(process_.error_code())));
         break;
       }
       case core::EffectType::RequestForceClose: {

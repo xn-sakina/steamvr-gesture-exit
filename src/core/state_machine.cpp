@@ -100,6 +100,11 @@ Effects FlowStateMachine::on_gesture(const TimePoint now, const Prerequisites& p
   if (!prerequisites.ready())
     return effects;
   if (state_ == FlowState::NoActiveFlow) {
+    if (failure_hud_visible_) {
+      failure_hud_visible_ = false;
+      failure_hud_deadline_ = {};
+      effects.push_back({EffectType::HideHud});
+    }
     prerequisites_ = prerequisites;
     visible_target_ = prerequisites.exit_target;
     control_deadline_ = now + control_timeout_;
@@ -242,21 +247,22 @@ Effects FlowStateMachine::on_target_status(const TimePoint, const TargetStatus s
   return effects;
 }
 
-Effects FlowStateMachine::on_graceful_result(const TimePoint, const CloseRequestResult result,
+Effects FlowStateMachine::on_graceful_result(const TimePoint now, const CloseRequestResult result,
                                              std::string error_code) {
   Effects effects;
   if (state_ != FlowState::Exiting)
     return effects;
   if (result == CloseRequestResult::TargetExited) {
     finish_success(effects, "EXIT_GRACEFUL_SUCCEEDED");
+  } else if (result == CloseRequestResult::Failed) {
+    finish_failure(now, effects,
+                   error_code.empty() ? "EXIT_GRACEFUL_REQUEST_FAILED" : std::move(error_code));
   } else {
     effects.push_back({EffectType::Diagnostic,
                        locked_target_,
                        {},
                        0.0,
-                       result == CloseRequestResult::Accepted
-                           ? "EXIT_GRACEFUL_REQUESTED"
-                           : (error_code.empty() ? "EXIT_GRACEFUL_REQUEST_FAILED" : error_code),
+                       "EXIT_GRACEFUL_REQUESTED",
                        state_,
                        state_});
   }

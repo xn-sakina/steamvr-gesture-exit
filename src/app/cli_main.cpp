@@ -2,12 +2,26 @@
 #include "platform/windows/paths.hpp"
 #include "openvr.h"
 #include <windows.h>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <string_view>
+#include <thread>
 
 namespace {
 constexpr char kAppKey[] = "com.steamvr-bail-out.overlay";
+constexpr auto kManifestReadyTimeout = std::chrono::seconds(15);
+
+bool wait_for_manifest(vr::IVRApplications* applications) {
+  const auto deadline = std::chrono::steady_clock::now() + kManifestReadyTimeout;
+  do {
+    if (applications->IsApplicationInstalled(kAppKey))
+      return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  } while (std::chrono::steady_clock::now() < deadline);
+  return applications->IsApplicationInstalled(kAppKey);
+}
+
 int application_command(int argc, wchar_t** argv) {
   if (argc < 2) {
     std::cerr << "a command is required\n";
@@ -58,7 +72,10 @@ int application_command(int argc, wchar_t** argv) {
       if (command == L"--register-manifest") {
         error = apps->AddApplicationManifest(native.c_str(), false);
         if (error == vr::VRApplicationError_None) {
-          error = apps->SetApplicationAutoLaunch(kAppKey, true);
+          if (!wait_for_manifest(apps))
+            error = vr::VRApplicationError_UnknownApplication;
+          else
+            error = apps->SetApplicationAutoLaunch(kAppKey, true);
           if (error != vr::VRApplicationError_None)
             apps->RemoveApplicationManifest(native.c_str());
         }

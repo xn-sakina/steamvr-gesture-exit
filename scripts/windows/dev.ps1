@@ -225,6 +225,23 @@ function Start-SteamVrIfNeeded {
     throw "SteamVR did not become ready within 60 seconds. Start SteamVR manually and retry."
 }
 
+function Wait-SteamVrApplicationsReady {
+    $deadline = (Get-Date).AddSeconds(60)
+    $lastOutput = ""
+    Write-Step "Waiting for the SteamVR applications interface"
+    do {
+        $probeOutput = & $script:CliPath "--manifest-status" $script:AppKey 2>&1
+        $probeExitCode = $LASTEXITCODE
+        if ($probeExitCode -eq 0 -or $probeExitCode -eq 2) { return }
+        $lastOutput = ($probeOutput | Out-String).Trim()
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    if ($lastOutput) {
+        throw "SteamVR applications interface did not become ready within 60 seconds: $lastOutput"
+    }
+    throw "SteamVR applications interface did not become ready within 60 seconds."
+}
+
 function Stop-SteamVrStartedForClean {
     if (-not $script:StartedSteamVrServer) {
         if ($script:SteamVrStartAttempted -and
@@ -297,6 +314,7 @@ function Invoke-Register {
     Require-Package
     [void](Find-SteamVr)
     Start-SteamVrIfNeeded
+    Wait-SteamVrApplicationsReady
     $pendingManifest = Get-ReceiptValue $script:PendingRegistrationReceiptPath
     if ($pendingManifest -and $pendingManifest -ne $script:ManifestPath) {
         & $script:CliPath "--manifest-status" $script:AppKey
@@ -340,6 +358,7 @@ function Invoke-Unregister {
         throw "The packaged runtime or command-line helper is missing, so clean cannot prove that the manifest was unregistered. Run 'package', then 'unregister', then 'clean'. No files were removed."
     }
     Start-SteamVrIfNeeded
+    Wait-SteamVrApplicationsReady
     Stop-AddOn
     & $script:CliPath "--manifest-status" $script:AppKey
     $manifestState = $LASTEXITCODE

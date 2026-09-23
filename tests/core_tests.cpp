@@ -539,6 +539,40 @@ void state_machine_force_fallback_and_failure_hud() {
   CHECK(has_effect(machine.tick(at(11000)), EffectType::HideHud));
 }
 
+void state_machine_new_flow_replaces_failure_hud_timer() {
+  FlowStateMachine machine(8s, 5s);
+  (void)machine.on_gesture(at(0), ready());
+  (void)machine.on_control_clicked(at(1));
+  (void)machine.on_confirm(at(2), target(), 1s);
+  (void)machine.tick(at(1002));
+  (void)machine.tick(at(6002));
+  CHECK(has_effect(machine.on_force_result(at(7000), CloseRequestResult::Failed, "ACCESS_DENIED"),
+                   EffectType::ShowFailureHud));
+
+  const auto restarted = machine.on_gesture(at(8000), ready());
+  CHECK(has_effect(restarted, EffectType::HideHud));
+  CHECK(has_effect(restarted, EffectType::ShowIdleControl));
+  (void)machine.on_control_clicked(at(8001));
+  (void)machine.on_confirm(at(8002), target(), 1s);
+  CHECK(machine.state() == FlowState::CountingDown);
+  CHECK(!has_effect(machine.tick(at(11000)), EffectType::HideHud));
+  CHECK(machine.state() == FlowState::Exiting);
+}
+
+void state_machine_graceful_request_failure_stops_without_force_close() {
+  FlowStateMachine machine(8s, 5s);
+  (void)machine.on_gesture(at(0), ready());
+  (void)machine.on_control_clicked(at(1));
+  (void)machine.on_confirm(at(2), target(), 1s);
+  (void)machine.tick(at(1002));
+  const auto failed = machine.on_graceful_result(at(1003), CloseRequestResult::Failed,
+                                                 "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
+  CHECK(has_effect(failed, EffectType::ShowFailureHud));
+  CHECK(machine.state() == FlowState::NoActiveFlow);
+  CHECK(machine.snapshot(at(1003)).last_error_code == "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
+  CHECK(!has_effect(machine.tick(at(7000)), EffectType::RequestForceClose));
+}
+
 void state_machine_force_request_remains_pending_until_exit() {
   FlowStateMachine machine(8s, 5s);
   (void)machine.on_gesture(at(0), ready());
@@ -620,6 +654,9 @@ int main() {
       {"state countdown rules", state_machine_countdown_rules_and_target_lock},
       {"state target change", state_machine_target_change_is_safe_noop},
       {"state force failure", state_machine_force_fallback_and_failure_hud},
+      {"state failure timer replacement", state_machine_new_flow_replaces_failure_hud_timer},
+      {"state graceful request failure",
+       state_machine_graceful_request_failure_stops_without_force_close},
       {"state force pending", state_machine_force_request_remains_pending_until_exit},
       {"state force wait timeout", state_machine_force_wait_timeout_releases_exiting},
       {"state overlay failure", state_machine_overlay_failure_aborts_before_exit},

@@ -46,6 +46,9 @@ class OverlayManager {
   bool submit(vr::VROverlayHandle_t, const std::string&, const SurfaceModel&);
   bool submit_dashboard();
   bool refresh_recreated_textures();
+  bool update_wrist_intersection_mask(const SurfaceModel&);
+  bool set_wrist_interactive(bool interactive);
+  [[nodiscard]] bool wrist_pointer_over_button(const app::HandPose&) const;
   bool fail(const char* operation, vr::EVROverlayError result);
   bool fail(const char* operation);
   vr::IVROverlay* overlays_ = nullptr;
@@ -54,6 +57,7 @@ class OverlayManager {
                         thumbnail_ = vr::k_ulOverlayHandleInvalid,
                         wrist_ = vr::k_ulOverlayHandleInvalid, hud_ = vr::k_ulOverlayHandleInvalid;
   bool wrist_visible_ = false;
+  bool wrist_interactive_ = false;
   bool dashboard_texture_initialized_ = false;
   bool dashboard_texture_dirty_ = true;
   bool thumbnail_requested_ = false;

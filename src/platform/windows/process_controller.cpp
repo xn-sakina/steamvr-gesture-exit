@@ -11,7 +11,7 @@ BOOL CALLBACK collect(HWND w, LPARAM d) {
   auto& s = *reinterpret_cast<Search*>(d);
   DWORD p = 0;
   GetWindowThreadProcessId(w, &p);
-  if (p == s.pid && GetWindow(w, GW_OWNER) == nullptr)
+  if (p == s.pid)
     s.windows.push_back(w);
   return TRUE;
 }
@@ -31,18 +31,35 @@ bool ProcessController::request_graceful_close(const app::RuntimeTarget& t,
   HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, t.pid);
   if (!h) {
     status_ = CloseStatus::Failed;
+    error_code_ = "EXIT_OPEN_PROCESS_FAILED";
     return false;
   }
   target_ = t;
   process_ = h;
   if (!identity_matches()) {
     status_ = CloseStatus::IdentityInvalid;
+    error_code_ = "EXIT_TARGET_IDENTITY_CHANGED";
     return false;
   }
   Search s{t.pid, {}};
-  EnumWindows(collect, reinterpret_cast<LPARAM>(&s));
+  if (!EnumWindows(collect, reinterpret_cast<LPARAM>(&s))) {
+    status_ = CloseStatus::Failed;
+    error_code_ = "EXIT_ENUM_WINDOWS_FAILED";
+    return false;
+  }
+  if (s.windows.empty()) {
+    status_ = CloseStatus::Failed;
+    error_code_ = "EXIT_GRACEFUL_WINDOW_NOT_FOUND";
+    return false;
+  }
+  bool requested = false;
   for (HWND w : s.windows)
-    PostMessageW(w, WM_CLOSE, 0, 0);
+    requested = PostMessageW(w, WM_CLOSE, 0, 0) != 0 || requested;
+  if (!requested) {
+    status_ = CloseStatus::Failed;
+    error_code_ = "EXIT_GRACEFUL_POST_MESSAGE_FAILED";
+    return false;
+  }
   deadline_ = now + kGracePeriod;
   status_ = CloseStatus::GracefulRequested;
   return true;
@@ -121,6 +138,7 @@ void ProcessController::clear() {
   deadline_ = {};
   force_deadline_ = {};
   status_ = CloseStatus::Idle;
+  error_code_ = {};
 }
 bool ProcessController::identity_matches() const {
   return process_ && target_ && token(static_cast<HANDLE>(process_)) == target_->creation_token;

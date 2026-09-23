@@ -6,16 +6,26 @@ namespace {
 constexpr char kDashboardKey[] = "com.steamvr-bail-out.dashboard";
 constexpr char kWristKey[] = "com.steamvr-bail-out.wrist";
 constexpr char kHudKey[] = "com.steamvr-bail-out.hud";
+constexpr float kWristWidth = 768.0f;
+constexpr float kWristHeight = 384.0f;
+constexpr float kButtonTop = 272.0f;
+constexpr float kButtonBottom = 330.0f;
+constexpr float kLeftButtonLeft = 42.0f;
+constexpr float kLeftButtonRight = 372.0f;
+constexpr float kRightButtonLeft = 396.0f;
+constexpr float kRightButtonRight = 726.0f;
 enum class WristHit { None, Left, Right };
-WristHit wrist_hit(const SurfaceModel& model, const vr::VREvent_t& event) {
-  const float x = event.data.mouse.x, y = 384.0f - event.data.mouse.y;
-  if (y < 272 || y > 330)
+WristHit wrist_hit(const SurfaceModel& model, const float x, const float y) {
+  if (y < kButtonTop || y > kButtonBottom)
     return WristHit::None;
-  if (!model.left_button.empty() && x >= 42 && x <= 372)
+  if (!model.left_button.empty() && x >= kLeftButtonLeft && x <= kLeftButtonRight)
     return WristHit::Left;
-  if (!model.right_button.empty() && x >= 396 && x <= 726)
+  if (!model.right_button.empty() && x >= kRightButtonLeft && x <= kRightButtonRight)
     return WristHit::Right;
   return WristHit::None;
+}
+WristHit wrist_hit(const SurfaceModel& model, const vr::VREvent_t& event) {
+  return wrist_hit(model, event.data.mouse.x, kWristHeight - event.data.mouse.y);
 }
 vr::HmdMatrix34_t hud_transform() {
   vr::HmdMatrix34_t m = {{{1, 0, 0, 0.30f}, {0, 1, 0, 0.17f}, {0, 0, 1, -0.70f}}};
@@ -90,6 +100,12 @@ bool OverlayManager::initialize() {
     shutdown();
     return false;
   }
+  result = overlays_->SetOverlayInputMethod(wrist_, vr::VROverlayInputMethod_None);
+  if (result != vr::VROverlayError_None) {
+    fail("SetOverlayInputMethod(wrist inactive)", result);
+    shutdown();
+    return false;
+  }
   for (auto flag : {vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible,
                     vr::VROverlayFlags_EnableClickStabilization, vr::VROverlayFlags_MultiCursor}) {
     result = overlays_->SetOverlayFlag(wrist_, flag, true);
@@ -136,6 +152,7 @@ void OverlayManager::shutdown() {
       overlays_->DestroyOverlay(h);
   wrist_ = hud_ = dashboard_ = thumbnail_ = vr::k_ulOverlayHandleInvalid;
   wrist_visible_ = false;
+  wrist_interactive_ = false;
   dashboard_texture_initialized_ = false;
   dashboard_texture_dirty_ = true;
   thumbnail_requested_ = false;
@@ -160,6 +177,12 @@ bool OverlayManager::show_wrist(const app::HandPose& hand, core::TimePoint sampl
                       wrist_model_.left_button == m.left_button &&
                       wrist_model_.right_button == m.right_button &&
                       wrist_model_.progress == m.progress;
+  const bool interaction_regions_changed =
+      wrist_model_.left_button.empty() != m.left_button.empty() ||
+      wrist_model_.right_button.empty() != m.right_button.empty();
+  if (interaction_regions_changed &&
+      (!set_wrist_interactive(false) || !update_wrist_intersection_mask(m)))
+    return false;
   SurfaceModel next = m;
   if (wrist_visible_ && wrist_model_.left_button == m.left_button &&
       wrist_model_.right_button == m.right_button) {
@@ -207,7 +230,7 @@ bool OverlayManager::update_wrist_pose(const app::HandPose& hand, core::TimePoin
   return result == vr::VROverlayError_None || fail("SetOverlayTransformAbsolute(wrist)", result);
 }
 bool OverlayManager::hide_wrist() {
-  bool ok = true;
+  bool ok = set_wrist_interactive(false);
   if (wrist_ != vr::k_ulOverlayHandleInvalid) {
     auto result = overlays_->HideOverlay(wrist_);
     if (result != vr::VROverlayError_None)
@@ -217,6 +240,46 @@ bool OverlayManager::hide_wrist() {
   wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
   wrist_smoother_.reset();
   return ok;
+}
+bool OverlayManager::update_wrist_intersection_mask(const SurfaceModel& model) {
+  std::array<vr::VROverlayIntersectionMaskPrimitive_t, 2> masks{};
+  uint32_t count = 0;
+  auto add_rectangle = [&](const float left, const float right) {
+    auto& mask = masks[count++];
+    mask.m_nPrimitiveType = vr::OverlayIntersectionPrimitiveType_Rectangle;
+    mask.m_Primitive.m_Rectangle = {left, kButtonTop, right - left, kButtonBottom - kButtonTop};
+  };
+  if (!model.left_button.empty())
+    add_rectangle(kLeftButtonLeft, kLeftButtonRight);
+  if (!model.right_button.empty())
+    add_rectangle(kRightButtonLeft, kRightButtonRight);
+  const auto result = overlays_->SetOverlayIntersectionMask(
+      wrist_, masks.data(), count, sizeof(vr::VROverlayIntersectionMaskPrimitive_t));
+  return result == vr::VROverlayError_None || fail("SetOverlayIntersectionMask(wrist)", result);
+}
+bool OverlayManager::set_wrist_interactive(const bool interactive) {
+  if (wrist_interactive_ == interactive)
+    return true;
+  const auto method = interactive ? vr::VROverlayInputMethod_Mouse : vr::VROverlayInputMethod_None;
+  const auto result = overlays_->SetOverlayInputMethod(wrist_, method);
+  if (result != vr::VROverlayError_None)
+    return fail("SetOverlayInputMethod(wrist)", result);
+  wrist_interactive_ = interactive;
+  return true;
+}
+bool OverlayManager::wrist_pointer_over_button(const app::HandPose& hand) const {
+  if (!wrist_visible_ || !hand.pointer_available())
+    return false;
+  vr::VROverlayIntersectionParams_t parameters{};
+  parameters.vSource = {{hand.position.x, hand.position.y, hand.position.z}};
+  parameters.vDirection = {{hand.forward.x, hand.forward.y, hand.forward.z}};
+  parameters.eOrigin = vr::TrackingUniverseStanding;
+  vr::VROverlayIntersectionResults_t intersection{};
+  if (!overlays_->ComputeOverlayIntersection(wrist_, &parameters, &intersection))
+    return false;
+  const float x = intersection.vUVs.v[0] * kWristWidth;
+  const float y = (1.0f - intersection.vUVs.v[1]) * kWristHeight;
+  return wrist_hit(wrist_model_, x, y) != WristHit::None;
 }
 bool OverlayManager::show_hud(const SurfaceModel& m) {
   if (!submit(hud_, "hud", m))
@@ -292,6 +355,8 @@ bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
 std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose& hand,
                                                              bool confirming, bool counting) {
   std::vector<OverlayAction> out;
+  if (!set_wrist_interactive(wrist_pointer_over_button(hand)))
+    return out;
   bool left = wrist_model_.left_hover, right = wrist_model_.right_hover;
   vr::VREvent_t event{};
   while (overlays_->PollNextOverlayEvent(wrist_, &event, sizeof(event))) {
