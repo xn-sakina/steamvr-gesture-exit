@@ -16,9 +16,18 @@ $ErrorActionPreference = "Stop"
 $script:ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $script:BuildDirectory = Join-Path $script:ProjectRoot "out\build\windows-x64"
 $script:PackageDirectory = Join-Path $script:ProjectRoot "out\package\steamvr-bail-out"
+$script:PackageStagingDirectory = "$($script:PackageDirectory).staging"
+$script:PackagePreviousDirectory = "$($script:PackageDirectory).previous"
 $script:ExecutablePath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out.exe"
 $script:CliPath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out_cli.exe"
 $script:ManifestPath = Join-Path $script:PackageDirectory "manifest\steamvr_bail_out.vrmanifest"
+$script:PackageIntegrityFileName = ".package-integrity.json"
+$script:RequiredPackageFiles = @(
+    "bin/win64/steamvr_bail_out.exe",
+    "bin/win64/steamvr_bail_out_cli.exe",
+    "bin/win64/openvr_api.dll",
+    "manifest/steamvr_bail_out.vrmanifest"
+)
 $script:AppKey = "com.steamvr-bail-out.overlay"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
@@ -124,23 +133,82 @@ function Find-SteamVr {
     throw "SteamVR was not found. Install SteamVR, pass -SteamVrPath, or set STEAMVR_PATH."
 }
 
-function Require-Package {
-    if (-not (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf)) {
-        throw "Runtime executable is missing: $script:ExecutablePath. Run 'package' first."
+function Get-PackageFilePath([string]$PackageRoot, [string]$RelativePath) {
+    return Join-Path $PackageRoot ($RelativePath -replace '/', '\')
+}
+
+function Write-PackageIntegrity([string]$PackageRoot) {
+    $files = @()
+    foreach ($relativePath in $script:RequiredPackageFiles) {
+        $filePath = Get-PackageFilePath $PackageRoot $relativePath
+        if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
+            throw "Cannot complete the package because a required file is missing: $filePath"
+        }
+        $files += [ordered]@{
+            path = $relativePath
+            sha256 = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
     }
-    if (-not (Test-Path -LiteralPath $script:CliPath -PathType Leaf)) {
-        throw "Command-line helper is missing: $script:CliPath. Run 'package' first."
+    $integrity = [ordered]@{
+        schema_version = 1
+        package_id = [Guid]::NewGuid().ToString("D")
+        configuration = $Configuration
+        created_utc = [DateTime]::UtcNow.ToString("o")
+        files = $files
     }
-    if (-not (Test-Path -LiteralPath $script:ManifestPath -PathType Leaf)) {
-        throw "Application manifest is missing: $script:ManifestPath. Run 'package' first."
+    $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
+    $integrity | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $integrityPath -Encoding UTF8
+}
+
+function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
+    $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
+    if (-not (Test-Path -LiteralPath $integrityPath -PathType Leaf)) {
+        throw "Package integrity record is missing: $integrityPath. Run 'package' first."
     }
-    try { $manifest = Get-Content -LiteralPath $script:ManifestPath -Raw | ConvertFrom-Json }
-    catch { throw "Application manifest is not valid JSON: $script:ManifestPath. $($_.Exception.Message)" }
+    try { $integrity = Get-Content -LiteralPath $integrityPath -Raw | ConvertFrom-Json }
+    catch { throw "Package integrity record is not valid JSON: $integrityPath. $($_.Exception.Message)" }
+    if ($integrity.schema_version -ne 1) {
+        throw "Package integrity record has an unsupported schema: $integrityPath"
+    }
+    $packageId = [Guid]::Empty
+    if (-not [Guid]::TryParse([string]$integrity.package_id, [ref]$packageId)) {
+        throw "Package integrity record has an invalid package id: $integrityPath"
+    }
+    if (@("Debug", "Release") -notcontains [string]$integrity.configuration) {
+        throw "Package integrity record has an invalid build configuration: $integrityPath"
+    }
+    $recordedFiles = @($integrity.files)
+    if ($recordedFiles.Count -ne $script:RequiredPackageFiles.Count) {
+        throw "Package integrity record does not describe the complete required file set: $integrityPath"
+    }
+    foreach ($relativePath in $script:RequiredPackageFiles) {
+        $matchingRecords = @($recordedFiles | Where-Object { [string]$_.path -ceq $relativePath })
+        if ($matchingRecords.Count -ne 1) {
+            throw "Package integrity record does not uniquely identify '$relativePath': $integrityPath"
+        }
+        $expectedHash = [string]$matchingRecords[0].sha256
+        if ($expectedHash -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "Package integrity record has an invalid SHA-256 for '$relativePath': $integrityPath"
+        }
+        $filePath = Get-PackageFilePath $PackageRoot $relativePath
+        if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
+            throw "Required package file is missing: $filePath. Run 'package' first."
+        }
+        $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash
+        if ($actualHash -ine $expectedHash) {
+            throw "Package file does not match build '$packageId': $filePath. Run 'package' again."
+        }
+    }
+
+    $executablePath = Get-PackageFilePath $PackageRoot "bin/win64/steamvr_bail_out.exe"
+    $manifestPath = Get-PackageFilePath $PackageRoot "manifest/steamvr_bail_out.vrmanifest"
+    try { $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json }
+    catch { throw "Application manifest is not valid JSON: $manifestPath. $($_.Exception.Message)" }
     $application = @($manifest.applications) | Where-Object { $_.app_key -eq $script:AppKey } | Select-Object -First 1
     if (-not $application) { throw "Application manifest does not contain the expected app key '$script:AppKey'." }
-    $expectedBinary = [IO.Path]::GetFullPath((Join-Path (Split-Path $script:ManifestPath -Parent) ([string]$application.binary_path_windows)))
-    if ($expectedBinary -ne [IO.Path]::GetFullPath($script:ExecutablePath)) {
-        throw "Manifest binary path resolves to '$expectedBinary', expected '$script:ExecutablePath'."
+    $expectedBinary = [IO.Path]::GetFullPath((Join-Path (Split-Path $manifestPath -Parent) ([string]$application.binary_path_windows)))
+    if ($expectedBinary -ne [IO.Path]::GetFullPath($executablePath)) {
+        throw "Manifest binary path resolves to '$expectedBinary', expected '$executablePath'."
     }
 }
 
@@ -204,6 +272,90 @@ function Stop-AddOn {
         if (-not $process.WaitForExit(20000)) {
             throw "Packaged add-on PID $($process.Id) did not finish shutdown within 20 seconds; package was not modified."
         }
+    }
+}
+
+function Repair-PackageSwap {
+    $hasCurrent = Test-Path -LiteralPath $script:PackageDirectory -PathType Container
+    $hasPrevious = Test-Path -LiteralPath $script:PackagePreviousDirectory -PathType Container
+    if ($hasPrevious) {
+        $currentIsComplete = $false
+        $previousIsComplete = $false
+        $stagingIsComplete = $false
+        if ($hasCurrent) {
+            try { Require-Package; $currentIsComplete = $true } catch { }
+        }
+        try { Require-Package $script:PackagePreviousDirectory; $previousIsComplete = $true } catch { }
+        if (Test-Path -LiteralPath $script:PackageStagingDirectory -PathType Container) {
+            try { Require-Package $script:PackageStagingDirectory; $stagingIsComplete = $true } catch { }
+        }
+
+        if ($currentIsComplete) {
+            Remove-Item -LiteralPath $script:PackagePreviousDirectory -Recurse -Force
+        } elseif ($stagingIsComplete) {
+            Stop-AddOn
+            if ($hasCurrent) {
+                Remove-Item -LiteralPath $script:PackageDirectory -Recurse -Force
+            }
+            try {
+                Move-Item -LiteralPath $script:PackageStagingDirectory -Destination $script:PackageDirectory
+                Require-Package
+            } catch {
+                $recoveryError = $_
+                if (Test-Path -LiteralPath $script:PackageDirectory) {
+                    Remove-Item -LiteralPath $script:PackageDirectory -Recurse -Force
+                }
+                Move-Item -LiteralPath $script:PackagePreviousDirectory -Destination $script:PackageDirectory
+                throw "Could not complete the interrupted package activation; the previous directory was restored. $($recoveryError.Exception.Message)"
+            }
+            Remove-Item -LiteralPath $script:PackagePreviousDirectory -Recurse -Force
+            Write-Step "Completed the package activation interrupted between directory switches"
+        } elseif ($previousIsComplete) {
+            Stop-AddOn
+            if ($hasCurrent) {
+                Remove-Item -LiteralPath $script:PackageDirectory -Recurse -Force
+            }
+            Move-Item -LiteralPath $script:PackagePreviousDirectory -Destination $script:PackageDirectory
+            Require-Package
+            Write-Step "Restored the previous package after an incomplete switch"
+        } else {
+            throw "Cannot recover an interrupted package switch because no complete package copy remains. Run 'package' again; no executable was started."
+        }
+    }
+    if (Test-Path -LiteralPath $script:PackageStagingDirectory) {
+        Remove-Item -LiteralPath $script:PackageStagingDirectory -Recurse -Force
+    }
+}
+
+function Publish-Package {
+    Require-Package $script:PackageStagingDirectory
+    Stop-AddOn
+    $savedPrevious = $false
+    $activatedStaging = $false
+    try {
+        if (Test-Path -LiteralPath $script:PackageDirectory) {
+            Move-Item -LiteralPath $script:PackageDirectory -Destination $script:PackagePreviousDirectory
+            $savedPrevious = $true
+        }
+        Move-Item -LiteralPath $script:PackageStagingDirectory -Destination $script:PackageDirectory
+        $activatedStaging = $true
+        Require-Package
+    } catch {
+        $publishError = $_
+        if ($savedPrevious) {
+            if (Test-Path -LiteralPath $script:PackageDirectory) {
+                Remove-Item -LiteralPath $script:PackageDirectory -Recurse -Force
+            }
+            if (Test-Path -LiteralPath $script:PackagePreviousDirectory) {
+                Move-Item -LiteralPath $script:PackagePreviousDirectory -Destination $script:PackageDirectory
+            }
+        } elseif ($activatedStaging -and (Test-Path -LiteralPath $script:PackageDirectory)) {
+            Remove-Item -LiteralPath $script:PackageDirectory -Recurse -Force
+        }
+        throw "Package activation failed; the previous package was restored when available. $($publishError.Exception.Message)"
+    }
+    if (Test-Path -LiteralPath $script:PackagePreviousDirectory) {
+        Remove-Item -LiteralPath $script:PackagePreviousDirectory -Recurse -Force
     }
 }
 
@@ -299,18 +451,28 @@ function Invoke-Build {
 }
 
 function Invoke-Package {
-    Stop-AddOn
+    Repair-PackageSwap
     Invoke-Build
-    Write-Step "Installing the relocatable runtime package"
-    Invoke-Checked (Find-CMake) @(
-        "--install", $script:BuildDirectory, "--config", $Configuration,
-        "--prefix", $script:PackageDirectory
-    )
-    Require-Package
+    Write-Step "Staging and validating the relocatable runtime package"
+    try {
+        Invoke-Checked (Find-CMake) @(
+            "--install", $script:BuildDirectory, "--config", $Configuration,
+            "--prefix", $script:PackageStagingDirectory
+        )
+        Write-PackageIntegrity $script:PackageStagingDirectory
+        Require-Package $script:PackageStagingDirectory
+        Write-Step "Activating the complete package"
+        Publish-Package
+    } finally {
+        if (Test-Path -LiteralPath $script:PackageStagingDirectory) {
+            Remove-Item -LiteralPath $script:PackageStagingDirectory -Recurse -Force
+        }
+    }
     Write-Host "Package ready: $script:PackageDirectory" -ForegroundColor Green
 }
 
 function Invoke-Register {
+    Repair-PackageSwap
     Require-Package
     [void](Find-SteamVr)
     Start-SteamVrIfNeeded
@@ -353,10 +515,8 @@ function Invoke-Register {
 }
 
 function Invoke-Unregister {
-    if (-not (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $script:CliPath -PathType Leaf)) {
-        throw "The packaged runtime or command-line helper is missing, so clean cannot prove that the manifest was unregistered. Run 'package', then 'unregister', then 'clean'. No files were removed."
-    }
+    Repair-PackageSwap
+    Require-Package
     Start-SteamVrIfNeeded
     Wait-SteamVrApplicationsReady
     Stop-AddOn
@@ -386,6 +546,7 @@ function Invoke-Unregister {
 }
 
 function Invoke-Launch {
+    Repair-PackageSwap
     Require-Package
     Start-SteamVrIfNeeded
     if (Get-PackagedAddOnProcesses) {
@@ -398,10 +559,20 @@ function Invoke-Launch {
 
 function Invoke-Status {
     Write-Step "Development status"
+    $packageReady = $false
+    $packageProblem = $null
+    try {
+        Require-Package
+        $packageReady = $true
+    } catch {
+        $packageProblem = $_.Exception.Message
+    }
     try { Write-Host "CMake:             $(Find-CMake)" } catch { Write-Host "CMake:             not found" -ForegroundColor Yellow }
     try { Write-Host "SteamVR:           $(Find-SteamVr)" } catch { Write-Host "SteamVR:           not found" -ForegroundColor Yellow }
     Write-Host "Build directory:   $script:BuildDirectory ($(if (Test-Path -LiteralPath $script:BuildDirectory) { 'present' } else { 'absent' }))"
     Write-Host "Package directory: $script:PackageDirectory ($(if (Test-Path -LiteralPath $script:PackageDirectory) { 'present' } else { 'absent' }))"
+    Write-Host "Package integrity: $(if ($packageReady) { 'verified' } else { 'not verified' })$(if ($packageProblem) { " ($packageProblem)" })"
+    Write-Host "Package recovery:  $(if ((Test-Path -LiteralPath $script:PackageStagingDirectory) -or (Test-Path -LiteralPath $script:PackagePreviousDirectory)) { 'pending; run package, launch, register, unregister, or clean' } else { 'none' })"
     Write-Host "Manifest:          $script:ManifestPath ($(if (Test-Path -LiteralPath $script:ManifestPath) { 'present' } else { 'absent' }))"
     Write-Host "SteamVR process:   $(if (Get-Process -Name 'vrserver' -ErrorAction SilentlyContinue) { 'running' } else { 'stopped' })"
     Write-Host "Add-on process:    $(if (Get-PackagedAddOnProcesses) { 'running' } else { 'stopped' })"
@@ -412,7 +583,7 @@ function Invoke-Status {
     if (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf) {
         Write-Host "Pending registration: $((Get-Content -LiteralPath $script:PendingRegistrationReceiptPath -Raw).Trim())" -ForegroundColor Yellow
     }
-    if ((Test-Path -LiteralPath $script:CliPath -PathType Leaf) -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
+    if ($packageReady -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
         & $script:CliPath "--manifest-status" $script:AppKey
         switch ($LASTEXITCODE) {
             0 { Write-Host "Manifest state:    registered" -ForegroundColor Green }
@@ -480,15 +651,13 @@ function Remove-IfPresent([string]$Path, [string]$Label) {
 }
 
 function Invoke-Clean {
+    Repair-PackageSwap
     Stop-AddOn
     $script:StartedSteamVrServer = $null
     $script:StartedSteamVrStartTime = $null
     $script:SteamVrStartAttempted = $false
-    $completePackage = (
-        (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf) -and
-        (Test-Path -LiteralPath $script:CliPath -PathType Leaf) -and
-        (Test-Path -LiteralPath $script:ManifestPath -PathType Leaf)
-    )
+    $completePackage = $false
+    try { Require-Package; $completePackage = $true } catch { }
     $hasRegistrationReceipt = (
         (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) -or
         (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf)
@@ -506,6 +675,8 @@ function Invoke-Clean {
     Write-Step "Removing reproducible development artifacts"
     Remove-IfPresent $script:BuildDirectory "CMake build tree"
     Remove-IfPresent $script:PackageDirectory "runtime package"
+    Remove-IfPresent $script:PackageStagingDirectory "staged runtime package"
+    Remove-IfPresent $script:PackagePreviousDirectory "package switch backup"
     if (-not $KeepUserData) { Remove-IfPresent $script:UserDataDirectory "settings and diagnostic logs" }
     else { Write-Host "Keeping user data because -KeepUserData was specified: $script:UserDataDirectory" }
     Write-Host "Clean complete. SteamVR was returned to its original running state." -ForegroundColor Green
@@ -523,7 +694,7 @@ Actions:
   build       Compile the selected configuration.
   package     Build and install the relocatable runtime package.
   register    Register the packaged SteamVR application manifest and auto-launch.
-  update      Stop, rebuild, repackage, refresh registration, and relaunch.
+  update      Build, stage, stop, switch packages, refresh registration, and relaunch.
   status      Show toolchain, package, registration, and process status.
   launch      Start SteamVR if needed and launch the packaged add-on.
   logs        Show the last 200 log lines; add -Follow to tail continuously.
@@ -537,7 +708,7 @@ switch ($Action) {
     "build"      { Invoke-Build }
     "package"    { Invoke-Package }
     "register"   { Invoke-Register }
-    "update"     { Stop-AddOn; Invoke-Package; Invoke-Register; Invoke-Launch }
+    "update"     { Invoke-Package; Invoke-Register; Invoke-Launch }
     "status"     { Invoke-Status }
     "launch"     { Invoke-Launch }
     "logs"       { Invoke-Logs }

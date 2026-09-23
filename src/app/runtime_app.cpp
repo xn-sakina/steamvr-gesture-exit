@@ -521,6 +521,10 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         if (e.target)
           record.target_name = e.target->display_name;
         (void)log_.append(record);
+        if (core::completes_exit_flow(e)) {
+          process_.clear();
+          locked_native_.reset();
+        }
         break;
       }
     }

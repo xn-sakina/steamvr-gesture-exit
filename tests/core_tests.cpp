@@ -53,6 +53,10 @@ bool has_effect(const Effects& effects, const EffectType type) {
   return false;
 }
 
+bool completes_exit(const Effects& effects) {
+  return std::any_of(effects.begin(), effects.end(), completes_exit_flow);
+}
+
 GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1}, bool tracked = true,
                      std::optional<Vec3> palm = std::nullopt, Vec3 headset = {}) {
   return {at(milliseconds), tracked, hand, palm.value_or(normalized(hand)), headset, forward};
@@ -559,7 +563,7 @@ void state_machine_new_flow_replaces_failure_hud_timer() {
   CHECK(machine.state() == FlowState::Exiting);
 }
 
-void state_machine_graceful_request_failure_stops_without_force_close() {
+void state_machine_graceful_request_failure_uses_force_fallback() {
   FlowStateMachine machine(8s, 5s);
   (void)machine.on_gesture(at(0), ready());
   (void)machine.on_control_clicked(at(1));
@@ -567,10 +571,19 @@ void state_machine_graceful_request_failure_stops_without_force_close() {
   (void)machine.tick(at(1002));
   const auto failed = machine.on_graceful_result(at(1003), CloseRequestResult::Failed,
                                                  "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
-  CHECK(has_effect(failed, EffectType::ShowFailureHud));
-  CHECK(machine.state() == FlowState::NoActiveFlow);
-  CHECK(machine.snapshot(at(1003)).last_error_code == "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
-  CHECK(!has_effect(machine.tick(at(7000)), EffectType::RequestForceClose));
+  CHECK(has_effect(failed, EffectType::Diagnostic));
+  CHECK(!has_effect(failed, EffectType::ShowFailureHud));
+  const auto diagnostic =
+      std::find_if(failed.begin(), failed.end(), [](const Effect& effect) {
+        return effect.type == EffectType::Diagnostic;
+      });
+  CHECK(diagnostic != failed.end());
+  CHECK(diagnostic->code == "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
+  CHECK(diagnostic->target == target());
+  CHECK(machine.state() == FlowState::Exiting);
+  CHECK(machine.snapshot(at(1003)).last_exit == LastExitStatus::Never);
+  CHECK(!has_effect(machine.tick(at(6001)), EffectType::RequestForceClose));
+  CHECK(has_effect(machine.tick(at(6002)), EffectType::RequestForceClose));
 }
 
 void state_machine_force_request_remains_pending_until_exit() {
@@ -630,6 +643,43 @@ void state_machine_overlay_failure_aborts_before_exit() {
   CHECK(!has_effect(machine.tick(at(2000)), EffectType::RequestGracefulClose));
 }
 
+void state_machine_marks_every_exit_completion_for_resource_release() {
+  const auto begin_exit = [] {
+    FlowStateMachine machine(8s, 5s);
+    (void)machine.on_gesture(at(0), ready());
+    (void)machine.on_control_clicked(at(1));
+    (void)machine.on_confirm(at(2), target(), 1s);
+    (void)machine.tick(at(1002));
+    CHECK(machine.state() == FlowState::Exiting);
+    return machine;
+  };
+
+  auto graceful = begin_exit();
+  CHECK(completes_exit(graceful.on_graceful_result(at(1003), CloseRequestResult::TargetExited)));
+
+  auto identity_changed = begin_exit();
+  CHECK(
+      completes_exit(identity_changed.on_target_status(at(1003), TargetStatus::IdentityMismatch)));
+
+  auto force_failed = begin_exit();
+  (void)force_failed.tick(at(6002));
+  CHECK(completes_exit(force_failed.on_force_result(at(6003), CloseRequestResult::Failed,
+                                                    "EXIT_TERMINATE_PROCESS_FAILED")));
+
+  auto timed_out = begin_exit();
+  (void)timed_out.tick(at(6002));
+  (void)timed_out.on_force_result(at(6003), CloseRequestResult::Accepted);
+  CHECK(completes_exit(timed_out.tick(at(12002))));
+
+  auto overlay_failed = begin_exit();
+  CHECK(completes_exit(overlay_failed.on_overlay_failure("OVERLAY_PRESENT_FAILED")));
+
+  const Effect unrelated{
+      EffectType::Diagnostic, {}, {}, 0.0, "FLOW_COUNTDOWN_CANCELLED", FlowState::CountingDown,
+      FlowState::NoActiveFlow};
+  CHECK(!completes_exit_flow(unrelated));
+}
+
 }  // namespace
 
 int main() {
@@ -656,10 +706,12 @@ int main() {
       {"state force failure", state_machine_force_fallback_and_failure_hud},
       {"state failure timer replacement", state_machine_new_flow_replaces_failure_hud_timer},
       {"state graceful request failure",
-       state_machine_graceful_request_failure_stops_without_force_close},
+       state_machine_graceful_request_failure_uses_force_fallback},
       {"state force pending", state_machine_force_request_remains_pending_until_exit},
       {"state force wait timeout", state_machine_force_wait_timeout_releases_exiting},
       {"state overlay failure", state_machine_overlay_failure_aborts_before_exit},
+      {"state exit completion releases resources",
+       state_machine_marks_every_exit_completion_for_resource_release},
   };
   int failures = 0;
   for (const auto& [name, test] : tests) {

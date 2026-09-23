@@ -61,6 +61,14 @@ struct Effect {
         to_state(effect_to) {}
 };
 
+// Runtime adapters may hold resources that are only needed while an exit is
+// in progress. The diagnostic transition is also the lifecycle boundary at
+// which those resources must be released.
+[[nodiscard]] constexpr bool completes_exit_flow(const Effect& effect) noexcept {
+  return effect.type == EffectType::Diagnostic && effect.from_state == FlowState::Exiting &&
+         effect.to_state == FlowState::NoActiveFlow;
+}
+
 using Effects = std::vector<Effect>;
 
 struct FlowSnapshot {

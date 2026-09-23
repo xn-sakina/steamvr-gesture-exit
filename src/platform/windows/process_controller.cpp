@@ -30,6 +30,8 @@ bool ProcessController::request_graceful_close(const app::RuntimeTarget& t,
   clear();
   HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, t.pid);
   if (!h) {
+    // Without a process handle the controller cannot independently retain and
+    // revalidate the locked process identity for the eventual fallback.
     status_ = CloseStatus::Failed;
     error_code_ = "EXIT_OPEN_PROCESS_FAILED";
     return false;
@@ -41,14 +43,15 @@ bool ProcessController::request_graceful_close(const app::RuntimeTarget& t,
     error_code_ = "EXIT_TARGET_IDENTITY_CHANGED";
     return false;
   }
+  deadline_ = now + kGracePeriod;
   Search s{t.pid, {}};
   if (!EnumWindows(collect, reinterpret_cast<LPARAM>(&s))) {
-    status_ = CloseStatus::Failed;
+    status_ = CloseStatus::GracefulRequested;
     error_code_ = "EXIT_ENUM_WINDOWS_FAILED";
     return false;
   }
   if (s.windows.empty()) {
-    status_ = CloseStatus::Failed;
+    status_ = CloseStatus::GracefulRequested;
     error_code_ = "EXIT_GRACEFUL_WINDOW_NOT_FOUND";
     return false;
   }
@@ -56,11 +59,10 @@ bool ProcessController::request_graceful_close(const app::RuntimeTarget& t,
   for (HWND w : s.windows)
     requested = PostMessageW(w, WM_CLOSE, 0, 0) != 0 || requested;
   if (!requested) {
-    status_ = CloseStatus::Failed;
+    status_ = CloseStatus::GracefulRequested;
     error_code_ = "EXIT_GRACEFUL_POST_MESSAGE_FAILED";
     return false;
   }
-  deadline_ = now + kGracePeriod;
   status_ = CloseStatus::GracefulRequested;
   return true;
 }

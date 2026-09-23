@@ -247,7 +247,7 @@ Effects FlowStateMachine::on_target_status(const TimePoint, const TargetStatus s
   return effects;
 }
 
-Effects FlowStateMachine::on_graceful_result(const TimePoint now, const CloseRequestResult result,
+Effects FlowStateMachine::on_graceful_result(const TimePoint, const CloseRequestResult result,
                                              std::string error_code) {
   Effects effects;
   if (state_ != FlowState::Exiting)
@@ -255,8 +255,18 @@ Effects FlowStateMachine::on_graceful_result(const TimePoint now, const CloseReq
   if (result == CloseRequestResult::TargetExited) {
     finish_success(effects, "EXIT_GRACEFUL_SUCCEEDED");
   } else if (result == CloseRequestResult::Failed) {
-    finish_failure(now, effects,
-                   error_code.empty() ? "EXIT_GRACEFUL_REQUEST_FAILED" : std::move(error_code));
+    // A missing window or a failed WM_CLOSE delivery only means the
+    // cooperative channel is unavailable. Keep the locked target and the
+    // already-running grace period so the same identity can still be force
+    // closed after the fixed delay.
+    effects.push_back({EffectType::Diagnostic,
+                       locked_target_,
+                       {},
+                       0.0,
+                       error_code.empty() ? "EXIT_GRACEFUL_REQUEST_FAILED"
+                                          : std::move(error_code),
+                       state_,
+                       state_});
   } else {
     effects.push_back({EffectType::Diagnostic,
                        locked_target_,
