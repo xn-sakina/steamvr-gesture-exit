@@ -23,6 +23,7 @@ $script:AppKey = "com.steamvr-bail-out.overlay"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
 $script:RegistrationReceiptPath = Join-Path $script:UserDataDirectory "registered-manifest.txt"
+$script:PendingRegistrationReceiptPath = Join-Path $script:UserDataDirectory "registering-manifest.txt"
 $script:StartedSteamVrServer = $null
 $script:StartedSteamVrStartTime = $null
 $script:SteamVrStartAttempted = $false
@@ -141,6 +142,33 @@ function Require-Package {
     if ($expectedBinary -ne [IO.Path]::GetFullPath($script:ExecutablePath)) {
         throw "Manifest binary path resolves to '$expectedBinary', expected '$script:ExecutablePath'."
     }
+}
+
+function Get-ReceiptValue([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $value = Get-Content -LiteralPath $Path -Raw
+    if ($null -eq $value) { return $null }
+    $value = $value.Trim()
+    if (-not $value) { return $null }
+    return $value
+}
+
+function Set-ReceiptValue([string]$Path, [string]$Value) {
+    New-Item -ItemType Directory -Path $script:UserDataDirectory -Force | Out-Null
+    $temporaryPath = "$Path.tmp"
+    try {
+        Set-Content -LiteralPath $temporaryPath -Value $Value -Encoding UTF8
+        Move-Item -LiteralPath $temporaryPath -Destination $Path -Force
+    } finally {
+        Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-RegistrationReceipts {
+    Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $script:PendingRegistrationReceiptPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "$($script:RegistrationReceiptPath).tmp" -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "$($script:PendingRegistrationReceiptPath).tmp" -Force -ErrorAction SilentlyContinue
 }
 
 function Get-PackagedAddOnProcesses {
@@ -269,18 +297,40 @@ function Invoke-Register {
     Require-Package
     [void](Find-SteamVr)
     Start-SteamVrIfNeeded
-    if (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) {
-        $previousManifest = (Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim()
-        if ($previousManifest -and $previousManifest -ne $script:ManifestPath) {
-            Write-Step "Removing the manifest registration from the previous package location"
-            Invoke-Checked $script:CliPath @("--unregister-manifest", $previousManifest)
+    $pendingManifest = Get-ReceiptValue $script:PendingRegistrationReceiptPath
+    if ($pendingManifest -and $pendingManifest -ne $script:ManifestPath) {
+        & $script:CliPath "--manifest-status" $script:AppKey
+        $manifestState = $LASTEXITCODE
+        if ($manifestState -eq 0) {
+            Write-Step "Recovering an interrupted manifest registration"
+            Invoke-Checked $script:CliPath @("--unregister-manifest", $pendingManifest)
+        } elseif ($manifestState -ne 2) {
+            throw "Unable to recover the interrupted manifest registration (status exit code $manifestState)."
+        }
+        Remove-Item -LiteralPath $script:PendingRegistrationReceiptPath -Force
+        $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
+        if ($confirmedManifest -eq $pendingManifest) {
+            Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force
         }
     }
+    $previousManifest = Get-ReceiptValue $script:RegistrationReceiptPath
+    if ($previousManifest -and $previousManifest -ne $script:ManifestPath) {
+        # Move the confirmed receipt into the recovery slot before changing
+        # SteamVR, so every interruption point retains the path to clean up.
+        Set-ReceiptValue $script:PendingRegistrationReceiptPath $previousManifest
+        Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force
+        Write-Step "Removing the manifest registration from the previous package location"
+        Invoke-Checked $script:CliPath @("--unregister-manifest", $previousManifest)
+        Remove-Item -LiteralPath $script:PendingRegistrationReceiptPath -Force
+    }
+    # Journal the new path before mutating SteamVR. If this command is interrupted,
+    # unregister/clean can still remove a registration that may have succeeded.
+    Set-ReceiptValue $script:PendingRegistrationReceiptPath $script:ManifestPath
     Write-Step "Registering the SteamVR application manifest and enabling auto-launch"
     Invoke-Checked $script:CliPath @("--register-manifest", $script:ManifestPath)
     Invoke-Checked $script:CliPath @("--manifest-status", $script:AppKey)
-    New-Item -ItemType Directory -Path $script:UserDataDirectory -Force | Out-Null
-    Set-Content -LiteralPath $script:RegistrationReceiptPath -Value $script:ManifestPath -Encoding UTF8
+    Set-ReceiptValue $script:RegistrationReceiptPath $script:ManifestPath
+    Remove-Item -LiteralPath $script:PendingRegistrationReceiptPath -Force
     Write-Host "Registered: $script:ManifestPath" -ForegroundColor Green
 }
 
@@ -294,7 +344,7 @@ function Invoke-Unregister {
     & $script:CliPath "--manifest-status" $script:AppKey
     $manifestState = $LASTEXITCODE
     if ($manifestState -eq 2) {
-        Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force -ErrorAction SilentlyContinue
+        Remove-RegistrationReceipts
         Write-Host "Manifest is already unregistered." -ForegroundColor Green
         return
     }
@@ -302,17 +352,17 @@ function Invoke-Unregister {
         throw "Unable to query manifest state (exit code $manifestState); no files were removed."
     }
     $registeredManifest = $script:ManifestPath
-    if (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) {
-        $receiptValue = (Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim()
-        if ($receiptValue) { $registeredManifest = $receiptValue }
-    }
+    $pendingManifest = Get-ReceiptValue $script:PendingRegistrationReceiptPath
+    $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
+    if ($pendingManifest) { $registeredManifest = $pendingManifest }
+    elseif ($confirmedManifest) { $registeredManifest = $confirmedManifest }
     Write-Step "Disabling auto-launch and unregistering the application manifest"
     Invoke-Checked $script:CliPath @("--unregister-manifest", $registeredManifest)
     & $script:CliPath "--manifest-status" $script:AppKey
     if ($LASTEXITCODE -ne 2) {
         throw "Manifest removal could not be verified (status exit code $LASTEXITCODE); no build or user data was removed."
     }
-    Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force -ErrorAction SilentlyContinue
+    Remove-RegistrationReceipts
     Write-Host "Unregistered: $registeredManifest" -ForegroundColor Green
 }
 
@@ -339,6 +389,9 @@ function Invoke-Status {
     Write-Host "User data:         $script:UserDataDirectory ($(if (Test-Path -LiteralPath $script:UserDataDirectory) { 'present' } else { 'absent' }))"
     if (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) {
         Write-Host "Registration path: $((Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim())"
+    }
+    if (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf) {
+        Write-Host "Pending registration: $((Get-Content -LiteralPath $script:PendingRegistrationReceiptPath -Raw).Trim())" -ForegroundColor Yellow
     }
     if ((Test-Path -LiteralPath $script:CliPath -PathType Leaf) -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
         & $script:CliPath "--manifest-status" $script:AppKey
@@ -412,11 +465,24 @@ function Invoke-Clean {
     $script:StartedSteamVrServer = $null
     $script:StartedSteamVrStartTime = $null
     $script:SteamVrStartAttempted = $false
-    Write-Step "Unregistering before deleting the package"
-    try {
-        Invoke-Unregister
-    } finally {
-        Stop-SteamVrStartedForClean
+    $completePackage = (
+        (Test-Path -LiteralPath $script:ExecutablePath -PathType Leaf) -and
+        (Test-Path -LiteralPath $script:CliPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $script:ManifestPath -PathType Leaf)
+    )
+    $hasRegistrationReceipt = (
+        (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) -or
+        (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf)
+    )
+    if ($completePackage -or $hasRegistrationReceipt) {
+        Write-Step "Unregistering before deleting the package"
+        try {
+            Invoke-Unregister
+        } finally {
+            Stop-SteamVrStartedForClean
+        }
+    } else {
+        Write-Host "No complete package or registration receipt exists; skipping SteamVR unregistration."
     }
     Write-Step "Removing reproducible development artifacts"
     Remove-IfPresent $script:BuildDirectory "CMake build tree"

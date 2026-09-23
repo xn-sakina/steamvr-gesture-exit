@@ -434,13 +434,16 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         double seconds = std::max(0.0, e.remaining.count() / 1000.0);
         std::wstringstream value;
         value << static_cast<int>(std::ceil(seconds)) << text(core::StringId::SecondsUnit);
-        if (!overlays_->show_hud({text(core::StringId::ExitGame), value.str(), L"", L"", L"",
+        const std::wstring target_name =
+            e.target ? widen(e.target->display_name) : text(core::StringId::UnknownGame);
+        const std::wstring countdown_body = target_name + L"\n" + value.str();
+        if (!overlays_->show_hud({text(core::StringId::ExitGame), countdown_body, L"", L"", L"",
                                   static_cast<float>(e.progress)})) {
           abort_overlay_flow(now, f);
           return;
         }
         if (hand.tracked && !overlays_->show_wrist(hand, f.sampled_at,
-                                                   {text(core::StringId::ExitGame), value.str(),
+                                                   {text(core::StringId::ExitGame), countdown_body,
                                                     L"", text(core::StringId::CancelExit)})) {
           abort_overlay_flow(now, f);
           return;

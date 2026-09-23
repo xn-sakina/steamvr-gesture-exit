@@ -480,7 +480,21 @@ void state_machine_countdown_rules_and_target_lock() {
   CHECK(machine.on_confirm(at(2), target(43), 5s).empty());
   CHECK(machine.state() == FlowState::Confirming);
   CHECK(machine.on_confirm(at(2), target(), 2s).empty());
-  CHECK(machine.on_confirm(at(2), target(), 5s).empty() == false);
+  const auto countdown_started = machine.on_confirm(at(2), target(), 5s);
+  const auto show_countdown =
+      std::find_if(countdown_started.begin(), countdown_started.end(), [](const Effect& effect) {
+        return effect.type == EffectType::ShowCountdownHud;
+      });
+  CHECK(show_countdown != countdown_started.end());
+  CHECK(show_countdown->target == target());
+
+  const auto countdown_updated = machine.tick(at(50));
+  const auto update_countdown =
+      std::find_if(countdown_updated.begin(), countdown_updated.end(), [](const Effect& effect) {
+        return effect.type == EffectType::UpdateCountdownHud;
+      });
+  CHECK(update_countdown != countdown_updated.end());
+  CHECK(update_countdown->target == target());
 
   auto tracking_lost = ready();
   tracking_lost.configured_hand_tracked = false;
