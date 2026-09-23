@@ -14,6 +14,8 @@ struct DashboardRect {
   float right = 0;
   float bottom = 0;
 
+  bool operator==(const DashboardRect&) const = default;
+
   [[nodiscard]] constexpr bool contains(float x, float y) const noexcept {
     return x >= left && x < right && y >= top && y < bottom;
   }
@@ -51,6 +53,8 @@ struct DashboardButton {
   std::wstring label;
   bool selected = false;
   bool enabled = true;
+
+  bool operator==(const DashboardButton&) const = default;
 };
 
 [[nodiscard]] std::vector<DashboardButton> dashboard_buttons(const Settings& settings);

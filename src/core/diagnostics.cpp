@@ -1,11 +1,14 @@
 #include "core/diagnostics.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 
 namespace bailout::core {
 namespace {
+
+constexpr std::uintmax_t kMaxLogBytes = 4 * 1024 * 1024;
 
 std::string escape_json(std::string_view value) {
   std::string output;
@@ -115,8 +118,45 @@ bool DiagnosticLog::append(const DiagnosticRecord& record, std::string* error) {
       *error = "LOG_CREATE_DIRECTORY_FAILED";
     return false;
   }
+  const std::string line = serialize_diagnostic_record(record, now_utc()) + '\n';
+  if (line.size() > kMaxLogBytes) {
+    if (error)
+      *error = "LOG_RECORD_TOO_LARGE";
+    return false;
+  }
+  const bool exists = std::filesystem::exists(path_, ec);
+  if (ec) {
+    if (error)
+      *error = "LOG_STAT_FAILED";
+    return false;
+  }
+  if (exists) {
+    const auto size = std::filesystem::file_size(path_, ec);
+    if (ec) {
+      if (error)
+        *error = "LOG_STAT_FAILED";
+      return false;
+    }
+    if (size > kMaxLogBytes || line.size() > kMaxLogBytes - size) {
+      if (size > kMaxLogBytes) {
+        // An unbounded log from an older version must not become an unbounded backup.
+        std::filesystem::remove(path_, ec);
+      } else {
+        auto backup = path_;
+        backup += ".1";
+        std::filesystem::remove(backup, ec);
+        if (!ec)
+          std::filesystem::rename(path_, backup, ec);
+      }
+      if (ec) {
+        if (error)
+          *error = "LOG_ROTATE_FAILED";
+        return false;
+      }
+    }
+  }
   std::ofstream output(path_, std::ios::binary | std::ios::app);
-  output << serialize_diagnostic_record(record, now_utc()) << '\n';
+  output << line;
   if (!output) {
     if (error)
       *error = "LOG_WRITE_FAILED";

@@ -23,6 +23,9 @@ $script:AppKey = "com.steamvr-bail-out.overlay"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
 $script:RegistrationReceiptPath = Join-Path $script:UserDataDirectory "registered-manifest.txt"
+$script:StartedSteamVrServer = $null
+$script:StartedSteamVrStartTime = $null
+$script:SteamVrStartAttempted = $false
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -180,12 +183,53 @@ function Start-SteamVrIfNeeded {
     if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) { return }
     Write-Step "Starting SteamVR"
     Start-Process "steam://rungameid/250820"
+    $script:SteamVrStartAttempted = $true
     $deadline = (Get-Date).AddSeconds(60)
     do {
         Start-Sleep -Milliseconds 500
-        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) { return }
+        $server = Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($server) {
+            $script:StartedSteamVrServer = $server
+            $script:StartedSteamVrStartTime = $server.StartTime.ToFileTimeUtc()
+            return
+        }
     } while ((Get-Date) -lt $deadline)
     throw "SteamVR did not become ready within 60 seconds. Start SteamVR manually and retry."
+}
+
+function Stop-SteamVrStartedForClean {
+    if (-not $script:StartedSteamVrServer) {
+        if ($script:SteamVrStartAttempted -and
+            (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
+            throw "SteamVR was launched but its server identity could not be verified; close it normally and retry clean."
+        }
+        return
+    }
+    $started = $script:StartedSteamVrServer
+    $server = Get-Process -Id $started.Id -ErrorAction SilentlyContinue
+    if (-not $server) {
+        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) {
+            throw "SteamVR restarted during clean; the new session was left running."
+        }
+        return
+    }
+    if ($server.ProcessName -ne "vrserver" -or
+        $server.StartTime.ToFileTimeUtc() -ne $script:StartedSteamVrStartTime) {
+        throw "The SteamVR server changed while cleaning; close the new session manually."
+    }
+    Write-Step "Closing SteamVR started for clean"
+    Start-Process -FilePath "vrmonitor://quit"
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        if (-not (Get-Process -Id $started.Id -ErrorAction SilentlyContinue)) {
+            if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) {
+                throw "SteamVR restarted during clean; the new session was left running."
+            }
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    throw "SteamVR did not exit within 30 seconds after the quit request; close it normally and retry clean."
 }
 
 function Invoke-Configure {
@@ -319,8 +363,41 @@ function Invoke-Logs {
         return
     }
     Write-Step "Showing $($latestLog.FullName)"
-    if ($Follow) { Get-Content -LiteralPath $latestLog.FullName -Tail 100 -Wait }
-    else { Get-Content -LiteralPath $latestLog.FullName -Tail 200 }
+    if (-not $Follow) {
+        Get-Content -LiteralPath $latestLog.FullName -Tail 200
+        return
+    }
+    Get-Content -LiteralPath $latestLog.FullName -Tail 100
+    $position = $latestLog.Length
+    $created = $latestLog.CreationTimeUtc
+    while ($true) {
+        Start-Sleep -Milliseconds 500
+        $file = Get-Item -LiteralPath $latestLog.FullName -ErrorAction SilentlyContinue
+        if (-not $file) { continue }
+        if ($file.CreationTimeUtc -ne $created -or $file.Length -lt $position) {
+            $position = 0
+            $created = $file.CreationTimeUtc
+        }
+        if ($file.Length -eq $position) { continue }
+        $stream = $null
+        try {
+            $sharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+            $stream = [IO.FileStream]::new($file.FullName, [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, $sharing)
+            [void]$stream.Seek($position, [IO.SeekOrigin]::Begin)
+            $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+            try {
+                while ($null -ne ($line = $reader.ReadLine())) { Write-Output $line }
+                $position = $stream.Position
+            } finally {
+                $reader.Dispose()
+            }
+        } catch [IO.IOException] {
+            # A rotation may replace the file between Get-Item and opening it.
+        } finally {
+            if ($stream) { $stream.Dispose() }
+        }
+    }
 }
 
 function Remove-IfPresent([string]$Path, [string]$Label) {
@@ -332,14 +409,21 @@ function Remove-IfPresent([string]$Path, [string]$Label) {
 
 function Invoke-Clean {
     Stop-AddOn
+    $script:StartedSteamVrServer = $null
+    $script:StartedSteamVrStartTime = $null
+    $script:SteamVrStartAttempted = $false
     Write-Step "Unregistering before deleting the package"
-    Invoke-Unregister
+    try {
+        Invoke-Unregister
+    } finally {
+        Stop-SteamVrStartedForClean
+    }
     Write-Step "Removing reproducible development artifacts"
     Remove-IfPresent $script:BuildDirectory "CMake build tree"
     Remove-IfPresent $script:PackageDirectory "runtime package"
     if (-not $KeepUserData) { Remove-IfPresent $script:UserDataDirectory "settings and diagnostic logs" }
     else { Write-Host "Keeping user data because -KeepUserData was specified: $script:UserDataDirectory" }
-    Write-Host "Clean complete. SteamVR, Steam, games, and unrelated OpenVR registrations were not modified." -ForegroundColor Green
+    Write-Host "Clean complete. SteamVR was returned to its original running state." -ForegroundColor Green
 }
 
 function Show-Help {

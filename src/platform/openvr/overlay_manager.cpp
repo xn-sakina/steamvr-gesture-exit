@@ -131,6 +131,8 @@ void OverlayManager::shutdown() {
       overlays_->DestroyOverlay(h);
   wrist_ = hud_ = dashboard_ = thumbnail_ = vr::k_ulOverlayHandleInvalid;
   wrist_visible_ = false;
+  dashboard_texture_initialized_ = false;
+  dashboard_texture_dirty_ = true;
   wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
   wrist_smoother_.reset();
 }
@@ -228,13 +230,22 @@ bool OverlayManager::submit_dashboard() {
     return fail("render dashboard failed");
   vr::Texture_t t{renderer_.texture("dashboard"), vr::TextureType_DirectX, vr::ColorSpace_Auto};
   auto result = overlays_->SetOverlayTexture(dashboard_, &t);
-  return result == vr::VROverlayError_None || fail("SetOverlayTexture(dashboard)", result);
+  if (result != vr::VROverlayError_None)
+    return fail("SetOverlayTexture(dashboard)", result);
+  dashboard_texture_initialized_ = true;
+  dashboard_texture_dirty_ = false;
+  return true;
 }
 bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
   auto next = m;
   next.hovered_action = dashboard_model_.hovered_action;
-  dashboard_model_ = std::move(next);
-  return submit_dashboard();
+  if (next != dashboard_model_) {
+    dashboard_model_ = std::move(next);
+    dashboard_texture_dirty_ = true;
+  }
+  if (!dashboard_texture_initialized_ || (dashboard_texture_dirty_ && dashboard_visible()))
+    return submit_dashboard();
+  return true;
 }
 std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose& hand,
                                                              bool confirming, bool counting) {
@@ -308,7 +319,8 @@ std::vector<core::DashboardAction> OverlayManager::poll_dashboard_events() {
   }
   if (hovered != dashboard_model_.hovered_action) {
     dashboard_model_.hovered_action = hovered;
-    if (!submit_dashboard())
+    dashboard_texture_dirty_ = true;
+    if (dashboard_visible() && !submit_dashboard())
       out.clear();
   }
   return out;

@@ -16,11 +16,13 @@ struct SurfaceModel {
 struct DashboardSettingDisplay {
   core::DashboardSettingRow row{};
   std::wstring label, value;
+  bool operator==(const DashboardSettingDisplay&) const = default;
 };
 enum class DashboardStatusTone { Available, Unavailable, Neutral };
 struct DashboardStatusDisplay {
   std::wstring label, value, detail;
   DashboardStatusTone tone = DashboardStatusTone::Neutral;
+  bool operator==(const DashboardStatusDisplay&) const = default;
 };
 struct DashboardSurfaceModel {
   std::wstring title, settings_title, diagnostics_title, help_title, notice;
@@ -29,6 +31,7 @@ struct DashboardSurfaceModel {
   std::vector<DashboardStatusDisplay> statuses;
   std::vector<std::wstring> help_lines;
   std::optional<core::DashboardAction> hovered_action;
+  bool operator==(const DashboardSurfaceModel&) const = default;
 };
 class D3dOverlayRenderer {
  public:

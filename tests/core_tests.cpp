@@ -235,6 +235,51 @@ void diagnostics_are_structured_and_privacy_bounded() {
   CHECK(json.find("processes") == std::string::npos);
 }
 
+void diagnostics_rotate_at_a_fixed_size() {
+  const auto root = std::filesystem::temp_directory_path() / "bailout-core-log-test";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  std::filesystem::create_directories(root);
+  const auto path = root / "runtime.log";
+  auto backup = path;
+  backup += ".1";
+  DiagnosticLog log(path);
+  std::string error;
+  DiagnosticRecord record{};
+  record.event = DiagnosticEventType::Lifecycle;
+  record.code = "FIRST";
+  CHECK(log.append(record, &error));
+  CHECK(!std::filesystem::exists(backup));
+  {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output << std::string(4 * 1024 * 1024 - 8, 'x');
+  }
+  record.code = "SECOND";
+  CHECK(log.append(record, &error));
+  CHECK(std::filesystem::file_size(backup) == 4 * 1024 * 1024 - 8);
+  CHECK(std::filesystem::file_size(path) < 4 * 1024 * 1024);
+  {
+    std::ifstream input(path);
+    std::string line;
+    CHECK(static_cast<bool>(std::getline(input, line)));
+    CHECK(line.find("SECOND") != std::string::npos);
+    CHECK(!static_cast<bool>(std::getline(input, line)));
+  }
+  record.code = "THIRD";
+  CHECK(log.append(record, &error));
+  CHECK(std::filesystem::file_size(backup) == 4 * 1024 * 1024 - 8);
+  CHECK(std::filesystem::file_size(path) < 4 * 1024 * 1024);
+  {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output << std::string(4 * 1024 * 1024 + 8, 'x');
+  }
+  record.code = "AFTER_LEGACY_LOG";
+  CHECK(log.append(record, &error));
+  CHECK(std::filesystem::file_size(path) < 4 * 1024 * 1024);
+  CHECK(std::filesystem::file_size(backup) == 4 * 1024 * 1024 - 8);
+  std::filesystem::remove_all(root, ec);
+}
+
 void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(is_current_vr_game_candidate({"steam.app.438100", "url", false, false, false, false}));
   CHECK(is_current_vr_game_candidate(
@@ -528,6 +573,7 @@ int main() {
       {"settings round trip and recovery", settings_round_trip_and_recovery},
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
+      {"diagnostics bounded rotation", diagnostics_rotate_at_a_fixed_size},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer requires input capabilities", pointer_availability_requires_input_capabilities},
       {"wrist pose smoothing", wrist_pose_smoothing_follows_and_resets_safely},

@@ -53,6 +53,8 @@ class OverlayManager {
                         thumbnail_ = vr::k_ulOverlayHandleInvalid,
                         wrist_ = vr::k_ulOverlayHandleInvalid, hud_ = vr::k_ulOverlayHandleInvalid;
   bool wrist_visible_ = false;
+  bool dashboard_texture_initialized_ = false;
+  bool dashboard_texture_dirty_ = true;
   std::string error_;
   uint32_t wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
   core::WristPoseSmoother wrist_smoother_;
