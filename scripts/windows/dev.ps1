@@ -137,6 +137,20 @@ function Get-PackageFilePath([string]$PackageRoot, [string]$RelativePath) {
     return Join-Path $PackageRoot ($RelativePath -replace '/', '\')
 }
 
+function Get-FileSha256([string]$Path) {
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::OpenRead($Path)
+        try {
+            return [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace("-", "").ToLowerInvariant()
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
 function Write-PackageIntegrity([string]$PackageRoot) {
     $files = @()
     foreach ($relativePath in $script:RequiredPackageFiles) {
@@ -146,7 +160,7 @@ function Write-PackageIntegrity([string]$PackageRoot) {
         }
         $files += [ordered]@{
             path = $relativePath
-            sha256 = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            sha256 = (Get-FileSha256 $filePath)
         }
     }
     $integrity = [ordered]@{
@@ -194,7 +208,7 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
         if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
             throw "Required package file is missing: $filePath. Run 'package' first."
         }
-        $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash
+        $actualHash = Get-FileSha256 $filePath
         if ($actualHash -ine $expectedHash) {
             throw "Package file does not match build '$packageId': $filePath. Run 'package' again."
         }
