@@ -176,14 +176,15 @@ if(WIN32)
     )
 
     install(TARGETS steamvr_bail_out RUNTIME DESTINATION bin/win64)
-    install(TARGETS steamvr_bail_out_cli RUNTIME DESTINATION bin/win64)
+    install(TARGETS steamvr_bail_out_cli RUNTIME DESTINATION bin/win64 CONFIGURATIONS Debug)
     install(FILES "${OPENVR_ROOT}/bin/win64/openvr_api.dll" DESTINATION bin/win64)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/manifest/steamvr_bail_out.vrmanifest"
         DESTINATION manifest)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/docs/"
         DESTINATION docs
+        CONFIGURATIONS Debug
         FILES_MATCHING PATTERN "*.md")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION .)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION . CONFIGURATIONS Debug)
 endif()
 
 if(BAILOUT_BUILD_TESTS)

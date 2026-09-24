@@ -22,12 +22,13 @@ $script:ExecutablePath = Join-Path $script:PackageDirectory "bin\win64\steamvr_b
 $script:CliPath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out_cli.exe"
 $script:ManifestPath = Join-Path $script:PackageDirectory "manifest\steamvr_bail_out.vrmanifest"
 $script:PackageIntegrityFileName = ".package-integrity.json"
-$script:RequiredPackageFiles = @(
+$script:PackageIntegrityCatalogPath = Join-Path (Split-Path $script:PackageDirectory -Parent) ".steamvr-bail-out-integrity.json"
+$script:RuntimePackageFiles = @(
     "bin/win64/steamvr_bail_out.exe",
-    "bin/win64/steamvr_bail_out_cli.exe",
     "bin/win64/openvr_api.dll",
     "manifest/steamvr_bail_out.vrmanifest"
 )
+$script:DebugOnlyPackageFiles = @("bin/win64/steamvr_bail_out_cli.exe")
 $script:AppKey = "com.steamvr-bail-out.overlay"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
@@ -151,9 +152,29 @@ function Get-FileSha256([string]$Path) {
     }
 }
 
+function Get-RequiredPackageFiles([string]$PackageConfiguration) {
+    $script:RuntimePackageFiles
+    if ($PackageConfiguration -eq "Debug") { $script:DebugOnlyPackageFiles }
+}
+
+function Write-PackageIntegrityCatalog([object[]]$Records) {
+    $catalog = [ordered]@{ schema_version = 1; records = $Records }
+    $temporaryPath = "$($script:PackageIntegrityCatalogPath).tmp"
+    try {
+        $catalog | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
+        if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
+            [IO.File]::Replace($temporaryPath, $script:PackageIntegrityCatalogPath, $null)
+        } else {
+            [IO.File]::Move($temporaryPath, $script:PackageIntegrityCatalogPath)
+        }
+    } finally {
+        Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Write-PackageIntegrity([string]$PackageRoot) {
     $files = @()
-    foreach ($relativePath in $script:RequiredPackageFiles) {
+    foreach ($relativePath in @(Get-RequiredPackageFiles $Configuration)) {
         $filePath = Get-PackageFilePath $PackageRoot $relativePath
         if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
             throw "Cannot complete the package because a required file is missing: $filePath"
@@ -170,39 +191,59 @@ function Write-PackageIntegrity([string]$PackageRoot) {
         created_utc = [DateTime]::UtcNow.ToString("o")
         files = $files
     }
-    $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
-    $integrity | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $integrityPath -Encoding UTF8
+    if ($Configuration -eq "Release") {
+        $records = @()
+        if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
+            $catalog = Get-Content -LiteralPath $script:PackageIntegrityCatalogPath -Raw | ConvertFrom-Json
+            if ($catalog.schema_version -ne 1) { throw "Package integrity catalog has an unsupported schema." }
+            $records = @($catalog.records)
+        }
+        Write-PackageIntegrityCatalog @($records + $integrity)
+    } else {
+        $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
+        $integrity | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $integrityPath -Encoding UTF8
+    }
 }
 
-function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
+function Get-PackageIntegrityRecords([string]$PackageRoot) {
     $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
-    if (-not (Test-Path -LiteralPath $integrityPath -PathType Leaf)) {
-        throw "Package integrity record is missing: $integrityPath. Run 'package' first."
+    if (Test-Path -LiteralPath $integrityPath -PathType Leaf) {
+        Get-Content -LiteralPath $integrityPath -Raw | ConvertFrom-Json
+        return
     }
-    try { $integrity = Get-Content -LiteralPath $integrityPath -Raw | ConvertFrom-Json }
-    catch { throw "Package integrity record is not valid JSON: $integrityPath. $($_.Exception.Message)" }
+    if (-not (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf)) {
+        throw "Package integrity record is missing for $PackageRoot. Run 'package' first."
+    }
+    $catalog = Get-Content -LiteralPath $script:PackageIntegrityCatalogPath -Raw | ConvertFrom-Json
+    if ($catalog.schema_version -ne 1) { throw "Package integrity catalog has an unsupported schema." }
+    foreach ($record in @($catalog.records)) { $record }
+}
+
+function Assert-PackageIntegrity([string]$PackageRoot, [object]$Integrity) {
+    $integrity = $Integrity
     if ($integrity.schema_version -ne 1) {
-        throw "Package integrity record has an unsupported schema: $integrityPath"
+        throw "Package integrity record has an unsupported schema."
     }
     $packageId = [Guid]::Empty
     if (-not [Guid]::TryParse([string]$integrity.package_id, [ref]$packageId)) {
-        throw "Package integrity record has an invalid package id: $integrityPath"
+        throw "Package integrity record has an invalid package id."
     }
     if (@("Debug", "Release") -notcontains [string]$integrity.configuration) {
-        throw "Package integrity record has an invalid build configuration: $integrityPath"
+        throw "Package integrity record has an invalid build configuration."
     }
+    $requiredFiles = @(Get-RequiredPackageFiles ([string]$integrity.configuration))
     $recordedFiles = @($integrity.files)
-    if ($recordedFiles.Count -ne $script:RequiredPackageFiles.Count) {
-        throw "Package integrity record does not describe the complete required file set: $integrityPath"
+    if ($recordedFiles.Count -ne $requiredFiles.Count) {
+        throw "Package integrity record does not describe the complete required file set."
     }
-    foreach ($relativePath in $script:RequiredPackageFiles) {
+    foreach ($relativePath in $requiredFiles) {
         $matchingRecords = @($recordedFiles | Where-Object { [string]$_.path -ceq $relativePath })
         if ($matchingRecords.Count -ne 1) {
-            throw "Package integrity record does not uniquely identify '$relativePath': $integrityPath"
+            throw "Package integrity record does not uniquely identify '$relativePath'."
         }
         $expectedHash = [string]$matchingRecords[0].sha256
         if ($expectedHash -notmatch '^[0-9a-fA-F]{64}$') {
-            throw "Package integrity record has an invalid SHA-256 for '$relativePath': $integrityPath"
+            throw "Package integrity record has an invalid SHA-256 for '$relativePath'."
         }
         $filePath = Get-PackageFilePath $PackageRoot $relativePath
         if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
@@ -213,6 +254,31 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
             throw "Package file does not match build '$packageId': $filePath. Run 'package' again."
         }
     }
+    if ($integrity.configuration -eq "Release") {
+        $actualFiles = @(Get-ChildItem -LiteralPath $PackageRoot -Recurse -File | ForEach-Object {
+            $_.FullName.Substring($PackageRoot.Length).TrimStart('\') -replace '\\', '/'
+        })
+        if (@(Compare-Object $requiredFiles $actualFiles).Count -ne 0) {
+            throw "Release package contains files outside the three-file runtime payload: $PackageRoot"
+        }
+    }
+}
+
+function Get-PackageIntegrityRecord([string]$PackageRoot) {
+    $lastError = $null
+    foreach ($record in @(Get-PackageIntegrityRecords $PackageRoot)) {
+        try {
+            Assert-PackageIntegrity $PackageRoot $record
+            return $record
+        } catch {
+            $lastError = $_.Exception.Message
+        }
+    }
+    throw "Package integrity verification failed for $PackageRoot. $lastError"
+}
+
+function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
+    [void](Get-PackageIntegrityRecord $PackageRoot)
 
     $executablePath = Get-PackageFilePath $PackageRoot "bin/win64/steamvr_bail_out.exe"
     $manifestPath = Get-PackageFilePath $PackageRoot "manifest/steamvr_bail_out.vrmanifest"
@@ -224,6 +290,19 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
     if ($expectedBinary -ne [IO.Path]::GetFullPath($executablePath)) {
         throw "Manifest binary path resolves to '$expectedBinary', expected '$executablePath'."
     }
+}
+
+function Resolve-CliPath {
+    $integrity = Get-PackageIntegrityRecord $script:PackageDirectory
+    if ($integrity.configuration -eq "Debug") {
+        $path = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out_cli.exe"
+    } else {
+        $path = Join-Path $script:BuildDirectory "Release\steamvr_bail_out_cli.exe"
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Registration helper is missing: $path. Run 'package -Configuration $($integrity.configuration)' first."
+    }
+    return $path
 }
 
 function Get-ReceiptValue([string]$Path) {
@@ -371,6 +450,14 @@ function Publish-Package {
     if (Test-Path -LiteralPath $script:PackagePreviousDirectory) {
         Remove-Item -LiteralPath $script:PackagePreviousDirectory -Recurse -Force
     }
+    if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
+        $currentIntegrity = Get-PackageIntegrityRecord $script:PackageDirectory
+        if ($currentIntegrity.configuration -eq "Release") {
+            Write-PackageIntegrityCatalog @($currentIntegrity)
+        } else {
+            Remove-Item -LiteralPath $script:PackageIntegrityCatalogPath -Force
+        }
+    }
 }
 
 function Start-SteamVrIfNeeded {
@@ -488,6 +575,7 @@ function Invoke-Package {
 function Invoke-Register {
     Repair-PackageSwap
     Require-Package
+    $script:CliPath = Resolve-CliPath
     [void](Find-SteamVr)
     Start-SteamVrIfNeeded
     Wait-SteamVrApplicationsReady
@@ -531,6 +619,7 @@ function Invoke-Register {
 function Invoke-Unregister {
     Repair-PackageSwap
     Require-Package
+    $script:CliPath = Resolve-CliPath
     Start-SteamVrIfNeeded
     Wait-SteamVrApplicationsReady
     Stop-AddOn
@@ -581,6 +670,11 @@ function Invoke-Status {
     } catch {
         $packageProblem = $_.Exception.Message
     }
+    $cliProblem = $null
+    if ($packageReady) {
+        try { $script:CliPath = Resolve-CliPath }
+        catch { $cliProblem = $_.Exception.Message }
+    }
     try { Write-Host "CMake:             $(Find-CMake)" } catch { Write-Host "CMake:             not found" -ForegroundColor Yellow }
     try { Write-Host "SteamVR:           $(Find-SteamVr)" } catch { Write-Host "SteamVR:           not found" -ForegroundColor Yellow }
     Write-Host "Build directory:   $script:BuildDirectory ($(if (Test-Path -LiteralPath $script:BuildDirectory) { 'present' } else { 'absent' }))"
@@ -597,7 +691,7 @@ function Invoke-Status {
     if (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf) {
         Write-Host "Pending registration: $((Get-Content -LiteralPath $script:PendingRegistrationReceiptPath -Raw).Trim())" -ForegroundColor Yellow
     }
-    if ($packageReady -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
+    if ($packageReady -and (-not $cliProblem) -and (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
         & $script:CliPath "--manifest-status" $script:AppKey
         switch ($LASTEXITCODE) {
             0 { Write-Host "Manifest state:    registered" -ForegroundColor Green }
@@ -605,7 +699,8 @@ function Invoke-Status {
             default { Write-Host "Manifest state:    unavailable (exit code $LASTEXITCODE)" -ForegroundColor Yellow }
         }
     } else {
-        Write-Host "Manifest state:    unavailable (SteamVR/package is not running/present)" -ForegroundColor Yellow
+        $reason = if ($cliProblem) { $cliProblem } else { "SteamVR/package is not running/present" }
+        Write-Host "Manifest state:    unavailable ($reason)" -ForegroundColor Yellow
     }
     $latestLog = Get-ChildItem -LiteralPath $script:LogDirectory -Filter "*.log" -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -691,6 +786,8 @@ function Invoke-Clean {
     Remove-IfPresent $script:PackageDirectory "runtime package"
     Remove-IfPresent $script:PackageStagingDirectory "staged runtime package"
     Remove-IfPresent $script:PackagePreviousDirectory "package switch backup"
+    Remove-IfPresent $script:PackageIntegrityCatalogPath "package integrity catalog"
+    Remove-IfPresent "$($script:PackageIntegrityCatalogPath).tmp" "package integrity catalog temporary file"
     if (-not $KeepUserData) { Remove-IfPresent $script:UserDataDirectory "settings and diagnostic logs" }
     else { Write-Host "Keeping user data because -KeepUserData was specified: $script:UserDataDirectory" }
     Write-Host "Clean complete. SteamVR was returned to its original running state." -ForegroundColor Green
