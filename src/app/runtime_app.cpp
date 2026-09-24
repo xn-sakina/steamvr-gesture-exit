@@ -532,6 +532,11 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
   }
 }
 int RuntimeApp::run() {
+  SteamVrServerMonitor server;
+  if (!server.attach() || !server.alive()) {
+    (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_UNAVAILABLE"});
+    return 0;
+  }
   const uint64_t creation_token = process_creation_token();
   if (creation_token == 0) {
     (void)log_.append({core::DiagnosticEventType::Error, "STOP_SIGNAL_INIT_FAILED"});
@@ -555,14 +560,10 @@ int RuntimeApp::run() {
     vr_.shutdown();
     return 0;
   }
-  SteamVrServerMonitor server;
-  const auto server_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (!server.attach() && std::chrono::steady_clock::now() < server_deadline)
-    Sleep(100);
   if (!server.alive()) {
-    (void)log_.append({core::DiagnosticEventType::Error, "STEAMVR_SERVER_MONITOR_UNAVAILABLE"});
+    (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_EXITED"});
     vr_.shutdown();
-    return 1;
+    return 0;
   }
   overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays());
   if (!overlays_->initialize()) {

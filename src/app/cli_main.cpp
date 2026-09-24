@@ -40,10 +40,9 @@ int application_command(int argc, wchar_t** argv) {
   }
   const bool manifest_command =
       command == L"--register-manifest" || command == L"--unregister-manifest";
-  const bool auto_command = command == L"--enable-autolaunch" || command == L"--disable-autolaunch";
   const bool status_command =
       command == L"--manifest-status" || command == L"--autolaunch-status";
-  if (!manifest_command && !auto_command && !status_command) {
+  if (!manifest_command && !status_command) {
     std::cerr << "unknown command\n";
     return 1;
   }
@@ -56,7 +55,7 @@ int application_command(int argc, wchar_t** argv) {
     return 1;
   }
   bailout::platform::openvr::OpenVrRuntime runtime;
-  if (!runtime.initialize(vr::VRApplication_Utility)) {
+  if (!runtime.initialize(vr::VRApplication_Background)) {
     std::cerr << runtime.error() << "\n";
     return 1;
   }
@@ -72,14 +71,12 @@ int application_command(int argc, wchar_t** argv) {
       vr::EVRApplicationError error;
       if (command == L"--register-manifest") {
         const bool was_installed = apps->IsApplicationInstalled(kAppKey);
-        const bool autolaunch_enabled =
-            was_installed && apps->GetApplicationAutoLaunch(kAppKey);
         error = apps->AddApplicationManifest(native.c_str(), false);
         if (error == vr::VRApplicationError_None) {
           if (!wait_for_manifest(apps))
             error = vr::VRApplicationError_UnknownApplication;
-          else
-            error = apps->SetApplicationAutoLaunch(kAppKey, autolaunch_enabled);
+          else if (!was_installed)
+            error = apps->SetApplicationAutoLaunch(kAppKey, false);
           if (error != vr::VRApplicationError_None && !was_installed)
             apps->RemoveApplicationManifest(native.c_str());
         }
@@ -93,12 +90,6 @@ int application_command(int argc, wchar_t** argv) {
       else
         std::cerr << apps->GetApplicationsErrorNameFromEnum(error) << "\n";
     }
-  } else if (auto_command) {
-    auto error = apps->SetApplicationAutoLaunch(kAppKey, command == L"--enable-autolaunch");
-    if (error == vr::VRApplicationError_None)
-      result = 0;
-    else
-      std::cerr << apps->GetApplicationsErrorNameFromEnum(error) << "\n";
   } else if (status_command) {
     std::wstring key_w(argv[2]);
     int n = WideCharToMultiByte(CP_UTF8, 0, key_w.data(), static_cast<int>(key_w.size()), nullptr,

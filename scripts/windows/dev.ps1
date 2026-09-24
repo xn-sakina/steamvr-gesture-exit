@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "configure", "build", "package", "register", "update", "status", "logs", "clean", "unregister")]
+    [ValidateSet("help", "configure", "build", "package", "register", "update", "status", "logs", "stop-orphans", "clean", "unregister")]
     [string]$Action = "help",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
@@ -35,10 +35,6 @@ $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
 $script:RegistrationReceiptPath = Join-Path $script:UserDataDirectory "registered-manifest.txt"
 $script:PendingRegistrationReceiptPath = Join-Path $script:UserDataDirectory "registering-manifest.txt"
-$script:PendingAutoLaunchReceiptPath = Join-Path $script:UserDataDirectory "registering-autolaunch.txt"
-$script:StartedSteamVrServer = $null
-$script:StartedSteamVrStartTime = $null
-$script:SteamVrStartAttempted = $false
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -335,10 +331,10 @@ function Set-ReceiptValue([string]$Path, [string]$Value) {
 function Remove-RegistrationReceipts {
     Remove-Item -LiteralPath $script:RegistrationReceiptPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $script:PendingRegistrationReceiptPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $script:PendingAutoLaunchReceiptPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $script:UserDataDirectory "registering-autolaunch.txt") -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath "$($script:RegistrationReceiptPath).tmp" -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath "$($script:PendingRegistrationReceiptPath).tmp" -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath "$($script:PendingAutoLaunchReceiptPath).tmp" -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $script:UserDataDirectory "registering-autolaunch.txt.tmp") -Force -ErrorAction SilentlyContinue
 }
 
 function Get-PackagedAddOnProcesses {
@@ -375,6 +371,38 @@ function Stop-AddOn {
             throw "Packaged add-on PID $($process.Id) did not finish shutdown within 20 seconds; package was not modified."
         }
     }
+}
+
+function Invoke-Stop-Orphans {
+    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "SteamVR is running. Close SteamVR normally before cleaning orphan add-on processes."
+    }
+    $orphans = @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)
+    if ($orphans.Count -eq 0) {
+        Write-Host "No orphan steamvr_bail_out.exe processes found." -ForegroundColor Green
+        return
+    }
+    foreach ($orphan in $orphans) {
+        try { $startToken = $orphan.StartTime.ToFileTimeUtc() }
+        catch { throw "Cannot verify the identity of PID $($orphan.Id); no process was stopped for this PID." }
+        $path = "<path unavailable>"
+        try { if ($orphan.Path) { $path = $orphan.Path } } catch { }
+        Write-Host "Stopping orphan PID $($orphan.Id): $path"
+        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            throw "SteamVR started during orphan cleanup; stop it normally and retry."
+        }
+        $current = Get-Process -Id $orphan.Id -ErrorAction SilentlyContinue
+        if (-not $current) { continue }
+        try { $sameProcess = $current.ProcessName -eq "steamvr_bail_out" -and $current.StartTime.ToFileTimeUtc() -eq $startToken }
+        catch { $sameProcess = $false }
+        if (-not $sameProcess) { throw "PID $($orphan.Id) changed identity during orphan cleanup; it was not stopped." }
+        Stop-Process -Id $orphan.Id -Force -ErrorAction Stop
+    }
+    Start-Sleep -Milliseconds 500
+    if (Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "Some add-on processes remain. Run 'status' to inspect them."
+    }
+    Write-Host "All orphan steamvr_bail_out.exe processes were stopped." -ForegroundColor Green
 }
 
 function Repair-PackageSwap {
@@ -431,6 +459,9 @@ function Repair-PackageSwap {
 
 function Publish-Package {
     Require-Package $script:PackageStagingDirectory
+    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "SteamVR started while packaging. Close it normally and retry; no package was switched."
+    }
     Stop-AddOn
     $savedPrevious = $false
     $activatedStaging = $false
@@ -469,22 +500,10 @@ function Publish-Package {
     }
 }
 
-function Start-SteamVrIfNeeded {
-    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) { return }
-    Write-Step "Starting SteamVR"
-    Start-Process "steam://rungameid/250820"
-    $script:SteamVrStartAttempted = $true
-    $deadline = (Get-Date).AddSeconds(60)
-    do {
-        Start-Sleep -Milliseconds 500
-        $server = Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($server) {
-            $script:StartedSteamVrServer = $server
-            $script:StartedSteamVrStartTime = $server.StartTime.ToFileTimeUtc()
-            return
-        }
-    } while ((Get-Date) -lt $deadline)
-    throw "SteamVR did not become ready within 60 seconds. Start SteamVR manually and retry."
+function Require-SteamVrRunning {
+    if (-not (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        throw "SteamVR is stopped. Open SteamVR yourself before running this registration command; the helper will not start it."
+    }
 }
 
 function Wait-SteamVrApplicationsReady {
@@ -502,41 +521,6 @@ function Wait-SteamVrApplicationsReady {
         throw "SteamVR applications interface did not become ready within 60 seconds: $lastOutput"
     }
     throw "SteamVR applications interface did not become ready within 60 seconds."
-}
-
-function Stop-SteamVrStartedForClean {
-    if (-not $script:StartedSteamVrServer) {
-        if ($script:SteamVrStartAttempted -and
-            (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue)) {
-            throw "SteamVR was launched but its server identity could not be verified; close it normally and retry clean."
-        }
-        return
-    }
-    $started = $script:StartedSteamVrServer
-    $server = Get-Process -Id $started.Id -ErrorAction SilentlyContinue
-    if (-not $server) {
-        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) {
-            throw "SteamVR restarted during clean; the new session was left running."
-        }
-        return
-    }
-    if ($server.ProcessName -ne "vrserver" -or
-        $server.StartTime.ToFileTimeUtc() -ne $script:StartedSteamVrStartTime) {
-        throw "The SteamVR server changed while cleaning; close the new session manually."
-    }
-    Write-Step "Closing SteamVR started for clean"
-    Start-Process -FilePath "vrmonitor://quit"
-    $deadline = (Get-Date).AddSeconds(30)
-    do {
-        if (-not (Get-Process -Id $started.Id -ErrorAction SilentlyContinue)) {
-            if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue) {
-                throw "SteamVR restarted during clean; the new session was left running."
-            }
-            return
-        }
-        Start-Sleep -Milliseconds 500
-    } while ((Get-Date) -lt $deadline)
-    throw "SteamVR did not exit within 30 seconds after the quit request; close it normally and retry clean."
 }
 
 function Invoke-Configure {
@@ -561,6 +545,9 @@ function Invoke-Build {
 }
 
 function Invoke-Package {
+    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "Close SteamVR normally before package/update. Packaging will not stop SteamVR or risk its auto-launching the add-on during replacement."
+    }
     Repair-PackageSwap
     Invoke-Build
     Write-Step "Staging and validating the relocatable runtime package"
@@ -586,24 +573,18 @@ function Invoke-Register {
     Require-Package
     $script:CliPath = Resolve-CliPath
     [void](Find-SteamVr)
-    Start-SteamVrIfNeeded
+    Require-SteamVrRunning
     Wait-SteamVrApplicationsReady
-    & $script:CliPath "--autolaunch-status" $script:AppKey
-    $previousAutoLaunch = $LASTEXITCODE
-    if (@(0, 2, 3) -notcontains $previousAutoLaunch) {
-        throw "Unable to query the existing SteamVR auto-launch setting (exit code $previousAutoLaunch)."
-    }
-    $savedAutoLaunch = Get-ReceiptValue $script:PendingAutoLaunchReceiptPath
-    if ($null -ne $savedAutoLaunch) {
-        if (@("0", "2") -notcontains $savedAutoLaunch) {
-            throw "Invalid interrupted registration auto-launch receipt: $script:PendingAutoLaunchReceiptPath"
-        }
-        $previousAutoLaunch = [int]$savedAutoLaunch
-    } elseif ($previousAutoLaunch -eq 3) {
-        $previousAutoLaunch = 2
-    }
-    Set-ReceiptValue $script:PendingAutoLaunchReceiptPath ([string]$previousAutoLaunch)
+    Remove-Item -LiteralPath (Join-Path $script:UserDataDirectory "registering-autolaunch.txt") -Force -ErrorAction SilentlyContinue
+    $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
     $pendingManifest = Get-ReceiptValue $script:PendingRegistrationReceiptPath
+    if ($confirmedManifest -eq $script:ManifestPath -and -not $pendingManifest) {
+        & $script:CliPath "--manifest-status" $script:AppKey
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Manifest is already registered; SteamVR's startup setting was not touched." -ForegroundColor Green
+            return
+        }
+    }
     if ($pendingManifest -and $pendingManifest -ne $script:ManifestPath) {
         & $script:CliPath "--manifest-status" $script:AppKey
         $manifestState = $LASTEXITCODE
@@ -635,15 +616,6 @@ function Invoke-Register {
     Write-Step "Registering the SteamVR application manifest"
     Invoke-Checked $script:CliPath @("--register-manifest", $script:ManifestPath)
     Invoke-Checked $script:CliPath @("--manifest-status", $script:AppKey)
-    if ($previousAutoLaunch -eq 0) {
-        Invoke-Checked $script:CliPath @("--enable-autolaunch")
-    }
-    & $script:CliPath "--autolaunch-status" $script:AppKey
-    $expectedAutoLaunch = if ($previousAutoLaunch -eq 0) { 0 } else { 2 }
-    if ($LASTEXITCODE -ne $expectedAutoLaunch) {
-        throw "SteamVR auto-launch setting changed unexpectedly during registration."
-    }
-    Remove-Item -LiteralPath $script:PendingAutoLaunchReceiptPath -Force
     Set-ReceiptValue $script:RegistrationReceiptPath $script:ManifestPath
     Remove-Item -LiteralPath $script:PendingRegistrationReceiptPath -Force
     Write-Host "Registered: $script:ManifestPath" -ForegroundColor Green
@@ -653,12 +625,12 @@ function Invoke-Unregister {
     Repair-PackageSwap
     Require-Package
     $script:CliPath = Resolve-CliPath
-    Start-SteamVrIfNeeded
+    Require-SteamVrRunning
     Wait-SteamVrApplicationsReady
-    Stop-AddOn
     & $script:CliPath "--manifest-status" $script:AppKey
     $manifestState = $LASTEXITCODE
     if ($manifestState -eq 2) {
+        Stop-AddOn
         Remove-RegistrationReceipts
         Write-Host "Manifest is already unregistered." -ForegroundColor Green
         return
@@ -673,6 +645,7 @@ function Invoke-Unregister {
     elseif ($confirmedManifest) { $registeredManifest = $confirmedManifest }
     Write-Step "Disabling auto-launch and unregistering the application manifest"
     Invoke-Checked $script:CliPath @("--unregister-manifest", $registeredManifest)
+    Stop-AddOn
     & $script:CliPath "--manifest-status" $script:AppKey
     if ($LASTEXITCODE -ne 2) {
         throw "Manifest removal could not be verified (status exit code $LASTEXITCODE); no build or user data was removed."
@@ -705,17 +678,27 @@ function Invoke-Status {
     Write-Host "Manifest:          $script:ManifestPath ($(if (Test-Path -LiteralPath $script:ManifestPath) { 'present' } else { 'absent' }))"
     $steamVrRunning = [bool](Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1)
     $addOnRunning = @(Get-PackagedAddOnProcesses).Count -gt 0
+    $allAddOnProcesses = @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)
     Write-Host "SteamVR process:   $(if ($steamVrRunning) { 'running' } else { 'stopped' })"
     Write-Host "Add-on process:    $(if ($addOnRunning) { 'running' } else { 'stopped' })"
+    if (-not $steamVrRunning) {
+        if ($allAddOnProcesses.Count -eq 0) {
+            Write-Host "Orphan check:      clear" -ForegroundColor Green
+        } else {
+            Write-Host "Orphan check:      $($allAddOnProcesses.Count) process(es) remain; run stop-orphans" -ForegroundColor Red
+        }
+    }
+    foreach ($process in $allAddOnProcesses) {
+        $path = "<path unavailable>"
+        try { if ($process.Path) { $path = $process.Path } } catch { }
+        Write-Host "Add-on PID $($process.Id): $path"
+    }
     Write-Host "User data:         $script:UserDataDirectory ($(if (Test-Path -LiteralPath $script:UserDataDirectory) { 'present' } else { 'absent' }))"
     if (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) {
         Write-Host "Registration path: $((Get-Content -LiteralPath $script:RegistrationReceiptPath -Raw).Trim())"
     }
     if (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf) {
         Write-Host "Pending registration: $((Get-Content -LiteralPath $script:PendingRegistrationReceiptPath -Raw).Trim())" -ForegroundColor Yellow
-    }
-    if (Test-Path -LiteralPath $script:PendingAutoLaunchReceiptPath -PathType Leaf) {
-        Write-Host "Pending startup setting recovery: yes" -ForegroundColor Yellow
     }
     if ($packageReady -and (-not $cliProblem) -and $steamVrRunning) {
         & $script:CliPath "--manifest-status" $script:AppKey
@@ -803,25 +786,17 @@ function Remove-IfPresent([string]$Path, [string]$Label) {
 
 function Invoke-Clean {
     Repair-PackageSwap
-    Stop-AddOn
-    $script:StartedSteamVrServer = $null
-    $script:StartedSteamVrStartTime = $null
-    $script:SteamVrStartAttempted = $false
     $completePackage = $false
     try { Require-Package; $completePackage = $true } catch { }
     $hasRegistrationReceipt = (
         (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) -or
-        (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf) -or
-        (Test-Path -LiteralPath $script:PendingAutoLaunchReceiptPath -PathType Leaf)
+        (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf)
     )
     if ($completePackage -or $hasRegistrationReceipt) {
         Write-Step "Unregistering before deleting the package"
-        try {
-            Invoke-Unregister
-        } finally {
-            Stop-SteamVrStartedForClean
-        }
+        Invoke-Unregister
     } else {
+        Stop-AddOn
         Write-Host "No complete package or registration receipt exists; skipping SteamVR unregistration."
     }
     Write-Step "Removing reproducible development artifacts"
@@ -833,7 +808,17 @@ function Invoke-Clean {
     Remove-IfPresent "$($script:PackageIntegrityCatalogPath).tmp" "package integrity catalog temporary file"
     if (-not $KeepUserData) { Remove-IfPresent $script:UserDataDirectory "settings and diagnostic logs" }
     else { Write-Host "Keeping user data because -KeepUserData was specified: $script:UserDataDirectory" }
-    Write-Host "Clean complete. SteamVR was returned to its original running state." -ForegroundColor Green
+    Write-Host "Clean complete. SteamVR was not started or stopped by this command." -ForegroundColor Green
+}
+
+function Invoke-Update {
+    Invoke-Package
+    $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
+    if ($confirmedManifest -ne $script:ManifestPath -or
+        (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf)) {
+        throw "Package updated, but registration needs attention. Open SteamVR yourself and run 'register'; update did not start SteamVR or the add-on."
+    }
+    Write-Host "Package updated. Registration and auto-launch settings were left unchanged; update did not start SteamVR or the add-on." -ForegroundColor Green
 }
 
 function Show-Help {
@@ -846,13 +831,14 @@ Usage:
 Actions:
   configure   Configure an x64 Visual Studio 2022 CMake build.
   build       Compile the selected configuration.
-  package     Build and install the relocatable runtime package.
-  register    Register the packaged SteamVR application manifest; preserve the startup setting.
-  update      Build, stage, stop, switch packages, and preserve the startup setting.
+  package     Build and install the runtime package; SteamVR must be stopped.
+  register    Register the manifest; SteamVR must already be running.
+  update      Replace the package while SteamVR is stopped; start neither program.
   status      Show toolchain, package, registration, and process status.
   logs        Show the last 200 log lines; add -Follow to tail continuously.
-  unregister  Disable auto-launch and remove only this application's manifest.
-  clean       Unregister and remove build/package/user data; -KeepUserData preserves settings/logs.
+  stop-orphans  When SteamVR is stopped, stop leftover add-on processes.
+  unregister  Remove this application's manifest; SteamVR must already be running.
+  clean       Unregister and remove artifacts; SteamVR must run if registered.
 "@ | Write-Host
 }
 
@@ -861,9 +847,10 @@ switch ($Action) {
     "build"      { Invoke-Build }
     "package"    { Invoke-Package }
     "register"   { Invoke-Register }
-    "update"     { Invoke-Package; Invoke-Register }
+    "update"     { Invoke-Update }
     "status"     { Invoke-Status }
     "logs"       { Invoke-Logs }
+    "stop-orphans" { Invoke-Stop-Orphans }
     "unregister" { Invoke-Unregister }
     "clean"      { Invoke-Clean }
     default       { Show-Help }
