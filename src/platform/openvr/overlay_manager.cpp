@@ -421,8 +421,8 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
   }
   return out;
 }
-std::vector<core::DashboardAction> OverlayManager::poll_dashboard_events() {
-  std::vector<core::DashboardAction> out;
+DashboardEvents OverlayManager::poll_dashboard_events() {
+  DashboardEvents out;
   auto hovered = dashboard_model_.hovered_action;
   vr::VREvent_t e{};
   while (overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e))) {
@@ -432,18 +432,20 @@ std::vector<core::DashboardAction> OverlayManager::poll_dashboard_events() {
     }
     if (e.eventType != vr::VREvent_MouseMove && e.eventType != vr::VREvent_MouseButtonDown)
       continue;
-    const float x = e.data.mouse.x, y = 640.0f - e.data.mouse.y;
+    // OpenVR mouse events use the same top-left pixel origin as Direct2D.
+    const float x = e.data.mouse.x, y = e.data.mouse.y;
     const auto hit = core::dashboard_hit_test(dashboard_model_.buttons, x, y);
-    if (e.eventType == vr::VREvent_MouseMove)
+    if (e.eventType == vr::VREvent_MouseMove) {
+      if (hit && hit != hovered)
+        out.entered_button = true;
       hovered = hit;
-    else if (e.data.mouse.button == vr::VRMouseButton_Left && hit)
-      out.push_back(*hit);
+    } else if (e.data.mouse.button == vr::VRMouseButton_Left && hit)
+      out.actions.push_back(*hit);
   }
   if (hovered != dashboard_model_.hovered_action) {
     dashboard_model_.hovered_action = hovered;
     dashboard_texture_dirty_ = true;
-    if (dashboard_visible() && !submit_dashboard())
-      out.clear();
+    out.hover_changed = true;
   }
   return out;
 }

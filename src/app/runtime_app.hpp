@@ -13,7 +13,13 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 namespace bailout::app {
+struct SettingsChange {
+  core::Settings settings;
+  std::string name, value;
+};
 class RuntimeApp {
  public:
   RuntimeApp();
@@ -30,8 +36,7 @@ class RuntimeApp {
   void apply(core::Effects, std::chrono::steady_clock::time_point, const TrackingFrame&);
   void update_dashboard(const platform::windows::TargetResolution&, const TrackingFrame&,
                         bool dashboard_visible);
-  void dashboard_input(const std::vector<core::DashboardAction>&);
-  bool save_setting(const core::Settings&, const char*, const std::string&);
+  std::vector<SettingsChange> dashboard_input(const std::vector<core::DashboardAction>&);
   void log_overlay_error(std::chrono::steady_clock::time_point);
   void abort_overlay_flow(std::chrono::steady_clock::time_point, const TrackingFrame&);
   std::wstring text(core::StringId) const;
@@ -52,9 +57,11 @@ class RuntimeApp {
   std::atomic_bool stop_ = false;
   std::string steam_language_, os_language_, availability_signature_;
   bool recovery_notice_pending_ = false;
+  bool thumbnail_dirty_ = false;
   std::chrono::steady_clock::time_point recovery_notice_until_{};
   std::chrono::steady_clock::time_point save_failure_notice_until_{};
   std::string last_overlay_error_;
   std::chrono::steady_clock::time_point last_overlay_error_at_{};
+  std::chrono::steady_clock::time_point last_slow_dashboard_at_{};
 };
 }  // namespace bailout::app

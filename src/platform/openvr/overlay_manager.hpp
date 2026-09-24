@@ -9,6 +9,11 @@
 #include <vector>
 namespace bailout::platform::openvr {
 enum class OverlayAction { Primary, Confirm, Dismiss, Cancel };
+struct DashboardEvents {
+  std::vector<core::DashboardAction> actions;
+  bool entered_button = false;
+  bool hover_changed = false;
+};
 class OverlayManager {
  public:
   explicit OverlayManager(vr::IVROverlay* overlays) : overlays_(overlays) {}
@@ -29,7 +34,7 @@ class OverlayManager {
                                       const std::string& friendly_name);
   std::vector<OverlayAction> poll_wrist_events(const app::HandPose& opposite_hand, bool confirming,
                                                bool counting_down);
-  std::vector<core::DashboardAction> poll_dashboard_events();
+  DashboardEvents poll_dashboard_events();
   bool wrist_visible() const {
     return wrist_visible_;
   }

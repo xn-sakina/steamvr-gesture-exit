@@ -5,9 +5,13 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
+#include <mutex>
 #include <sstream>
+#include <thread>
 
 namespace bailout::app {
 namespace {
@@ -119,6 +123,125 @@ class SteamVrServerMonitor {
   HANDLE process_ = nullptr;
 };
 
+// Process inspection and application metadata requests may wait on SteamVR or
+// Windows. Keep them off the thread that polls overlay input and submits UI.
+class ForegroundResolutionWorker {
+ public:
+  ForegroundResolutionWorker(const platform::windows::ExitTargetResolver& resolver,
+                             core::DiagnosticLog& log)
+      : thread_([this, &resolver, &log] {
+          auto last_slow_log = std::chrono::steady_clock::time_point{};
+          while (!stop_) {
+            const auto started = std::chrono::steady_clock::now();
+            auto resolution = resolver.resolve_foreground();
+            const auto finished = std::chrono::steady_clock::now();
+            const auto duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(finished - started);
+            {
+              std::scoped_lock lock(mutex_);
+              latest_ = std::move(resolution);
+              pending_ = true;
+            }
+            if (duration >= std::chrono::milliseconds(250) &&
+                finished - last_slow_log >= std::chrono::seconds(30)) {
+              core::DiagnosticRecord record{};
+              record.event = core::DiagnosticEventType::Error;
+              record.code = "TARGET_RESOLVE_SLOW";
+              record.status = std::to_string(duration.count()) + "ms";
+              (void)log.append(record);
+              last_slow_log = finished;
+            }
+            std::unique_lock lock(mutex_);
+            wake_.wait_for(lock, std::chrono::milliseconds(250), [this] { return stop_.load(); });
+          }
+        }) {}
+  ~ForegroundResolutionWorker() { stop(); }
+  ForegroundResolutionWorker(const ForegroundResolutionWorker&) = delete;
+  ForegroundResolutionWorker& operator=(const ForegroundResolutionWorker&) = delete;
+  void stop() {
+    stop_ = true;
+    wake_.notify_all();
+    if (thread_.joinable())
+      thread_.join();
+  }
+  bool take(platform::windows::TargetResolution& resolution) {
+    std::scoped_lock lock(mutex_);
+    if (!pending_)
+      return false;
+    resolution = std::move(latest_);
+    pending_ = false;
+    return true;
+  }
+
+ private:
+  std::atomic_bool stop_ = false;
+  std::mutex mutex_;
+  std::condition_variable wake_;
+  platform::windows::TargetResolution latest_{};
+  bool pending_ = false;
+  std::thread thread_;
+};
+
+class SettingsPersistenceWorker {
+ public:
+  SettingsPersistenceWorker(const std::filesystem::path& path, core::DiagnosticLog& log)
+      : store_(path), log_(log), thread_([this] { run(); }) {}
+  ~SettingsPersistenceWorker() { stop(); }
+  SettingsPersistenceWorker(const SettingsPersistenceWorker&) = delete;
+  SettingsPersistenceWorker& operator=(const SettingsPersistenceWorker&) = delete;
+  void enqueue(SettingsChange change) {
+    {
+      std::scoped_lock lock(mutex_);
+      pending_.push_back(std::move(change));
+    }
+    wake_.notify_one();
+  }
+  bool take_failure() { return failures_.exchange(0) != 0; }
+  void stop() {
+    {
+      std::scoped_lock lock(mutex_);
+      stop_ = true;
+    }
+    wake_.notify_all();
+    if (thread_.joinable())
+      thread_.join();
+  }
+
+ private:
+  void run() {
+    while (true) {
+      std::unique_lock lock(mutex_);
+      wake_.wait(lock, [this] { return stop_ || !pending_.empty(); });
+      if (pending_.empty())
+        return;
+      auto change = std::move(pending_.front());
+      pending_.pop_front();
+      lock.unlock();
+      std::string error;
+      const bool saved = store_.save(change.settings, &error);
+      core::DiagnosticRecord record{};
+      record.event = saved ? core::DiagnosticEventType::SettingsChanged
+                           : core::DiagnosticEventType::Error;
+      record.code = saved ? "SETTINGS_SAVED" : error;
+      if (saved) {
+        record.setting_name = std::move(change.name);
+        record.setting_value = std::move(change.value);
+      } else {
+        failures_.fetch_add(1);
+      }
+      (void)log_.append(record);
+    }
+  }
+  core::SettingsStore store_;
+  core::DiagnosticLog& log_;
+  std::mutex mutex_;
+  std::condition_variable wake_;
+  std::deque<SettingsChange> pending_;
+  bool stop_ = false;
+  std::atomic_uint failures_ = 0;
+  std::thread thread_;
+};
+
 core::Vec3 cv(Vec3 v) {
   return {v.x, v.y, v.z};
 }
@@ -211,22 +334,6 @@ core::Prerequisites RuntimeApp::prerequisites(const TrackingFrame& f,
 std::wstring RuntimeApp::text(core::StringId id) const {
   return widen(core::localize(id, language_));
 }
-bool RuntimeApp::save_setting(const core::Settings& candidate, const char* name,
-                              const std::string& value) {
-  std::string error;
-  if (!settings_store_.save(candidate, &error)) {
-    (void)log_.append({core::DiagnosticEventType::Error, error});
-    save_failure_notice_until_ = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-    return false;
-  }
-  core::DiagnosticRecord record{};
-  record.event = core::DiagnosticEventType::SettingsChanged;
-  record.code = "SETTINGS_SAVED";
-  record.setting_name = name;
-  record.setting_value = value;
-  (void)log_.append(record);
-  return true;
-}
 void RuntimeApp::log_overlay_error(std::chrono::steady_clock::time_point now) {
   std::string detail = overlays_->take_error();
   if (detail.empty())
@@ -246,11 +353,14 @@ void RuntimeApp::abort_overlay_flow(std::chrono::steady_clock::time_point now,
   log_overlay_error(now);
   apply(flow_->on_overlay_failure("OVERLAY_PRESENT_FAILED"), now, frame);
 }
-void RuntimeApp::dashboard_input(const std::vector<core::DashboardAction>& actions) {
+std::vector<SettingsChange> RuntimeApp::dashboard_input(
+    const std::vector<core::DashboardAction>& actions) {
+  std::vector<SettingsChange> changes;
   for (const auto action : actions) {
     auto candidate = settings_;
     if (!core::apply_dashboard_action(candidate, action))
       continue;
+    sound_.ui_select();
     const char* name = nullptr;
     std::string value;
     if (candidate.configured_hand != settings_.configured_hand) {
@@ -269,7 +379,7 @@ void RuntimeApp::dashboard_input(const std::vector<core::DashboardAction>& actio
       name = "language";
       value = core::to_string(candidate.language);
     }
-    if (!name || !save_setting(candidate, name, value))
+    if (!name)
       continue;
     const bool hand_changed = candidate.configured_hand != settings_.configured_hand;
     const bool timeout_changed =
@@ -282,12 +392,11 @@ void RuntimeApp::dashboard_input(const std::vector<core::DashboardAction>& actio
       flow_->set_control_timeout(std::chrono::seconds(settings_.control_timeout_seconds));
     if (language_changed) {
       language_ = core::resolve_language(settings_.language, steam_language_, os_language_);
-      if (!overlays_->update_thumbnail(
-              text(core::StringId::ThumbnailTitle), text(core::StringId::ThumbnailDescription),
-              std::string(core::localize(core::StringId::AppName, language_))))
-        log_overlay_error(std::chrono::steady_clock::now());
+      thumbnail_dirty_ = true;
     }
+    changes.push_back({candidate, name, std::move(value)});
   }
+  return changes;
 }
 void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& resolution,
                                   const TrackingFrame& f, bool dashboard_visible) {
@@ -400,7 +509,21 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
       {text(core::StringId::LastExit), last, L"", platform::openvr::DashboardStatusTone::Neutral}};
   model.help_lines = {text(core::StringId::HelpGesture), text(core::StringId::HelpOppositeHand),
                       text(core::StringId::HelpForceClose)};
-  if (!overlays_->update_dashboard(model))
+  const auto submit_started = std::chrono::steady_clock::now();
+  const bool submitted = overlays_->update_dashboard(model);
+  const auto submit_finished = std::chrono::steady_clock::now();
+  const auto submit_duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(submit_finished - submit_started);
+  if (submit_duration >= std::chrono::milliseconds(250) &&
+      submit_finished - last_slow_dashboard_at_ >= std::chrono::seconds(30)) {
+    core::DiagnosticRecord record{};
+    record.event = core::DiagnosticEventType::Error;
+    record.code = "DASHBOARD_SUBMIT_SLOW";
+    record.status = std::to_string(submit_duration.count()) + "ms";
+    (void)log_.append(record);
+    last_slow_dashboard_at_ = submit_finished;
+  }
+  if (!submitted)
     log_overlay_error(now);
 }
 void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_point now,
@@ -586,6 +709,9 @@ int RuntimeApp::run() {
     vr_.shutdown();
     return 1;
   }
+  // Give SteamVR a complete texture as soon as the overlay exists, even when
+  // the language and tracked devices have not been discovered yet.
+  update_dashboard(latest_resolution_, {}, vr_.overlays()->IsDashboardVisible());
   targets_ = std::make_unique<platform::windows::ExitTargetResolver>(vr_.applications());
   std::array<char, 64> steam{};
   vr::EVRSettingsError language_error{};
@@ -602,15 +728,20 @@ int RuntimeApp::run() {
   if (GetUserDefaultLocaleName(locale.data(), static_cast<int>(locale.size())))
     os_language_ = narrow(locale.data());
   language_ = core::resolve_language(settings_.language, steam_language_, os_language_);
+  // Refresh the initial panel if locale discovery selected another language.
+  update_dashboard(latest_resolution_, {}, vr_.overlays()->IsDashboardVisible());
   if (!overlays_->update_thumbnail(text(core::StringId::ThumbnailTitle),
                                    text(core::StringId::ThumbnailDescription),
                                    std::string(core::localize(core::StringId::AppName, language_))))
     log_overlay_error(std::chrono::steady_clock::now());
   (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
-  auto next_target = std::chrono::steady_clock::now();
-  auto next_server_check = next_target;
-  auto next_autolaunch_check = next_target;
+  SettingsPersistenceWorker settings_writer(settings_store_.path(), log_);
+  ForegroundResolutionWorker target_worker(*targets_, log_);
+  const auto started_at = std::chrono::steady_clock::now();
+  auto next_server_check = started_at;
+  auto next_autolaunch_check = started_at;
   std::optional<std::chrono::steady_clock::time_point> no_devices_since;
+  TrackingFrame last_frame{};
   while (true) {
     if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
       stop_ = true;
@@ -649,7 +780,29 @@ int RuntimeApp::run() {
     if (vr_quit)
       break;
     const auto now = std::chrono::steady_clock::now();
+    (void)target_worker.take(latest_resolution_);
+    const auto dashboard_events = overlays_->poll_dashboard_events();
+    if (!overlays_->error().empty())
+      log_overlay_error(now);
+    else {
+      if (dashboard_events.entered_button)
+        sound_.ui_hover();
+      for (auto& change : dashboard_input(dashboard_events.actions))
+        settings_writer.enqueue(std::move(change));
+    }
+    if (settings_writer.take_failure())
+      save_failure_notice_until_ = now + std::chrono::seconds(8);
+    if (dashboard_events.hover_changed || !dashboard_events.actions.empty())
+      update_dashboard(latest_resolution_, last_frame, vr_.overlays()->IsDashboardVisible());
+    if (thumbnail_dirty_) {
+      thumbnail_dirty_ = false;
+      if (!overlays_->update_thumbnail(
+              text(core::StringId::ThumbnailTitle), text(core::StringId::ThumbnailDescription),
+              std::string(core::localize(core::StringId::AppName, language_))))
+        log_overlay_error(std::chrono::steady_clock::now());
+    }
     const auto frame = vr_.sample_tracking();
+    last_frame = frame;
     if (!frame.headset_connected || (!frame.left.connected && !frame.right.connected)) {
       if (!no_devices_since)
         no_devices_since = now;
@@ -662,10 +815,6 @@ int RuntimeApp::run() {
       no_devices_since.reset();
     }
     const bool dashboard_visible = vr_.overlays()->IsDashboardVisible();
-    if (now >= next_target) {
-      latest_resolution_ = targets_->resolve_foreground();
-      next_target = now + std::chrono::milliseconds(250);
-    }
     const auto prereq = prerequisites(frame, latest_resolution_, dashboard_visible);
     std::string availability =
         "game=" + std::string(platform::windows::diagnostic_code(latest_resolution_.game_status)) +
@@ -775,14 +924,11 @@ int RuntimeApp::run() {
       } else if (!overlays_->update_wrist_pose(configured, frame.sampled_at))
         abort_overlay_flow(now, frame);
     }
-    const auto dashboard_actions = overlays_->poll_dashboard_events();
-    if (!overlays_->error().empty())
-      log_overlay_error(now);
-    else
-      dashboard_input(dashboard_actions);
-    update_dashboard(latest_resolution_, frame, dashboard_visible);
+    update_dashboard(latest_resolution_, frame, vr_.overlays()->IsDashboardVisible());
     Sleep(11);
   }
+  target_worker.stop();
+  settings_writer.stop();
   process_.clear();
   overlays_->shutdown();
   vr_.shutdown();
