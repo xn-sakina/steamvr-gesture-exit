@@ -17,6 +17,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -381,6 +382,26 @@ void dashboard_controls_are_visible_semantic_targets() {
   CHECK(selected == 4);
 }
 
+void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
+  const auto buttons = dashboard_buttons(Settings{});
+  for (const auto& button : buttons) {
+    if (!button.enabled)
+      continue;
+    const float x = (button.bounds.left + button.bounds.right) * 0.5F;
+    const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
+    for (const auto [mouse_width, mouse_height] :
+         {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F}}) {
+      const auto point = dashboard_mouse_to_pixels(
+          x * mouse_width / 1024.0F, (640.0F - y) * mouse_height / 640.0F,
+          mouse_width, mouse_height, 1024.0F, 640.0F);
+      CHECK(point);
+      CHECK(dashboard_hit_test(buttons, point->x, point->y) == button.action);
+    }
+  }
+  CHECK(!dashboard_mouse_to_pixels(1, 1, 0, 640, 1024, 640));
+  CHECK(!dashboard_mouse_to_pixels(-1, 1, 1024, 640, 1024, 640));
+}
+
 void dashboard_actions_change_only_the_intended_setting() {
   Settings settings;
   CHECK(apply_dashboard_action(settings, DashboardAction::SetRightHand));
@@ -708,6 +729,7 @@ int main() {
       {"pointer requires input capabilities", pointer_availability_requires_input_capabilities},
       {"wrist pose smoothing", wrist_pose_smoothing_follows_and_resets_safely},
       {"dashboard semantic targets", dashboard_controls_are_visible_semantic_targets},
+      {"dashboard mouse scale", dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale},
       {"dashboard actions", dashboard_actions_change_only_the_intended_setting},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},

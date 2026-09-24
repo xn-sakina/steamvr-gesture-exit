@@ -22,7 +22,8 @@ class OpenVrRuntime {
   }
 
  private:
-  app::HandPose sample_hand(vr::ETrackedControllerRole role) const;
+  app::HandPose sample_hand(vr::ETrackedControllerRole role,
+                            const vr::TrackedDevicePose_t* poses) const;
   bool initialized_ = false;
   std::string error_;
 };

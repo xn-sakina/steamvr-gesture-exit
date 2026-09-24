@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace bailout::core {
 namespace {
@@ -34,6 +35,18 @@ void add_segment(std::vector<DashboardButton>& result, const DashboardSettingRow
 }
 
 }  // namespace
+
+std::optional<DashboardPoint> dashboard_mouse_to_pixels(
+    const float x, const float y, const float mouse_width, const float mouse_height,
+    const float texture_width, const float texture_height) noexcept {
+  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(mouse_width) ||
+      !std::isfinite(mouse_height) || mouse_width <= 0 || mouse_height <= 0 ||
+      texture_width <= 0 || texture_height <= 0 || x < 0 || y < 0 || x > mouse_width ||
+      y > mouse_height)
+    return std::nullopt;
+  return DashboardPoint{x * texture_width / mouse_width,
+                        (mouse_height - y) * texture_height / mouse_height};
+}
 
 std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
   std::vector<DashboardButton> result;

@@ -65,6 +65,8 @@ class OverlayManager {
   bool wrist_interactive_ = false;
   bool dashboard_texture_initialized_ = false;
   bool dashboard_texture_dirty_ = true;
+  bool dashboard_was_visible_ = false;
+  bool dashboard_pointer_primed_ = false;
   bool thumbnail_requested_ = false;
   uint64_t renderer_generation_seen_ = 0;
   std::wstring thumbnail_title_, thumbnail_description_;

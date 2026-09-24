@@ -8,6 +8,8 @@ namespace {
 constexpr char kDashboardKey[] = "com.steamvr-bail-out.dashboard";
 constexpr char kWristKey[] = "com.steamvr-bail-out.wrist";
 constexpr char kHudKey[] = "com.steamvr-bail-out.hud";
+constexpr float kDashboardWidth = 1024.0f;
+constexpr float kDashboardHeight = 640.0f;
 constexpr float kWristWidth = 768.0f;
 constexpr float kWristHeight = 384.0f;
 constexpr float kButtonTop = 272.0f;
@@ -51,7 +53,8 @@ bool OverlayManager::initialize() {
     return fail("IVROverlay unavailable");
   if (!renderer_.initialize())
     return fail("renderer initialization failed");
-  if (!renderer_.create_surface("dashboard", 1024, 640) ||
+  if (!renderer_.create_surface("dashboard", static_cast<uint32_t>(kDashboardWidth),
+                                static_cast<uint32_t>(kDashboardHeight)) ||
       !renderer_.create_surface("thumbnail", 256, 256) ||
       !renderer_.create_surface("wrist", 768, 384) || !renderer_.create_surface("hud", 768, 256))
     return fail("overlay texture creation failed");
@@ -96,7 +99,8 @@ bool OverlayManager::initialize() {
     }
     return true;
   };
-  if (!configure(dashboard_, 1.5f, vr::VROverlayInputMethod_Mouse, 1024, 640) ||
+  if (!configure(dashboard_, 1.9f, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
+                 kDashboardHeight) ||
       !configure(wrist_, 0.27f, vr::VROverlayInputMethod_Mouse, 768, 384) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {
     shutdown();
@@ -170,6 +174,8 @@ void OverlayManager::shutdown() {
   wrist_interactive_ = false;
   dashboard_texture_initialized_ = false;
   dashboard_texture_dirty_ = true;
+  dashboard_was_visible_ = false;
+  dashboard_pointer_primed_ = false;
   thumbnail_requested_ = false;
   renderer_generation_seen_ = renderer_.generation();
   wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -424,24 +430,50 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
 DashboardEvents OverlayManager::poll_dashboard_events() {
   DashboardEvents out;
   auto hovered = dashboard_model_.hovered_action;
+  const bool visible = dashboard_visible();
+  if (!visible || !dashboard_was_visible_) {
+    hovered.reset();
+    dashboard_pointer_primed_ = false;
+  }
+  dashboard_was_visible_ = visible;
+  bool pointer_seen = false;
+  bool allow_hover_sound = dashboard_pointer_primed_;
+  vr::HmdVector2_t mouse_scale{{kDashboardWidth, kDashboardHeight}};
+  bool mouse_scale_loaded = false;
   vr::VREvent_t e{};
   while (overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e))) {
-    if (e.eventType == vr::VREvent_FocusLeave) {
+    if (e.eventType == vr::VREvent_FocusLeave ||
+        e.eventType == vr::VREvent_OverlayShown ||
+        e.eventType == vr::VREvent_OverlayHidden) {
       hovered.reset();
+      dashboard_pointer_primed_ = false;
+      allow_hover_sound = false;
       continue;
     }
-    if (e.eventType != vr::VREvent_MouseMove && e.eventType != vr::VREvent_MouseButtonDown)
+    if (!visible ||
+        (e.eventType != vr::VREvent_MouseMove && e.eventType != vr::VREvent_MouseButtonDown))
       continue;
-    // OpenVR mouse events use the same top-left pixel origin as Direct2D.
-    const float x = e.data.mouse.x, y = e.data.mouse.y;
-    const auto hit = core::dashboard_hit_test(dashboard_model_.buttons, x, y);
+    if (!mouse_scale_loaded) {
+      vr::HmdVector2_t current{};
+      if (overlays_->GetOverlayMouseScale(dashboard_, &current) == vr::VROverlayError_None)
+        mouse_scale = current;
+      mouse_scale_loaded = true;
+    }
+    const auto point = core::dashboard_mouse_to_pixels(
+        e.data.mouse.x, e.data.mouse.y, mouse_scale.v[0], mouse_scale.v[1], kDashboardWidth,
+        kDashboardHeight);
+    const auto hit = point ? core::dashboard_hit_test(dashboard_model_.buttons, point->x, point->y)
+                           : std::nullopt;
     if (e.eventType == vr::VREvent_MouseMove) {
-      if (hit && hit != hovered)
-        out.entered_button = true;
+      pointer_seen = true;
       hovered = hit;
     } else if (e.data.mouse.button == vr::VRMouseButton_Left && hit)
       out.actions.push_back(*hit);
   }
+  out.entered_button = allow_hover_sound && hovered &&
+                       hovered != dashboard_model_.hovered_action;
+  if (visible && pointer_seen)
+    dashboard_pointer_primed_ = true;
   if (hovered != dashboard_model_.hovered_action) {
     dashboard_model_.hovered_action = hovered;
     dashboard_texture_dirty_ = true;

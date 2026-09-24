@@ -128,11 +128,17 @@ class SteamVrServerMonitor {
 class ForegroundResolutionWorker {
  public:
   ForegroundResolutionWorker(const platform::windows::ExitTargetResolver& resolver,
-                             core::DiagnosticLog& log)
-      : thread_([this, &resolver, &log] {
+                             vr::IVRApplications* applications, core::DiagnosticLog& log)
+      : thread_([this, &resolver, applications, &log] {
           auto last_slow_log = std::chrono::steady_clock::time_point{};
+          auto next_autolaunch_check = std::chrono::steady_clock::time_point{};
           while (!stop_) {
             const auto started = std::chrono::steady_clock::now();
+            if (started >= next_autolaunch_check) {
+              autolaunch_disabled_ = !applications->IsApplicationInstalled(kAppKey) ||
+                                     !applications->GetApplicationAutoLaunch(kAppKey);
+              next_autolaunch_check = started + std::chrono::seconds(1);
+            }
             auto resolution = resolver.resolve_foreground();
             const auto finished = std::chrono::steady_clock::now();
             const auto duration =
@@ -172,9 +178,11 @@ class ForegroundResolutionWorker {
     pending_ = false;
     return true;
   }
+  bool autolaunch_disabled() const { return autolaunch_disabled_.load(); }
 
  private:
   std::atomic_bool stop_ = false;
+  std::atomic_bool autolaunch_disabled_ = false;
   std::mutex mutex_;
   std::condition_variable wake_;
   platform::windows::TargetResolution latest_{};
@@ -709,9 +717,12 @@ int RuntimeApp::run() {
     vr_.shutdown();
     return 1;
   }
+  const auto dashboard_open = [this] {
+    return vr_.overlays()->IsDashboardVisible() || overlays_->dashboard_visible();
+  };
   // Give SteamVR a complete texture as soon as the overlay exists, even when
   // the language and tracked devices have not been discovered yet.
-  update_dashboard(latest_resolution_, {}, vr_.overlays()->IsDashboardVisible());
+  update_dashboard(latest_resolution_, {}, dashboard_open());
   targets_ = std::make_unique<platform::windows::ExitTargetResolver>(vr_.applications());
   std::array<char, 64> steam{};
   vr::EVRSettingsError language_error{};
@@ -729,19 +740,21 @@ int RuntimeApp::run() {
     os_language_ = narrow(locale.data());
   language_ = core::resolve_language(settings_.language, steam_language_, os_language_);
   // Refresh the initial panel if locale discovery selected another language.
-  update_dashboard(latest_resolution_, {}, vr_.overlays()->IsDashboardVisible());
+  update_dashboard(latest_resolution_, {}, dashboard_open());
   if (!overlays_->update_thumbnail(text(core::StringId::ThumbnailTitle),
                                    text(core::StringId::ThumbnailDescription),
                                    std::string(core::localize(core::StringId::AppName, language_))))
     log_overlay_error(std::chrono::steady_clock::now());
   (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
   SettingsPersistenceWorker settings_writer(settings_store_.path(), log_);
-  ForegroundResolutionWorker target_worker(*targets_, log_);
+  ForegroundResolutionWorker target_worker(*targets_, vr_.applications(), log_);
   const auto started_at = std::chrono::steady_clock::now();
   auto next_server_check = started_at;
-  auto next_autolaunch_check = started_at;
   std::optional<std::chrono::steady_clock::time_point> no_devices_since;
   TrackingFrame last_frame{};
+  bool dashboard_was_open = dashboard_open();
+  auto last_ui_hover_sound_at = std::chrono::steady_clock::time_point{};
+  auto last_slow_loop_at = std::chrono::steady_clock::time_point{};
   while (true) {
     if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
       stop_ = true;
@@ -750,6 +763,14 @@ int RuntimeApp::run() {
     if (stop_ && flow_->state() != core::FlowState::Exiting)
       break;
     const auto loop_start = std::chrono::steady_clock::now();
+    // A visible panel proves the Dashboard is open even when SteamVR's global
+    // visibility query has not caught up. Publish that change before the
+    // periodic checks and diagnostic writes in this loop.
+    const bool dashboard_at_start = dashboard_open();
+    if (dashboard_at_start != dashboard_was_open) {
+      dashboard_was_open = dashboard_at_start;
+      update_dashboard(latest_resolution_, last_frame, dashboard_at_start);
+    }
     if (loop_start >= next_server_check) {
       if (!server.alive()) {
         (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_EXITED"});
@@ -757,16 +778,12 @@ int RuntimeApp::run() {
       }
       next_server_check = loop_start + std::chrono::milliseconds(250);
     }
-    if (loop_start >= next_autolaunch_check) {
-      if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
-          !vr_.applications()->GetApplicationAutoLaunch(kAppKey)) {
-        if (!stop_)
-          (void)log_.append({core::DiagnosticEventType::Lifecycle, "AUTO_LAUNCH_DISABLED"});
-        stop_ = true;
-        if (flow_->state() != core::FlowState::Exiting)
-          break;
-      }
-      next_autolaunch_check = loop_start + std::chrono::seconds(1);
+    if (target_worker.autolaunch_disabled()) {
+      if (!stop_)
+        (void)log_.append({core::DiagnosticEventType::Lifecycle, "AUTO_LAUNCH_DISABLED"});
+      stop_ = true;
+      if (flow_->state() != core::FlowState::Exiting)
+        break;
     }
     vr::VREvent_t system_event{};
     bool vr_quit = false;
@@ -785,15 +802,18 @@ int RuntimeApp::run() {
     if (!overlays_->error().empty())
       log_overlay_error(now);
     else {
-      if (dashboard_events.entered_button)
+      if (dashboard_events.entered_button &&
+          now - last_ui_hover_sound_at >= std::chrono::milliseconds(150)) {
         sound_.ui_hover();
+        last_ui_hover_sound_at = now;
+      }
       for (auto& change : dashboard_input(dashboard_events.actions))
         settings_writer.enqueue(std::move(change));
     }
     if (settings_writer.take_failure())
       save_failure_notice_until_ = now + std::chrono::seconds(8);
     if (dashboard_events.hover_changed || !dashboard_events.actions.empty())
-      update_dashboard(latest_resolution_, last_frame, vr_.overlays()->IsDashboardVisible());
+      update_dashboard(latest_resolution_, last_frame, dashboard_open());
     if (thumbnail_dirty_) {
       thumbnail_dirty_ = false;
       if (!overlays_->update_thumbnail(
@@ -814,7 +834,7 @@ int RuntimeApp::run() {
     } else {
       no_devices_since.reset();
     }
-    const bool dashboard_visible = vr_.overlays()->IsDashboardVisible();
+    const bool dashboard_visible = dashboard_open();
     const auto prereq = prerequisites(frame, latest_resolution_, dashboard_visible);
     std::string availability =
         "game=" + std::string(platform::windows::diagnostic_code(latest_resolution_.game_status)) +
@@ -850,7 +870,7 @@ int RuntimeApp::run() {
       gesture = gesture_.update({now, configured.tracked && frame.headset_tracked,
                                  cv(configured.position), cv(palm), cv(frame.headset_position),
                                  cv(frame.headset_forward)});
-    if (gesture && !vr_.overlays()->IsDashboardVisible()) {
+    if (gesture && !dashboard_open()) {
       (void)log_.append({core::DiagnosticEventType::GestureRecognized, "GESTURE_RECOGNIZED"});
       apply(flow_->on_gesture(now, prereq), now, frame);
     }
@@ -862,7 +882,7 @@ int RuntimeApp::run() {
         abort_overlay_flow(now, frame);
       else
         for (const auto action : actions) {
-          if (vr_.overlays()->IsDashboardVisible())
+          if (dashboard_open())
             break;
           if (action == platform::openvr::OverlayAction::Primary)
             apply(flow_->on_control_clicked(now), now, frame);
@@ -871,7 +891,7 @@ int RuntimeApp::run() {
           else if (action == platform::openvr::OverlayAction::Cancel)
             apply(flow_->on_cancel(), now, frame);
           else if (action == platform::openvr::OverlayAction::Confirm) {
-            const bool dashboard_now = vr_.overlays()->IsDashboardVisible();
+            const bool dashboard_now = dashboard_open();
             platform::windows::TargetResolution fresh{};
             if (!dashboard_now)
               fresh = targets_->resolve_foreground();
@@ -924,7 +944,20 @@ int RuntimeApp::run() {
       } else if (!overlays_->update_wrist_pose(configured, frame.sampled_at))
         abort_overlay_flow(now, frame);
     }
-    update_dashboard(latest_resolution_, frame, vr_.overlays()->IsDashboardVisible());
+    dashboard_was_open = dashboard_open();
+    update_dashboard(latest_resolution_, frame, dashboard_was_open);
+    const auto loop_finished = std::chrono::steady_clock::now();
+    const auto loop_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(loop_finished - loop_start);
+    if (loop_duration >= std::chrono::milliseconds(250) &&
+        loop_finished - last_slow_loop_at >= std::chrono::seconds(30)) {
+      core::DiagnosticRecord record{};
+      record.event = core::DiagnosticEventType::Error;
+      record.code = "RUNTIME_LOOP_SLOW";
+      record.status = std::to_string(loop_duration.count()) + "ms";
+      (void)log_.append(record);
+      last_slow_loop_at = loop_finished;
+    }
     Sleep(11);
   }
   target_worker.stop();
