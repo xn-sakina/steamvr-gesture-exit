@@ -11,6 +11,7 @@
 
 namespace bailout::app {
 namespace {
+constexpr char kAppKey[] = "com.steamvr-bail-out.overlay";
 class ScopedHandle {
  public:
   explicit ScopedHandle(HANDLE value = nullptr) : value_(value) {}
@@ -548,6 +549,12 @@ int RuntimeApp::run() {
     (void)log_.append({core::DiagnosticEventType::Error, "OPENVR_INIT_FAILED"});
     return 1;
   }
+  if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
+      !vr_.applications()->GetApplicationAutoLaunch(kAppKey)) {
+    (void)log_.append({core::DiagnosticEventType::Lifecycle, "AUTO_LAUNCH_DISABLED"});
+    vr_.shutdown();
+    return 0;
+  }
   SteamVrServerMonitor server;
   const auto server_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
   while (!server.attach() && std::chrono::steady_clock::now() < server_deadline)
@@ -590,6 +597,7 @@ int RuntimeApp::run() {
   (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
   auto next_target = std::chrono::steady_clock::now();
   auto next_server_check = next_target;
+  auto next_autolaunch_check = next_target;
   while (true) {
     if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
       stop_ = true;
@@ -598,6 +606,17 @@ int RuntimeApp::run() {
     if (stop_ && flow_->state() != core::FlowState::Exiting)
       break;
     const auto loop_start = std::chrono::steady_clock::now();
+    if (loop_start >= next_autolaunch_check) {
+      if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
+          !vr_.applications()->GetApplicationAutoLaunch(kAppKey)) {
+        if (!stop_)
+          (void)log_.append({core::DiagnosticEventType::Lifecycle, "AUTO_LAUNCH_DISABLED"});
+        stop_ = true;
+        if (flow_->state() != core::FlowState::Exiting)
+          break;
+      }
+      next_autolaunch_check = loop_start + std::chrono::seconds(1);
+    }
     if (loop_start >= next_server_check) {
       if (!server.alive()) {
         (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_EXITED"});

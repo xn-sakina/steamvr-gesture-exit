@@ -41,7 +41,8 @@ int application_command(int argc, wchar_t** argv) {
   const bool manifest_command =
       command == L"--register-manifest" || command == L"--unregister-manifest";
   const bool auto_command = command == L"--enable-autolaunch" || command == L"--disable-autolaunch";
-  const bool status_command = command == L"--manifest-status";
+  const bool status_command =
+      command == L"--manifest-status" || command == L"--autolaunch-status";
   if (!manifest_command && !auto_command && !status_command) {
     std::cerr << "unknown command\n";
     return 1;
@@ -51,7 +52,7 @@ int application_command(int argc, wchar_t** argv) {
     return 1;
   }
   if (status_command && argc != 3) {
-    std::cerr << "--manifest-status requires an app key\n";
+    std::cerr << "status command requires an app key\n";
     return 1;
   }
   bailout::platform::openvr::OpenVrRuntime runtime;
@@ -70,13 +71,16 @@ int application_command(int argc, wchar_t** argv) {
       std::string native(reinterpret_cast<const char*>(utf8.data()), utf8.size());
       vr::EVRApplicationError error;
       if (command == L"--register-manifest") {
+        const bool was_installed = apps->IsApplicationInstalled(kAppKey);
+        const bool autolaunch_enabled =
+            was_installed && apps->GetApplicationAutoLaunch(kAppKey);
         error = apps->AddApplicationManifest(native.c_str(), false);
         if (error == vr::VRApplicationError_None) {
           if (!wait_for_manifest(apps))
             error = vr::VRApplicationError_UnknownApplication;
           else
-            error = apps->SetApplicationAutoLaunch(kAppKey, true);
-          if (error != vr::VRApplicationError_None)
+            error = apps->SetApplicationAutoLaunch(kAppKey, autolaunch_enabled);
+          if (error != vr::VRApplicationError_None && !was_installed)
             apps->RemoveApplicationManifest(native.c_str());
         }
       } else {
@@ -102,7 +106,12 @@ int application_command(int argc, wchar_t** argv) {
     std::string key(static_cast<size_t>(n), '\0');
     WideCharToMultiByte(CP_UTF8, 0, key_w.data(), static_cast<int>(key_w.size()), key.data(), n,
                         nullptr, nullptr);
-    result = apps->IsApplicationInstalled(key.c_str()) ? 0 : 2;
+    if (command == L"--manifest-status")
+      result = apps->IsApplicationInstalled(key.c_str()) ? 0 : 2;
+    else if (!apps->IsApplicationInstalled(key.c_str()))
+      result = 3;
+    else
+      result = apps->GetApplicationAutoLaunch(key.c_str()) ? 0 : 2;
   }
   runtime.shutdown();
   return result;
