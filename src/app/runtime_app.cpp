@@ -545,7 +545,7 @@ int RuntimeApp::run() {
     return 1;
   }
   if (!vr_.initialize()) {
-    log_.append({core::DiagnosticEventType::Error, "OPENVR_INIT_FAILED"});
+    (void)log_.append({core::DiagnosticEventType::Error, "OPENVR_INIT_FAILED"});
     return 1;
   }
   SteamVrServerMonitor server;
@@ -587,7 +587,7 @@ int RuntimeApp::run() {
                                    text(core::StringId::ThumbnailDescription),
                                    std::string(core::localize(core::StringId::AppName, language_))))
     log_overlay_error(std::chrono::steady_clock::now());
-  log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
+  (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
   auto next_target = std::chrono::steady_clock::now();
   auto next_server_check = next_target;
   while (true) {
@@ -638,7 +638,7 @@ int RuntimeApp::run() {
       r.status = availability;
       r.current_game_status = platform::windows::diagnostic_code(latest_resolution_.game_status);
       r.exit_target_status = platform::windows::diagnostic_code(latest_resolution_.target_status);
-      log_.append(r);
+      (void)log_.append(r);
     }
     apply(flow_->on_prerequisites(now, prereq), now, frame);
     const auto& configured =
@@ -657,7 +657,7 @@ int RuntimeApp::run() {
                                  cv(configured.position), cv(palm), cv(frame.headset_position),
                                  cv(frame.headset_forward)});
     if (gesture && !vr_.overlays()->IsDashboardVisible()) {
-      log_.append({core::DiagnosticEventType::GestureRecognized, "GESTURE_RECOGNIZED"});
+      (void)log_.append({core::DiagnosticEventType::GestureRecognized, "GESTURE_RECOGNIZED"});
       apply(flow_->on_gesture(now, prereq), now, frame);
     }
     const auto state = flow_->state();
@@ -741,7 +741,7 @@ int RuntimeApp::run() {
   process_.clear();
   overlays_->shutdown();
   vr_.shutdown();
-  log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STOPPED"});
+  (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STOPPED"});
   return 0;
 }
 }  // namespace bailout::app

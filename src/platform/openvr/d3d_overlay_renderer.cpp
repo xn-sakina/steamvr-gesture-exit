@@ -21,7 +21,7 @@ struct D3dOverlayRenderer::Impl {
   ComPtr<ID3D11DeviceContext> context;
   ComPtr<ID2D1Factory> d2d;
   ComPtr<IDWriteFactory> write;
-  ComPtr<IDWriteTextFormat> title, body, button, section, label, small;
+  ComPtr<IDWriteTextFormat> title, body, button, section, label, small_text_format;
   std::map<std::string, Surface> surfaces;
   std::string error;
   HRESULT resource_status = S_OK;
@@ -113,9 +113,9 @@ bool D3dOverlayRenderer::initialize() {
                                  &impl_->label);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16, L"",
-                                 &impl_->small);
+                                 &impl_->small_text_format);
   if (!impl_->title || !impl_->body || !impl_->button || !impl_->section || !impl_->label ||
-      !impl_->small) {
+      !impl_->small_text_format) {
     impl_->error = "CreateTextFormat failed";
     return false;
   }
@@ -386,8 +386,8 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
                D2D1::RectF(36, 20, 620, 75), white.Get());
   if (!m.notice.empty())
-    t->DrawTextW(m.notice.c_str(), static_cast<UINT32>(m.notice.size()), impl_->small.Get(),
-                 D2D1::RectF(620, 30, 988, 70), bad.Get());
+    t->DrawTextW(m.notice.c_str(), static_cast<UINT32>(m.notice.size()),
+                 impl_->small_text_format.Get(), D2D1::RectF(620, 30, 988, 70), bad.Get());
   t->DrawTextW(m.settings_title.c_str(), static_cast<UINT32>(m.settings_title.size()),
                impl_->section.Get(), D2D1::RectF(42, 78, 594, 110), white.Get());
   t->DrawTextW(m.diagnostics_title.c_str(), static_cast<UINT32>(m.diagnostics_title.size()),
@@ -422,22 +422,24 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     const auto& status = m.statuses[i];
     auto rect = D2D1::RectF(620, top, 988, top + 58);
     t->FillRoundedRectangle(D2D1::RoundedRect(rect, 8, 8), card.Get());
-    t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()), impl_->small.Get(),
-                 D2D1::RectF(632, top + 4, 790, top + 25), muted.Get());
+    t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()),
+                 impl_->small_text_format.Get(), D2D1::RectF(632, top + 4, 790, top + 25),
+                 muted.Get());
     auto* tone = status.tone == DashboardStatusTone::Available     ? good.Get()
                  : status.tone == DashboardStatusTone::Unavailable ? bad.Get()
                                                                    : white.Get();
-    t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()), impl_->small.Get(),
-                 D2D1::RectF(792, top + 4, 976, top + 25), tone);
+    t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()),
+                 impl_->small_text_format.Get(), D2D1::RectF(792, top + 4, 976, top + 25), tone);
     t->DrawTextW(status.detail.c_str(), static_cast<UINT32>(status.detail.size()),
-                 impl_->small.Get(), D2D1::RectF(632, top + 25, 976, top + 57), white.Get());
+                 impl_->small_text_format.Get(), D2D1::RectF(632, top + 25, 976, top + 57),
+                 white.Get());
   }
   t->DrawTextW(m.help_title.c_str(), static_cast<UINT32>(m.help_title.size()), impl_->section.Get(),
                D2D1::RectF(42, 442, 980, 475), white.Get());
   for (size_t i = 0; i < m.help_lines.size(); ++i) {
     const float top = 478.0f + 38.0f * static_cast<float>(i);
     t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
-                 impl_->small.Get(), D2D1::RectF(48, top, 978, top + 34), muted.Get());
+                 impl_->small_text_format.Get(), D2D1::RectF(48, top, 978, top + 34), muted.Get());
   }
   const auto result = t->EndDraw();
   if (FAILED(result)) {
