@@ -10,6 +10,7 @@ constexpr char kWristKey[] = "com.steamvr-bail-out.wrist";
 constexpr char kHudKey[] = "com.steamvr-bail-out.hud";
 constexpr float kDashboardWidth = 1024.0f;
 constexpr float kDashboardHeight = 640.0f;
+constexpr float kDashboardWidthMeters = 3.5f * (2.0f / 3.0f);
 constexpr float kWristWidth = 768.0f;
 constexpr float kWristHeight = 384.0f;
 constexpr float kButtonTop = 272.0f;
@@ -99,7 +100,7 @@ bool OverlayManager::initialize() {
     }
     return true;
   };
-  if (!configure(dashboard_, 3.5f, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
+  if (!configure(dashboard_, kDashboardWidthMeters, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
                  kDashboardHeight) ||
       !configure(wrist_, 0.27f, vr::VROverlayInputMethod_Mouse, 768, 384) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {

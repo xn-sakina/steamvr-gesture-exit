@@ -9,6 +9,7 @@ namespace bailout::platform::windows {
 enum class CurrentVrGameStatus {
   Available,
   ApplicationsUnavailable,
+  Resolving,
   SceneNotRunning,
   SceneProcessUnavailable,
   SelfProcessRejected,
@@ -34,6 +35,7 @@ struct CurrentVrGame {
 };
 
 struct TargetResolution {
+  std::uint32_t scene_pid = 0;
   CurrentVrGameStatus game_status = CurrentVrGameStatus::ApplicationsUnavailable;
   ExitTargetStatus target_status = ExitTargetStatus::CurrentGameUnavailable;
   std::optional<CurrentVrGame> game;
@@ -50,7 +52,7 @@ class ExitTargetResolver {
   bool revalidate(const app::RuntimeTarget& target) const;
 
  private:
-  bool app_is_safe_scene(const std::string& app_key, std::uint32_t expected_pid) const;
+  bool app_key_matches_target(const std::string& app_key, std::uint32_t expected_pid) const;
   bool process_is_safe(const std::wstring& executable_path) const;
   vr::IVRApplications* applications_ = nullptr;
 };

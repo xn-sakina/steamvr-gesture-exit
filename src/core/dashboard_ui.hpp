@@ -26,8 +26,8 @@ struct DashboardPoint {
   float y = 0;
 };
 
-// On Windows, OpenVR Dashboard mouse coordinates use the UI's top-left
-// orientation. Normalize the runtime mouse scale into texture pixels.
+// OpenVR mouse events use a lower-left origin. Convert the runtime mouse scale
+// to Direct2D's upper-left texture coordinates before testing button bounds.
 [[nodiscard]] std::optional<DashboardPoint> dashboard_mouse_to_pixels(
     float x, float y, float mouse_width, float mouse_height, float texture_width,
     float texture_height) noexcept;

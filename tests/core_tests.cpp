@@ -322,6 +322,8 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
       {"steam.app.450390", "binary", false, false, false, false}));
   CHECK(is_current_vr_game_candidate(
       {"steam.app.620980", "url", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate(
+      {"steam.app.438100", "", false, false, false, false}));
 
   CHECK(!is_current_vr_game_candidate(
       {"com.example.vr-tool", "binary", false, false, false, false}));
@@ -417,13 +419,24 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
     for (const auto [mouse_width, mouse_height] :
-         {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F}}) {
+         {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F},
+          std::pair{512.0F, 320.0F}, std::pair{1024.0F, 1024.0F}}) {
       const auto point = dashboard_mouse_to_pixels(
-          x * mouse_width / 1024.0F, y * mouse_height / 640.0F,
+          x * mouse_width / 1024.0F, (640.0F - y) * mouse_height / 640.0F,
           mouse_width, mouse_height, 1024.0F, 640.0F);
       CHECK(point);
       CHECK(dashboard_hit_test(buttons, point->x, point->y) == button.action);
     }
+  }
+  // A pointer below the first row must not hit it at either mouse scale. This
+  // catches the previous top-left/bottom-left regression.
+  for (const auto [mouse_width, mouse_height] :
+       {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F}}) {
+    const auto point = dashboard_mouse_to_pixels(
+        300.0F * mouse_width / 1024.0F, (640.0F - 500.0F) * mouse_height / 640.0F,
+        mouse_width, mouse_height, 1024.0F, 640.0F);
+    CHECK(point);
+    CHECK(!dashboard_hit_test(buttons, point->x, point->y));
   }
   CHECK(!dashboard_mouse_to_pixels(1, 1, 0, 640, 1024, 640));
   CHECK(!dashboard_mouse_to_pixels(-1, 1, 1024, 640, 1024, 640));

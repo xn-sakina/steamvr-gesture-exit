@@ -12,7 +12,7 @@ struct TextPair {
   std::string_view chinese;
 };
 
-constexpr std::array<TextPair, 70> strings{{
+constexpr std::array<TextPair, 71> strings{{
     {"SteamVR Bail Out", "SteamVR 告别退出"},
     {"Exit game", "退出游戏"},
     {"Exit this game?", "要退出这个游戏吗？"},
@@ -30,8 +30,8 @@ constexpr std::array<TextPair, 70> strings{{
     {"Control timeout", "退出控件超时"},
     {"Countdown sound", "倒计时声音"},
     {"Language", "语言"},
-    {"Raise the selected controller to chest height and wave it side to side.",
-     "把挥手手柄抬到胸前，左右挥动，显示退出按钮。"},
+    {"Close Dashboard, then raise the selected controller to chest height and wave side to side.",
+     "关闭 Dashboard 后，把挥手手柄抬到胸前左右挥动，显示退出按钮。"},
     {"Point at the exit button and pull the trigger with the other controller.",
      "用另一只手柄指向退出按钮，按扳机确认。"},
     {"An unresponsive game may be force closed after five seconds.",
@@ -65,6 +65,7 @@ constexpr std::array<TextPair, 70> strings{{
     {"English", "英文"},
     {"Chinese", "中文"},
     {"Ready", "就绪"},
+    {"Identifying the current game…", "正在识别当前游戏…"},
     {"OpenVR applications interface is unavailable.", "OpenVR 应用接口不可用。"},
     {"No VR scene application is running.", "当前没有运行 VR 场景应用。"},
     {"SteamVR did not provide a scene process.", "SteamVR 未提供场景进程。"},

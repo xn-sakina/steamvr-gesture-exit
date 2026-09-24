@@ -158,7 +158,9 @@ class ForegroundResolutionWorker {
               last_slow_log = finished;
             }
             std::unique_lock lock(mutex_);
-            wake_.wait_for(lock, std::chrono::milliseconds(250), [this] { return stop_.load(); });
+            wake_.wait_for(lock, std::chrono::milliseconds(250),
+                           [this] { return stop_.load() || refresh_requested_; });
+            refresh_requested_ = false;
           }
         }) {}
   ~ForegroundResolutionWorker() { stop(); }
@@ -179,6 +181,13 @@ class ForegroundResolutionWorker {
     return true;
   }
   bool autolaunch_disabled() const { return autolaunch_disabled_.load(); }
+  void request_refresh() {
+    {
+      std::scoped_lock lock(mutex_);
+      refresh_requested_ = true;
+    }
+    wake_.notify_one();
+  }
 
  private:
   std::atomic_bool stop_ = false;
@@ -187,6 +196,7 @@ class ForegroundResolutionWorker {
   std::condition_variable wake_;
   platform::windows::TargetResolution latest_{};
   bool pending_ = false;
+  bool refresh_requested_ = false;
   std::thread thread_;
 };
 
@@ -263,6 +273,8 @@ core::StringId game_reason(platform::windows::CurrentVrGameStatus status) {
       return core::StringId::Ready;
     case S::ApplicationsUnavailable:
       return core::StringId::NoApplicationsInterface;
+    case S::Resolving:
+      return core::StringId::ResolvingCurrentGame;
     case S::SceneNotRunning:
       return core::StringId::NoSceneApplication;
     case S::SceneProcessUnavailable:
@@ -407,7 +419,7 @@ std::vector<SettingsChange> RuntimeApp::dashboard_input(
   return changes;
 }
 void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& resolution,
-                                  const TrackingFrame& f, bool dashboard_visible) {
+                                  const TrackingFrame& f) {
   if (!overlays_)
     return;
   const auto& configured = settings_.configured_hand == core::Hand::Left ? f.left : f.right;
@@ -486,15 +498,11 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   const std::wstring game_value =
       game_available ? resolution.game->display_name : text(core::StringId::Unavailable);
   const std::wstring game_detail =
-      game_available ? (dashboard_visible ? text(core::StringId::DashboardExitDisabled)
-                                          : text(core::StringId::Ready))
-                     : text(game_reason(resolution.game_status));
+      game_available ? text(core::StringId::Ready) : text(game_reason(resolution.game_status));
   const std::wstring target_value =
       target_available ? resolution.target->display_name : text(core::StringId::Unavailable);
   const std::wstring target_detail =
-      target_available ? (dashboard_visible ? text(core::StringId::DashboardExitDisabled)
-                                            : text(core::StringId::Ready))
-                       : text(target_reason(resolution.target_status));
+      target_available ? text(core::StringId::Ready) : text(target_reason(resolution.target_status));
   const std::wstring last = widen(core::localize_last_exit(snapshot.last_exit, language_));
   model.statuses = {
       {text(core::StringId::CurrentVrGame), game_value, game_detail,
@@ -745,7 +753,7 @@ int RuntimeApp::run() {
   const auto dashboard_open = [this] {
     return vr_.overlays()->IsDashboardVisible() || overlays_->dashboard_visible();
   };
-  update_dashboard(latest_resolution_, {}, dashboard_open());
+  update_dashboard(latest_resolution_, {});
   targets_ = std::make_unique<platform::windows::ExitTargetResolver>(vr_.applications());
   if (!overlays_->update_thumbnail(text(core::StringId::ThumbnailTitle),
                                    text(core::StringId::ThumbnailDescription),
@@ -759,6 +767,8 @@ int RuntimeApp::run() {
   std::optional<std::chrono::steady_clock::time_point> no_devices_since;
   TrackingFrame last_frame{};
   bool dashboard_was_open = dashboard_open();
+  std::uint32_t observed_scene_pid = 0;
+  auto observed_scene_state = vr::EVRSceneApplicationState_None;
   auto last_ui_hover_sound_at = std::chrono::steady_clock::time_point{};
   auto last_slow_loop_at = std::chrono::steady_clock::time_point{};
   while (true) {
@@ -775,7 +785,8 @@ int RuntimeApp::run() {
     const bool dashboard_at_start = dashboard_open();
     if (dashboard_at_start != dashboard_was_open) {
       dashboard_was_open = dashboard_at_start;
-      update_dashboard(latest_resolution_, last_frame, dashboard_at_start);
+      target_worker.request_refresh();
+      update_dashboard(latest_resolution_, last_frame);
     }
     if (loop_start >= next_server_check) {
       if (!server.alive()) {
@@ -793,17 +804,49 @@ int RuntimeApp::run() {
     }
     vr::VREvent_t system_event{};
     bool vr_quit = false;
+    bool scene_event = false;
     while (vr_.system()->PollNextEvent(&system_event, sizeof(system_event))) {
       if (system_event.eventType == vr::VREvent_Quit) {
         vr_.system()->AcknowledgeQuit_Exiting();
         vr_quit = true;
         break;
       }
+      switch (system_event.eventType) {
+        case vr::VREvent_SceneApplicationChanged:
+        case vr::VREvent_SceneApplicationStateChanged:
+        case vr::VREvent_ProcessConnected:
+        case vr::VREvent_ProcessQuit:
+        case vr::VREvent_ApplicationListUpdated:
+          scene_event = true;
+          break;
+        default:
+          break;
+      }
     }
     if (vr_quit)
       break;
     const auto now = std::chrono::steady_clock::now();
-    (void)target_worker.take(latest_resolution_);
+    const auto scene_state = vr_.applications()->GetSceneApplicationState();
+    const bool scene_active = scene_state == vr::EVRSceneApplicationState_Running ||
+                              scene_state == vr::EVRSceneApplicationState_Waiting;
+    const auto scene_pid =
+        scene_active ? vr_.applications()->GetCurrentSceneProcessId() : 0;
+    if (scene_state != observed_scene_state || scene_pid != observed_scene_pid) {
+      observed_scene_state = scene_state;
+      observed_scene_pid = scene_pid;
+      if (latest_resolution_.scene_pid != scene_pid) {
+        latest_resolution_ = {};
+        latest_resolution_.game_status = scene_pid
+                                             ? platform::windows::CurrentVrGameStatus::Resolving
+                                             : platform::windows::CurrentVrGameStatus::SceneNotRunning;
+      }
+      target_worker.request_refresh();
+    } else if (scene_event) {
+      target_worker.request_refresh();
+    }
+    platform::windows::TargetResolution resolved{};
+    if (target_worker.take(resolved) && resolved.scene_pid == observed_scene_pid)
+      latest_resolution_ = std::move(resolved);
     const auto dashboard_events = overlays_->poll_dashboard_events();
     if (!overlays_->error().empty())
       log_overlay_error(now);
@@ -819,7 +862,7 @@ int RuntimeApp::run() {
     if (settings_writer.take_failure())
       save_failure_notice_until_ = now + std::chrono::seconds(8);
     if (dashboard_events.hover_changed || !dashboard_events.actions.empty())
-      update_dashboard(latest_resolution_, last_frame, dashboard_open());
+      update_dashboard(latest_resolution_, last_frame);
     if (thumbnail_dirty_) {
       thumbnail_dirty_ = false;
       if (!overlays_->update_thumbnail(
@@ -874,7 +917,15 @@ int RuntimeApp::run() {
                                  cv(configured.position), cv(frame.headset_position),
                                  cv(frame.headset_forward)});
     if (gesture && !dashboard_open()) {
-      (void)log_.append({core::DiagnosticEventType::GestureRecognized, "GESTURE_RECOGNIZED"});
+      core::DiagnosticRecord recognized{};
+      recognized.event = core::DiagnosticEventType::GestureRecognized;
+      recognized.code = "GESTURE_RECOGNIZED";
+      recognized.status = prereq.ready() ? "READY" : availability;
+      recognized.current_game_status =
+          platform::windows::diagnostic_code(latest_resolution_.game_status);
+      recognized.exit_target_status =
+          platform::windows::diagnostic_code(latest_resolution_.target_status);
+      (void)log_.append(recognized);
       apply(flow_->on_gesture(now, prereq), now, frame);
     }
     const auto state = flow_->state();
@@ -948,7 +999,7 @@ int RuntimeApp::run() {
         abort_overlay_flow(now, frame);
     }
     dashboard_was_open = dashboard_open();
-    update_dashboard(latest_resolution_, frame, dashboard_was_open);
+    update_dashboard(latest_resolution_, frame);
     const auto loop_finished = std::chrono::steady_clock::now();
     const auto loop_duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(loop_finished - loop_start);

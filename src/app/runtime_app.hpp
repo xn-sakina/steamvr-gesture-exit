@@ -34,8 +34,7 @@ class RuntimeApp {
                                     const platform::windows::TargetResolution&,
                                     bool dashboard_visible = false) const;
   void apply(core::Effects, std::chrono::steady_clock::time_point, const TrackingFrame&);
-  void update_dashboard(const platform::windows::TargetResolution&, const TrackingFrame&,
-                        bool dashboard_visible);
+  void update_dashboard(const platform::windows::TargetResolution&, const TrackingFrame&);
   std::vector<SettingsChange> dashboard_input(const std::vector<core::DashboardAction>&);
   void log_overlay_error(std::chrono::steady_clock::time_point);
   void abort_overlay_flow(std::chrono::steady_clock::time_point, const TrackingFrame&);

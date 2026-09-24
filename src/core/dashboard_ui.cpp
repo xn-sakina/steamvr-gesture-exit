@@ -44,8 +44,11 @@ std::optional<DashboardPoint> dashboard_mouse_to_pixels(
       texture_width <= 0 || texture_height <= 0 || x < 0 || y < 0 || x > mouse_width ||
       y > mouse_height)
     return std::nullopt;
+  // OpenVR mouse events use the lower-left origin; Direct2D button bounds use
+  // the upper-left origin. The mouse scale is independent of the overlay's
+  // physical size, including user resizing in the SteamVR Dashboard.
   return DashboardPoint{x * texture_width / mouse_width,
-                        y * texture_height / mouse_height};
+                        (mouse_height - y) * texture_height / mouse_height};
 }
 
 std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {

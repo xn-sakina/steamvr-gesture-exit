@@ -53,6 +53,7 @@ enum class StringId {
   EnglishLanguage,
   ChineseLanguage,
   Ready,
+  ResolvingCurrentGame,
   NoApplicationsInterface,
   NoSceneApplication,
   SceneProcessUnavailable,

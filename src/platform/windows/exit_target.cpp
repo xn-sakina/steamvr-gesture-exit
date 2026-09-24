@@ -73,11 +73,14 @@ std::wstring utf8(const char* s) {
 }
 std::optional<std::string> property_string(vr::IVRApplications* applications,
                                            const std::string& key,
-                                           vr::EVRApplicationProperty property) {
+                                           vr::EVRApplicationProperty property,
+                                           bool allow_unset = false) {
   std::array<char, 4096> value{};
   vr::EVRApplicationError error{};
   applications->GetApplicationPropertyString(key.c_str(), property, value.data(),
                                              static_cast<uint32_t>(value.size()), &error);
+  if (allow_unset && error == vr::VRApplicationError_PropertyNotSet)
+    return std::string{};
   if (error != vr::VRApplicationError_None || value[0] == '\0')
     return std::nullopt;
   return std::string(value.data());
@@ -86,6 +89,10 @@ std::optional<bool> property_bool(vr::IVRApplications* applications, const std::
                                   vr::EVRApplicationProperty property) {
   vr::EVRApplicationError error{};
   const bool value = applications->GetApplicationPropertyBool(key.c_str(), property, &error);
+  // These exclusion flags are optional in application manifests. An omitted
+  // flag has the same meaning as false; other API failures remain unavailable.
+  if (error == vr::VRApplicationError_PropertyNotSet)
+    return false;
   if (error != vr::VRApplicationError_None)
     return std::nullopt;
   return value;
@@ -96,11 +103,14 @@ TargetResolution ExitTargetResolver::resolve_foreground() const {
   TargetResolution result{};
   if (!applications_)
     return result;
-  if (applications_->GetSceneApplicationState() != vr::EVRSceneApplicationState_Running) {
+  const auto scene_state = applications_->GetSceneApplicationState();
+  if (scene_state != vr::EVRSceneApplicationState_Running &&
+      scene_state != vr::EVRSceneApplicationState_Waiting) {
     result.game_status = CurrentVrGameStatus::SceneNotRunning;
     return result;
   }
   const auto pid = applications_->GetCurrentSceneProcessId();
+  result.scene_pid = pid;
   if (!pid) {
     result.game_status = CurrentVrGameStatus::SceneProcessUnavailable;
     return result;
@@ -117,7 +127,7 @@ TargetResolution ExitTargetResolver::resolve_foreground() const {
     return result;
   }
   const auto launch_type =
-      property_string(applications_, key.data(), vr::VRApplicationProperty_LaunchType_String);
+      property_string(applications_, key.data(), vr::VRApplicationProperty_LaunchType_String, true);
   const auto dashboard =
       property_bool(applications_, key.data(), vr::VRApplicationProperty_IsDashboardOverlay_Bool);
   const auto app_template =
@@ -130,8 +140,10 @@ TargetResolution ExitTargetResolver::resolve_foreground() const {
     result.game_status = CurrentVrGameStatus::ApplicationMetadataUnavailable;
     return result;
   }
-  if (applications_->GetApplicationProcessId(key.data()) != pid ||
-      !core::is_current_vr_game_candidate(
+  // The process rendering the scene may be a registered subprocess rather
+  // than GetApplicationProcessId(key). The reverse PID-to-key mapping above
+  // is the identity evidence for this exact scene process.
+  if (!core::is_current_vr_game_candidate(
           {key.data(), *launch_type, *dashboard, *app_template, *internal, *hidden})) {
     result.game_status = CurrentVrGameStatus::UnsafeApplication;
     return result;
@@ -175,18 +187,22 @@ bool ExitTargetResolver::revalidate(const app::RuntimeTarget& t) const {
   if (p.status != ProcessInspectionStatus::Available || p.creation_token != t.creation_token ||
       lower(p.path) != lower(t.executable_path))
     return false;
-  std::array<char, vr::k_unMaxApplicationKeyLength> k{};
-  return applications_->GetApplicationKeyByProcessId(
-             t.pid, k.data(), static_cast<uint32_t>(k.size())) == vr::VRApplicationError_None &&
-         t.app_key == k.data() && app_is_safe_scene(t.app_key, t.pid);
+  return app_key_matches_target(t.app_key, t.pid);
 }
-bool ExitTargetResolver::app_is_safe_scene(const std::string& raw,
-                                           std::uint32_t expected_pid) const {
-  if (!applications_ || !expected_pid ||
-      applications_->GetApplicationProcessId(raw.c_str()) != expected_pid)
+bool ExitTargetResolver::app_key_matches_target(const std::string& raw,
+                                                std::uint32_t expected_pid) const {
+  // After confirmation the scene may return to SteamVR while the original
+  // game is still closing. Revalidate the locked process, not the foreground.
+  if (!applications_ || !expected_pid)
+    return false;
+  std::array<char, vr::k_unMaxApplicationKeyLength> mapped_key{};
+  if (applications_->GetApplicationKeyByProcessId(
+          expected_pid, mapped_key.data(), static_cast<uint32_t>(mapped_key.size())) !=
+          vr::VRApplicationError_None ||
+      raw != mapped_key.data())
     return false;
   const auto launch_type =
-      property_string(applications_, raw, vr::VRApplicationProperty_LaunchType_String);
+      property_string(applications_, raw, vr::VRApplicationProperty_LaunchType_String, true);
   const auto dashboard =
       property_bool(applications_, raw, vr::VRApplicationProperty_IsDashboardOverlay_Bool);
   const auto app_template =
@@ -214,6 +230,8 @@ const char* diagnostic_code(const CurrentVrGameStatus status) noexcept {
       return "AVAILABLE";
     case CurrentVrGameStatus::ApplicationsUnavailable:
       return "OPENVR_APPLICATIONS_UNAVAILABLE";
+    case CurrentVrGameStatus::Resolving:
+      return "RESOLVING_CURRENT_GAME";
     case CurrentVrGameStatus::SceneNotRunning:
       return "NO_SCENE_APPLICATION";
     case CurrentVrGameStatus::SceneProcessUnavailable:

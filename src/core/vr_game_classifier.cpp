@@ -35,7 +35,9 @@ bool is_current_vr_game_candidate(const VrApplicationEvidence& evidence) {
     return false;
 
   const std::string launch_type = lower(evidence.launch_type);
-  return launch_type == "binary" || launch_type == "url";
+  // The launch type is optional metadata for a reviewed Steam game key. An
+  // omitted value does not weaken the scene PID, key and process checks.
+  return launch_type.empty() || launch_type == "binary" || launch_type == "url";
 }
 
 }  // namespace bailout::core
