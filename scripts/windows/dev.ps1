@@ -905,53 +905,134 @@ function Invoke-Status {
         Write-Host "Manifest state:    unavailable ($reason)" -ForegroundColor Yellow
         Write-Host "Auto-launch:       unavailable ($reason)" -ForegroundColor Yellow
     }
-    $latestLog = Get-ChildItem -LiteralPath $script:LogDirectory -Filter "*.log" -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($latestLog) { Write-Host "Latest log:        $($latestLog.FullName)" }
+    $activeLog = Join-Path $script:LogDirectory "runtime.log"
+    $backupLog = "$activeLog.1"
+    if (Test-Path -LiteralPath $activeLog -PathType Leaf) {
+        Write-Host "Latest log:        $activeLog"
+    } elseif (Test-Path -LiteralPath $backupLog -PathType Leaf) {
+        Write-Host "Latest log:        $backupLog"
+    }
+}
+
+function Get-LogRotationMarker {
+    $backup = Get-Item -LiteralPath (Join-Path $script:LogDirectory "runtime.log.1") -ErrorAction SilentlyContinue
+    if (-not $backup) { return "none" }
+    return "$($backup.Length):$($backup.LastWriteTimeUtc.Ticks)"
+}
+
+function Read-LogBytes([string]$Path, [long]$Position) {
+    $sharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, $sharing)
+    try {
+        if ($Position -gt $stream.Length) {
+            return @{ Truncated = $true; Bytes = [byte[]]::new(0); Position = [long]0 }
+        }
+        [void]$stream.Seek($Position, [IO.SeekOrigin]::Begin)
+        $available = [int]($stream.Length - $Position)
+        $bytes = [byte[]]::new($available)
+        $count = 0
+        while ($count -lt $available) {
+            $read = $stream.Read($bytes, $count, $available - $count)
+            if ($read -eq 0) { break }
+            $count += $read
+        }
+        if ($count -lt $available) {
+            $complete = [byte[]]::new($count)
+            [Array]::Copy($bytes, 0, $complete, 0, $count)
+            $bytes = $complete
+        }
+        return @{ Truncated = $false; Bytes = $bytes; Position = ($Position + $count) }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Split-CompleteLogLines([byte[]]$Pending, [byte[]]$Bytes) {
+    $combined = [byte[]]::new($Pending.Length + $Bytes.Length)
+    [Array]::Copy($Pending, 0, $combined, 0, $Pending.Length)
+    [Array]::Copy($Bytes, 0, $combined, $Pending.Length, $Bytes.Length)
+    $lastNewline = [Array]::LastIndexOf($combined, [byte]10)
+    if ($lastNewline -lt 0) {
+        return @{ Lines = [Collections.Generic.List[string]]::new(); Pending = $combined }
+    }
+    $text = [Text.Encoding]::UTF8.GetString($combined, 0, $lastNewline)
+    $lines = [Collections.Generic.List[string]]::new()
+    foreach ($line in [regex]::Split($text, "`n")) {
+        if ($line.EndsWith("`r")) { $lines.Add($line.Substring(0, $line.Length - 1)) }
+        else { $lines.Add($line) }
+    }
+    $remaining = $combined.Length - $lastNewline - 1
+    $pendingNext = [byte[]]::new($remaining)
+    [Array]::Copy($combined, $lastNewline + 1, $pendingNext, 0, $remaining)
+    return @{ Lines = $lines; Pending = $pendingNext }
 }
 
 function Invoke-Logs {
-    $latestLog = Get-ChildItem -LiteralPath $script:LogDirectory -Filter "*.log" -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $latestLog) {
-        Write-Host "No diagnostic log exists under $script:LogDirectory. Launch the add-on first."
-        return
+    $logPath = Join-Path $script:LogDirectory "runtime.log"
+    $backupPath = "$logPath.1"
+    if (-not $Follow -and -not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+        if (Test-Path -LiteralPath $backupPath -PathType Leaf) { $logPath = $backupPath }
+        else {
+            Write-Host "No diagnostic log exists under $script:LogDirectory. Launch the add-on first."
+            return
+        }
     }
-    Write-Step "Showing $($latestLog.FullName)"
-    if (-not $Follow) {
-        Get-Content -LiteralPath $latestLog.FullName -Tail 200
-        return
+    Write-Step "Showing $logPath"
+    if ($Follow -and -not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+        Write-Host "Waiting for the add-on to create runtime.log..."
     }
-    Get-Content -LiteralPath $latestLog.FullName -Tail 100
-    $position = $latestLog.Length
-    $created = $latestLog.CreationTimeUtc
+    $position = [long]0
+    $pending = [byte[]]::new(0)
+    $rotationMarker = Get-LogRotationMarker
+    $initialized = $false
     while ($true) {
-        Start-Sleep -Milliseconds 500
-        $file = Get-Item -LiteralPath $latestLog.FullName -ErrorAction SilentlyContinue
-        if (-not $file) { continue }
-        if ($file.CreationTimeUtc -ne $created -or $file.Length -lt $position) {
-            $position = 0
-            $created = $file.CreationTimeUtc
+        if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+            if (-not $Follow) { return }
+            Start-Sleep -Milliseconds 500
+            continue
         }
-        if ($file.Length -eq $position) { continue }
-        $stream = $null
         try {
-            $sharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
-            $stream = [IO.FileStream]::new($file.FullName, [IO.FileMode]::Open,
-                [IO.FileAccess]::Read, $sharing)
-            [void]$stream.Seek($position, [IO.SeekOrigin]::Begin)
-            $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
-            try {
-                while ($null -ne ($line = $reader.ReadLine())) { Write-Output $line }
-                $position = $stream.Position
-            } finally {
-                $reader.Dispose()
+            $before = Get-LogRotationMarker
+            if ($before -ne $rotationMarker -and $before -ne "none") {
+                if ($initialized -and (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
+                    $oldChunk = Read-LogBytes $backupPath $position
+                    if (-not $oldChunk.Truncated) {
+                        $oldLines = Split-CompleteLogLines $pending $oldChunk.Bytes
+                        foreach ($line in $oldLines.Lines) { Write-Output $line }
+                    }
+                }
+                $position = [long]0
+                $pending = [byte[]]::new(0)
+                $rotationMarker = $before
             }
+            $chunk = Read-LogBytes $logPath $position
+            $after = Get-LogRotationMarker
+            if ($after -ne $before -and $after -ne "none") {
+                continue
+            }
+            if ($chunk.Truncated) {
+                $position = [long]0
+                $pending = [byte[]]::new(0)
+                $chunk = Read-LogBytes $logPath $position
+            }
+            $position = $chunk.Position
+            $parsed = Split-CompleteLogLines $pending $chunk.Bytes
+            $pending = $parsed.Pending
+            $lines = $parsed.Lines
+            if (-not $initialized) {
+                $tailCount = if ($Follow) { 100 } else { 200 }
+                $start = [Math]::Max(0, $lines.Count - $tailCount)
+                for ($i = $start; $i -lt $lines.Count; $i++) { Write-Output $lines[$i] }
+                $initialized = $true
+            } else {
+                foreach ($line in $lines) { Write-Output $line }
+            }
+            if (-not $Follow) { return }
         } catch [IO.IOException] {
-            # A rotation may replace the file between Get-Item and opening it.
-        } finally {
-            if ($stream) { $stream.Dispose() }
+            if (-not $Follow) { throw }
+            # Rotation may replace the active file between opening and reading it.
         }
+        Start-Sleep -Milliseconds 500
     }
 }
 
