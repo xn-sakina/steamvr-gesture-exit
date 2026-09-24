@@ -26,6 +26,8 @@ struct DashboardStatusDisplay {
 };
 struct DashboardSurfaceModel {
   std::wstring title, settings_title, diagnostics_title, help_title, notice;
+  core::DashboardTab active_tab = core::DashboardTab::Settings;
+  std::optional<core::DashboardTab> hovered_tab;
   std::vector<DashboardSettingDisplay> settings;
   std::vector<core::DashboardButton> buttons;
   std::vector<DashboardStatusDisplay> statuses;

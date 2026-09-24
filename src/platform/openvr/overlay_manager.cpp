@@ -177,6 +177,7 @@ void OverlayManager::shutdown() {
   dashboard_texture_dirty_ = true;
   dashboard_was_visible_ = false;
   dashboard_pointer_primed_ = false;
+  dashboard_tab_ = core::DashboardTab::Settings;
   thumbnail_requested_ = false;
   renderer_generation_seen_ = renderer_.generation();
   wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -364,7 +365,9 @@ bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
   }
   const bool refreshed = recovered && refresh_recreated_textures();
   auto next = m;
+  next.active_tab = dashboard_tab_;
   next.hovered_action = dashboard_model_.hovered_action;
+  next.hovered_tab = dashboard_model_.hovered_tab;
   if (next != dashboard_model_) {
     dashboard_model_ = std::move(next);
     dashboard_texture_dirty_ = true;
@@ -431,10 +434,16 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
 DashboardEvents OverlayManager::poll_dashboard_events() {
   DashboardEvents out;
   auto hovered = dashboard_model_.hovered_action;
+  auto hovered_tab = dashboard_model_.hovered_tab;
   const bool visible = dashboard_visible();
   if (!visible || !dashboard_was_visible_) {
     hovered.reset();
+    hovered_tab.reset();
     dashboard_pointer_primed_ = false;
+  }
+  if (!visible && dashboard_was_visible_ && dashboard_tab_ != core::DashboardTab::Settings) {
+    dashboard_tab_ = core::DashboardTab::Settings;
+    out.tab_changed = true;
   }
   dashboard_was_visible_ = visible;
   bool pointer_seen = false;
@@ -447,6 +456,7 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
         e.eventType == vr::VREvent_OverlayShown ||
         e.eventType == vr::VREvent_OverlayHidden) {
       hovered.reset();
+      hovered_tab.reset();
       dashboard_pointer_primed_ = false;
       allow_hover_sound = false;
       continue;
@@ -463,22 +473,43 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
     const auto point = core::dashboard_mouse_to_pixels(
         e.data.mouse.x, e.data.mouse.y, mouse_scale.v[0], mouse_scale.v[1], kDashboardWidth,
         kDashboardHeight);
-    const auto hit = point ? core::dashboard_hit_test(dashboard_model_.buttons, point->x, point->y)
-                           : std::nullopt;
+    const auto tab_hit = point ? core::dashboard_tab_hit_test(point->x, point->y) : std::nullopt;
+    const auto hit = point && dashboard_tab_ == core::DashboardTab::Settings && !tab_hit
+                         ? core::dashboard_hit_test(dashboard_model_.buttons, point->x, point->y)
+                         : std::nullopt;
     if (e.eventType == vr::VREvent_MouseMove) {
       pointer_seen = true;
       hovered = hit;
-    } else if (e.data.mouse.button == vr::VRMouseButton_Left && hit)
-      out.actions.push_back(*hit);
+      hovered_tab = tab_hit;
+    } else if (e.data.mouse.button == vr::VRMouseButton_Left) {
+      hovered = hit;
+      hovered_tab = tab_hit;
+      if (tab_hit && *tab_hit != dashboard_tab_) {
+        dashboard_tab_ = *tab_hit;
+        out.tab_changed = true;
+      } else if (hit) {
+        out.actions.push_back(*hit);
+      }
+    }
   }
-  out.entered_button = allow_hover_sound && hovered &&
-                       hovered != dashboard_model_.hovered_action;
+  out.entered_button = allow_hover_sound &&
+                       ((hovered && hovered != dashboard_model_.hovered_action) ||
+                        (hovered_tab && hovered_tab != dashboard_model_.hovered_tab));
   if (visible && pointer_seen)
     dashboard_pointer_primed_ = true;
   if (hovered != dashboard_model_.hovered_action) {
     dashboard_model_.hovered_action = hovered;
     dashboard_texture_dirty_ = true;
     out.hover_changed = true;
+  }
+  if (hovered_tab != dashboard_model_.hovered_tab) {
+    dashboard_model_.hovered_tab = hovered_tab;
+    dashboard_texture_dirty_ = true;
+    out.hover_changed = true;
+  }
+  if (out.tab_changed) {
+    dashboard_model_.active_tab = dashboard_tab_;
+    dashboard_texture_dirty_ = true;
   }
   return out;
 }

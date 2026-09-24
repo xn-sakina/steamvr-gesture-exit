@@ -7,19 +7,20 @@
 namespace bailout::core {
 namespace {
 
-constexpr float kButtonLeft = 224.0F;
-constexpr float kButtonRight = 594.0F;
-constexpr float kRowTop = 116.0F;
-constexpr float kRowHeight = 62.0F;
-constexpr float kButtonInsetY = 8.0F;
-constexpr float kButtonGap = 8.0F;
+constexpr float kButtonLeft = 365.0F;
+constexpr float kButtonRight = 966.0F;
+constexpr float kRowTop = 190.0F;
+constexpr float kRowHeight = 78.0F;
+constexpr float kButtonInsetY = 7.0F;
+constexpr float kButtonHeight = 60.0F;
+constexpr float kButtonGap = 12.0F;
 
 DashboardRect button_rect(const int row, const int column, const int count) {
   const float available = kButtonRight - kButtonLeft - kButtonGap * (count - 1);
   const float width = available / count;
   const float left = kButtonLeft + column * (width + kButtonGap);
   const float top = kRowTop + row * kRowHeight + kButtonInsetY;
-  return {left, top, left + width, top + kRowHeight - 2 * kButtonInsetY};
+  return {left, top, left + width, top + kButtonHeight};
 }
 
 void add_segment(std::vector<DashboardButton>& result, const DashboardSettingRow row,
@@ -35,6 +36,24 @@ void add_segment(std::vector<DashboardButton>& result, const DashboardSettingRow
 }
 
 }  // namespace
+
+std::array<DashboardTabTarget, 3> dashboard_tabs() noexcept {
+  return {{{DashboardTab::Settings, {44.0F, 94.0F, 348.0F, 158.0F}},
+           {DashboardTab::Status, {360.0F, 94.0F, 664.0F, 158.0F}},
+           {DashboardTab::Help, {676.0F, 94.0F, 980.0F, 158.0F}}}};
+}
+
+std::optional<DashboardTab> dashboard_tab_hit_test(const float x, const float y) noexcept {
+  for (const auto& target : dashboard_tabs()) {
+    if (target.bounds.contains(x, y))
+      return target.tab;
+  }
+  return std::nullopt;
+}
+
+DashboardRect dashboard_timeout_value_rect() noexcept {
+  return button_rect(2, 1, 3);
+}
 
 std::optional<DashboardPoint> dashboard_mouse_to_pixels(
     const float x, const float y, const float mouse_width, const float mouse_height,

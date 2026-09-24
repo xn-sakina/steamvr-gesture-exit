@@ -17,6 +17,8 @@ struct D3dOverlayRenderer::Impl {
     uint32_t w = 0, h = 0;
     ComPtr<ID3D11Texture2D> texture;
     ComPtr<ID2D1RenderTarget> target;
+    ComPtr<ID2D1Bitmap> dashboard_logo;
+    bool dashboard_logo_attempted = false;
   };
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> context;
@@ -108,6 +110,51 @@ struct D3dOverlayRenderer::Impl {
       error = "CreateSolidColorBrush failed";
     }
     return b;
+  }
+  void load_dashboard_logo(Surface& surface) {
+    if (surface.dashboard_logo_attempted)
+      return;
+    surface.dashboard_logo_attempted = true;
+    const HMODULE module = GetModuleHandleW(nullptr);
+    const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_BAILOUT_PNG), RT_RCDATA);
+    if (!resource)
+      return;
+    const HGLOBAL loaded = LoadResource(module, resource);
+    if (!loaded)
+      return;
+    const DWORD size = SizeofResource(module, resource);
+    BYTE* bytes = static_cast<BYTE*>(LockResource(loaded));
+    if (!size || !bytes)
+      return;
+    const HRESULT com_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(com_result) && com_result != RPC_E_CHANGED_MODE)
+      return;
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICStream> stream;
+    ComPtr<IWICBitmapDecoder> decoder;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICFormatConverter> converter;
+    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_PPV_ARGS(&factory))) &&
+        SUCCEEDED(factory->CreateStream(&stream)) &&
+        SUCCEEDED(stream->InitializeFromMemory(bytes, size)) &&
+        SUCCEEDED(factory->CreateDecoderFromStream(stream.Get(), nullptr,
+                                                   WICDecodeMetadataCacheOnLoad, &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)) &&
+        SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+        SUCCEEDED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                                        WICBitmapDitherTypeNone, nullptr, 0,
+                                        WICBitmapPaletteTypeCustom))) {
+      (void)surface.target->CreateBitmapFromWicBitmap(converter.Get(), nullptr,
+                                                       &surface.dashboard_logo);
+    }
+    converter.Reset();
+    frame.Reset();
+    decoder.Reset();
+    stream.Reset();
+    factory.Reset();
+    if (SUCCEEDED(com_result))
+      CoUninitialize();
   }
 };
 D3dOverlayRenderer::D3dOverlayRenderer() : impl_(std::make_unique<Impl>()) {}
@@ -397,77 +444,127 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   auto accent = impl_->brush(t, D2D1::ColorF(0.10f, 0.58f, 0.82f, 1));
   auto hover = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 1));
   auto normal = impl_->brush(t, D2D1::ColorF(0.075f, 0.12f, 0.18f, 1));
-  auto card = impl_->brush(t, D2D1::ColorF(0.055f, 0.085f, 0.13f, 1));
+  auto card = impl_->brush(t, D2D1::ColorF(0.055f, 0.085f, 0.13f, 0.92f));
   auto panel = impl_->brush(t, D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.97f));
+  auto active_tab = impl_->brush(t, D2D1::ColorF(0.10f, 0.24f, 0.34f, 1));
   auto good = impl_->brush(t, D2D1::ColorF(0.35f, 0.86f, 0.62f, 1));
   auto bad = impl_->brush(t, D2D1::ColorF(0.98f, 0.55f, 0.38f, 1));
-  if (!white || !muted || !faint || !accent || !hover || !normal || !card || !panel || !good ||
-      !bad) {
+  if (!white || !muted || !faint || !accent || !hover || !normal || !card || !panel ||
+      !active_tab || !good || !bad) {
     if (recover_target(id, impl_->resource_status) && !retried)
       return render_dashboard(id, m, true);
     return false;
   }
+  impl_->load_dashboard_logo(s);
   t->BeginDraw();
   t->Clear(D2D1::ColorF(0, 0, 0, 0));
   t->FillRoundedRectangle(
       D2D1::RoundedRect(D2D1::RectF(8, 8, float(s.w - 8), float(s.h - 8)), 24, 24), panel.Get());
-  t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
-               D2D1::RectF(36, 20, 620, 75), white.Get());
-  if (!m.notice.empty())
-    t->DrawTextW(m.notice.c_str(), static_cast<UINT32>(m.notice.size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(620, 30, 988, 70), bad.Get());
-  t->DrawTextW(m.settings_title.c_str(), static_cast<UINT32>(m.settings_title.size()),
-               impl_->section.Get(), D2D1::RectF(42, 78, 594, 110), white.Get());
-  t->DrawTextW(m.diagnostics_title.c_str(), static_cast<UINT32>(m.diagnostics_title.size()),
-               impl_->section.Get(), D2D1::RectF(626, 78, 982, 110), white.Get());
-  for (size_t i = 0; i < m.settings.size(); ++i) {
-    const float top = 116.0f + 62.0f * static_cast<float>(i);
-    const auto& r = m.settings[i];
-    t->DrawTextW(r.label.c_str(), static_cast<UINT32>(r.label.size()), impl_->label.Get(),
-                 D2D1::RectF(42, top + 16, 216, top + 52), muted.Get());
-    if (!r.value.empty()) {
-      auto value_rect = D2D1::RectF(351, top + 8, 467, top + 54);
-      t->FillRoundedRectangle(D2D1::RoundedRect(value_rect, 9, 9), normal.Get());
-      t->DrawTextW(r.value.c_str(), static_cast<UINT32>(r.value.size()), impl_->button.Get(),
-                   value_rect, white.Get());
+  const size_t row_count = m.active_tab == core::DashboardTab::Settings ? m.settings.size()
+                           : m.active_tab == core::DashboardTab::Status ? m.statuses.size()
+                                                                         : m.help_lines.size();
+  for (size_t i = 0; i < row_count; ++i) {
+    const bool help = m.active_tab == core::DashboardTab::Help;
+    const float top = (help ? 192.0f : 190.0f) + (help ? 116.0f : 78.0f) * i;
+    t->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(44, top, 980, top + (help ? 100.0f : 74.0f)), 10, 10),
+        card.Get());
+  }
+  if (s.dashboard_logo) {
+    const auto logo_size = s.dashboard_logo->GetSize();
+    // Keep the avatar behind the content and fade it out across the panel.
+    constexpr int kFadeSlices = 32;
+    for (int slice = 0; slice < kFadeSlices; ++slice) {
+      const float start = static_cast<float>(slice) / kFadeSlices;
+      const float end = static_cast<float>(slice + 1) / kFadeSlices;
+      const float fade = 1.0f - (start + end) * 0.5f;
+      t->DrawBitmap(s.dashboard_logo.Get(),
+                    D2D1::RectF(510.0f + 450.0f * start, 178.0f,
+                                510.0f + 450.0f * end, 628.0f),
+                    0.20f * fade * fade, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    D2D1::RectF(logo_size.width * start * 0.9f, logo_size.height * 0.11f,
+                                logo_size.width * end * 0.9f, logo_size.height));
     }
   }
-  for (const auto& b : m.buttons) {
-    auto rect = D2D1::RectF(b.bounds.left, b.bounds.top, b.bounds.right, b.bounds.bottom);
-    const bool hovered = m.hovered_action && *m.hovered_action == b.action;
-    t->FillRoundedRectangle(D2D1::RoundedRect(rect, 9, 9),
-                            (b.selected ? accent.Get() : normal.Get()));
+  t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
+               D2D1::RectF(44, 18, 620, 76), white.Get());
+  if (!m.notice.empty())
+    t->DrawTextW(m.notice.c_str(), static_cast<UINT32>(m.notice.size()),
+                 impl_->small_text_format.Get(), D2D1::RectF(630, 26, 980, 76), bad.Get());
+  for (const auto& tab : core::dashboard_tabs()) {
+    const std::wstring* label = &m.settings_title;
+    if (tab.tab == core::DashboardTab::Status)
+      label = &m.diagnostics_title;
+    else if (tab.tab == core::DashboardTab::Help)
+      label = &m.help_title;
+    const auto rect = D2D1::RectF(tab.bounds.left, tab.bounds.top, tab.bounds.right,
+                                 tab.bounds.bottom);
+    const auto rounded = D2D1::RoundedRect(rect, 10, 10);
+    const bool selected = m.active_tab == tab.tab;
+    const bool hovered = m.hovered_tab && *m.hovered_tab == tab.tab;
+    t->FillRoundedRectangle(rounded, selected ? active_tab.Get() : normal.Get());
+    if (selected)
+      t->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(rect.left + 16, rect.bottom - 6,
+                                                               rect.right - 16, rect.bottom - 2),
+                                               2, 2),
+                              hover.Get());
     if (hovered)
-      t->DrawRoundedRectangle(D2D1::RoundedRect(rect, 9, 9), hover.Get(), 3.0f);
-    else if (b.selected)
-      t->DrawRoundedRectangle(D2D1::RoundedRect(rect, 9, 9), white.Get(), 1.5f);
-    auto* text_brush = b.enabled ? white.Get() : faint.Get();
-    t->DrawTextW(b.label.c_str(), static_cast<UINT32>(b.label.size()), impl_->button.Get(), rect,
-                 text_brush);
-  }
-  for (size_t i = 0; i < m.statuses.size(); ++i) {
-    const float top = 112.0f + 62.0f * static_cast<float>(i);
-    const auto& status = m.statuses[i];
-    auto rect = D2D1::RectF(620, top, 988, top + 58);
-    t->FillRoundedRectangle(D2D1::RoundedRect(rect, 8, 8), card.Get());
-    t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(632, top + 4, 790, top + 25),
-                 muted.Get());
-    auto* tone = status.tone == DashboardStatusTone::Available     ? good.Get()
-                 : status.tone == DashboardStatusTone::Unavailable ? bad.Get()
-                                                                   : white.Get();
-    t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(792, top + 4, 976, top + 25), tone);
-    t->DrawTextW(status.detail.c_str(), static_cast<UINT32>(status.detail.size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(632, top + 25, 976, top + 57),
+      t->DrawRoundedRectangle(rounded, hover.Get(), 2.5f);
+    t->DrawTextW(label->c_str(), static_cast<UINT32>(label->size()), impl_->button.Get(), rect,
                  white.Get());
   }
-  t->DrawTextW(m.help_title.c_str(), static_cast<UINT32>(m.help_title.size()), impl_->section.Get(),
-               D2D1::RectF(42, 442, 980, 475), white.Get());
-  for (size_t i = 0; i < m.help_lines.size(); ++i) {
-    const float top = 478.0f + 38.0f * static_cast<float>(i);
-    t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(48, top, 978, top + 34), muted.Get());
+  if (m.active_tab == core::DashboardTab::Settings) {
+    for (size_t i = 0; i < m.settings.size(); ++i) {
+      const float top = 190.0f + 78.0f * static_cast<float>(i);
+      const auto& row = m.settings[i];
+      t->DrawTextW(row.label.c_str(), static_cast<UINT32>(row.label.size()), impl_->label.Get(),
+                   D2D1::RectF(64, top + 19, 344, top + 58), white.Get());
+      if (!row.value.empty()) {
+        const auto value = core::dashboard_timeout_value_rect();
+        const auto rect = D2D1::RectF(value.left, value.top, value.right, value.bottom);
+        t->FillRoundedRectangle(D2D1::RoundedRect(rect, 9, 9), normal.Get());
+        t->DrawTextW(row.value.c_str(), static_cast<UINT32>(row.value.size()),
+                     impl_->button.Get(), rect, white.Get());
+      }
+    }
+    for (const auto& button : m.buttons) {
+      const auto rect = D2D1::RectF(button.bounds.left, button.bounds.top,
+                                    button.bounds.right, button.bounds.bottom);
+      const auto rounded = D2D1::RoundedRect(rect, 9, 9);
+      const bool hovered = m.hovered_action && *m.hovered_action == button.action;
+      t->FillRoundedRectangle(rounded, button.selected ? accent.Get() : normal.Get());
+      if (hovered)
+        t->DrawRoundedRectangle(rounded, hover.Get(), 3.0f);
+      else if (button.selected)
+        t->DrawRoundedRectangle(rounded, white.Get(), 1.5f);
+      t->DrawTextW(button.label.c_str(), static_cast<UINT32>(button.label.size()),
+                   impl_->button.Get(), rect, button.enabled ? white.Get() : faint.Get());
+    }
+  } else if (m.active_tab == core::DashboardTab::Status) {
+    for (size_t i = 0; i < m.statuses.size(); ++i) {
+      const float top = 190.0f + 78.0f * static_cast<float>(i);
+      const auto& status = m.statuses[i];
+      t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()),
+                   impl_->label.Get(), D2D1::RectF(64, top + 15, 340, top + 58), white.Get());
+      auto* tone = status.tone == DashboardStatusTone::Available     ? good.Get()
+                   : status.tone == DashboardStatusTone::Unavailable ? bad.Get()
+                                                                     : white.Get();
+      t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()),
+                   impl_->label.Get(), D2D1::RectF(365, top + 9, 960, top + 40), tone);
+      t->DrawTextW(status.detail.c_str(), static_cast<UINT32>(status.detail.size()),
+                   impl_->small_text_format.Get(), D2D1::RectF(365, top + 40, 960, top + 69),
+                   muted.Get());
+    }
+  } else {
+    for (size_t i = 0; i < m.help_lines.size(); ++i) {
+      const float top = 192.0f + 116.0f * static_cast<float>(i);
+      const auto number = std::to_wstring(i + 1);
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(92, top + 50), 25, 25), accent.Get());
+      t->DrawTextW(number.c_str(), static_cast<UINT32>(number.size()), impl_->section.Get(),
+                   D2D1::RectF(68, top + 30, 116, top + 72), white.Get());
+      t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
+                   impl_->label.Get(), D2D1::RectF(140, top + 14, 948, top + 88), white.Get());
+    }
   }
   const auto result = t->EndDraw();
   if (FAILED(result)) {

@@ -394,6 +394,8 @@ void dashboard_controls_are_visible_semantic_targets() {
   const auto buttons = dashboard_buttons(settings);
   CHECK(buttons.size() == 14);
   for (const auto& button : buttons) {
+    CHECK(button.bounds.bottom - button.bounds.top >= 60.0F);
+    CHECK(button.bounds.right - button.bounds.left >= 100.0F);
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
     const auto hit = dashboard_hit_test(buttons, x, y);
@@ -409,6 +411,26 @@ void dashboard_controls_are_visible_semantic_targets() {
     if (button.selected)
       ++selected;
   CHECK(selected == 4);
+}
+
+void dashboard_tabs_have_distinct_large_targets() {
+  const auto tabs = dashboard_tabs();
+  CHECK(tabs[0].tab == DashboardTab::Settings);
+  CHECK(tabs[1].tab == DashboardTab::Status);
+  CHECK(tabs[2].tab == DashboardTab::Help);
+  for (const auto& tab : tabs) {
+    CHECK(tab.bounds.right - tab.bounds.left >= 60.0F);
+    CHECK(tab.bounds.bottom - tab.bounds.top >= 60.0F);
+    const float x = (tab.bounds.left + tab.bounds.right) * 0.5F;
+    const float y = (tab.bounds.top + tab.bounds.bottom) * 0.5F;
+    CHECK(dashboard_tab_hit_test(x, y) == tab.tab);
+  }
+  CHECK(!dashboard_tab_hit_test(354.0F, 126.0F));
+  CHECK(!dashboard_tab_hit_test(512.0F, 180.0F));
+  const auto value = dashboard_timeout_value_rect();
+  CHECK(!dashboard_hit_test(dashboard_buttons(Settings{}),
+                            (value.left + value.right) * 0.5F,
+                            (value.top + value.bottom) * 0.5F));
 }
 
 void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
@@ -771,6 +793,7 @@ int main() {
       {"pointer uses tracked controller", pointer_availability_uses_tracked_controller},
       {"wrist pose smoothing", wrist_pose_smoothing_follows_and_resets_safely},
       {"dashboard semantic targets", dashboard_controls_are_visible_semantic_targets},
+      {"dashboard tabs", dashboard_tabs_have_distinct_large_targets},
       {"dashboard mouse scale", dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale},
       {"dashboard actions", dashboard_actions_change_only_the_intended_setting},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},

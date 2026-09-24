@@ -861,7 +861,8 @@ int RuntimeApp::run() {
     }
     if (settings_writer.take_failure())
       save_failure_notice_until_ = now + std::chrono::seconds(8);
-    if (dashboard_events.hover_changed || !dashboard_events.actions.empty())
+    if (dashboard_events.hover_changed || dashboard_events.tab_changed ||
+        !dashboard_events.actions.empty())
       update_dashboard(latest_resolution_, last_frame);
     if (thumbnail_dirty_) {
       thumbnail_dirty_ = false;

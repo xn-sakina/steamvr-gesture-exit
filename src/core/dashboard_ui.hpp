@@ -2,6 +2,7 @@
 
 #include "core/settings.hpp"
 
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -25,6 +26,17 @@ struct DashboardPoint {
   float x = 0;
   float y = 0;
 };
+
+enum class DashboardTab { Settings, Status, Help };
+
+struct DashboardTabTarget {
+  DashboardTab tab;
+  DashboardRect bounds;
+};
+
+[[nodiscard]] std::array<DashboardTabTarget, 3> dashboard_tabs() noexcept;
+[[nodiscard]] std::optional<DashboardTab> dashboard_tab_hit_test(float x, float y) noexcept;
+[[nodiscard]] DashboardRect dashboard_timeout_value_rect() noexcept;
 
 // OpenVR mouse events use a lower-left origin. Convert the runtime mouse scale
 // to Direct2D's upper-left texture coordinates before testing button bounds.

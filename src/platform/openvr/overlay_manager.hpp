@@ -13,6 +13,7 @@ struct DashboardEvents {
   std::vector<core::DashboardAction> actions;
   bool entered_button = false;
   bool hover_changed = false;
+  bool tab_changed = false;
 };
 class OverlayManager {
  public:
@@ -67,6 +68,7 @@ class OverlayManager {
   bool dashboard_texture_dirty_ = true;
   bool dashboard_was_visible_ = false;
   bool dashboard_pointer_primed_ = false;
+  core::DashboardTab dashboard_tab_ = core::DashboardTab::Settings;
   bool thumbnail_requested_ = false;
   uint64_t renderer_generation_seen_ = 0;
   std::wstring thumbnail_title_, thumbnail_description_;
