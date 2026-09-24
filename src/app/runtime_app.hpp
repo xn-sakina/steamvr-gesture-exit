@@ -55,6 +55,9 @@ class RuntimeApp {
   int last_beep_second_ = -1;
   std::atomic_bool stop_ = false;
   std::string steam_language_, os_language_, availability_signature_;
+  std::string last_gesture_decision_;
+  std::chrono::steady_clock::time_point last_gesture_log_at_{};
+  std::chrono::steady_clock::time_point last_tracking_log_at_{};
   bool recovery_notice_pending_ = false;
   bool thumbnail_dirty_ = false;
   std::chrono::steady_clock::time_point recovery_notice_until_{};

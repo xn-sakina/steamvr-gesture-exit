@@ -390,7 +390,7 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
   if (!panel || !white || !muted ||
       FAILED(impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                             DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                            25, L"", &title_format)) ||
+                                            21, L"", &title_format)) ||
       FAILED(impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                             DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
                                             15, L"", &description_format)) ||

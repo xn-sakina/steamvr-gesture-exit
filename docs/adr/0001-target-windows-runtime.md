@@ -5,7 +5,7 @@
 
 ## Context
 
-SteamVR Bail Out depends on SteamVR overlay behavior and Windows process identity and termination APIs. Development happens primarily on macOS, while acceptance testing happens on a Windows SteamVR machine. Pretending to support multiple runtimes would increase ambiguity in the highest-risk process-control code.
+SteamVR Gesture Exit depends on SteamVR overlay behavior and Windows process identity and termination APIs. Development happens primarily on macOS, while acceptance testing happens on a Windows SteamVR machine. Pretending to support multiple runtimes would increase ambiguity in the highest-risk process-control code.
 
 ## Decision
 

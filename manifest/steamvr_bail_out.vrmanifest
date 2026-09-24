@@ -9,12 +9,12 @@
       "is_dashboard_overlay": true,
       "strings": {
         "en_us": {
-          "name": "SteamVR Bail Out",
-          "description": "A deliberate, safety-first exit overlay for the current VR game."
+          "name": "SteamVR Gesture Exit",
+          "description": "Wave to show Exit, then confirm to close the VR game."
         },
         "schinese": {
-          "name": "SteamVR 安全退场",
-          "description": "以明确操作和安全边界退出当前 VR 游戏。"
+          "name": "SteamVR手势退出",
+          "description": "挥动手柄唤出退出按钮，再确认退出 VR 游戏。"
         }
       }
     }

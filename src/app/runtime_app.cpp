@@ -16,6 +16,26 @@
 namespace bailout::app {
 namespace {
 constexpr char kAppKey[] = "com.steamvr-bail-out.overlay";
+const char* wrist_action_name(platform::openvr::OverlayAction action) {
+  switch (action) {
+    case platform::openvr::OverlayAction::Primary: return "primary";
+    case platform::openvr::OverlayAction::Confirm: return "confirm";
+    case platform::openvr::OverlayAction::Dismiss: return "dismiss";
+    case platform::openvr::OverlayAction::Cancel: return "cancel";
+  }
+  return "unknown";
+}
+const char* tracking_result_name(int value) {
+  switch (static_cast<vr::ETrackingResult>(value)) {
+    case vr::TrackingResult_Uninitialized: return "uninitialized";
+    case vr::TrackingResult_Calibrating_InProgress: return "calibrating";
+    case vr::TrackingResult_Calibrating_OutOfRange: return "calibrating_out_of_range";
+    case vr::TrackingResult_Running_OK: return "running_ok";
+    case vr::TrackingResult_Running_OutOfRange: return "running_out_of_range";
+    case vr::TrackingResult_Fallback_RotationOnly: return "rotation_only";
+  }
+  return "unavailable";
+}
 class ScopedHandle {
  public:
   explicit ScopedHandle(HANDLE value = nullptr) : value_(value) {}
@@ -146,6 +166,7 @@ class ForegroundResolutionWorker {
             {
               std::scoped_lock lock(mutex_);
               latest_ = std::move(resolution);
+              latest_at_ = finished;
               pending_ = true;
             }
             if (duration >= std::chrono::milliseconds(250) &&
@@ -172,11 +193,13 @@ class ForegroundResolutionWorker {
     if (thread_.joinable())
       thread_.join();
   }
-  bool take(platform::windows::TargetResolution& resolution) {
+  bool take(platform::windows::TargetResolution& resolution,
+            std::chrono::steady_clock::time_point& completed_at) {
     std::scoped_lock lock(mutex_);
     if (!pending_)
       return false;
     resolution = std::move(latest_);
+    completed_at = latest_at_;
     pending_ = false;
     return true;
   }
@@ -195,6 +218,7 @@ class ForegroundResolutionWorker {
   std::mutex mutex_;
   std::condition_variable wake_;
   platform::windows::TargetResolution latest_{};
+  std::chrono::steady_clock::time_point latest_at_{};
   bool pending_ = false;
   bool refresh_requested_ = false;
   std::thread thread_;
@@ -672,6 +696,7 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         record.code = e.code;
         record.from_state = std::string(core::to_string(e.from_state));
         record.to_state = std::string(core::to_string(e.to_state));
+        record.details["last_exit"] = std::string(core::to_string(flow_->snapshot(now).last_exit));
         if (e.target)
           record.target_name = e.target->display_name;
         (void)log_.append(record);
@@ -704,7 +729,9 @@ int RuntimeApp::run() {
     return 1;
   }
   if (!vr_.initialize()) {
-    (void)log_.append({core::DiagnosticEventType::Error, "OPENVR_INIT_FAILED"});
+    core::DiagnosticRecord record{core::DiagnosticEventType::Error, "OPENVR_INIT_FAILED"};
+    record.status = vr_.error();
+    (void)log_.append(record);
     return 1;
   }
   if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
@@ -740,7 +767,7 @@ int RuntimeApp::run() {
   // Create the Dashboard immediately after language discovery. SteamVR may
   // start an overlay before discovering devices, so hardware gating remains
   // in the normal loop below.
-  overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays());
+  overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays(), &log_);
   if (!overlays_->initialize()) {
     core::DiagnosticRecord record{};
     record.event = core::DiagnosticEventType::Error;
@@ -759,7 +786,17 @@ int RuntimeApp::run() {
                                    text(core::StringId::ThumbnailDescription),
                                    std::string(core::localize(core::StringId::AppName, language_))))
     log_overlay_error(std::chrono::steady_clock::now());
-  (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STARTED"});
+  core::DiagnosticRecord started{};
+  started.event = core::DiagnosticEventType::Lifecycle;
+  started.code = "RUNTIME_STARTED";
+#ifdef NDEBUG
+  started.details["build"] = "release";
+#else
+  started.details["build"] = "debug";
+#endif
+  started.details["tracking_source"] = "GetDeviceToAbsoluteTrackingPose(standing,0)";
+  started.details["configured_hand"] = std::string(core::to_string(settings_.configured_hand));
+  (void)log_.append(started);
   SettingsPersistenceWorker settings_writer(settings_store_.path(), log_);
   ForegroundResolutionWorker target_worker(*targets_, vr_.applications(), log_);
   const auto started_at = std::chrono::steady_clock::now();
@@ -771,6 +808,8 @@ int RuntimeApp::run() {
   auto observed_scene_state = vr::EVRSceneApplicationState_None;
   auto last_ui_hover_sound_at = std::chrono::steady_clock::time_point{};
   auto last_slow_loop_at = std::chrono::steady_clock::time_point{};
+  auto last_target_log_at = std::chrono::steady_clock::time_point{};
+  std::string last_target_signature;
   while (true) {
     if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
       stop_ = true;
@@ -785,6 +824,14 @@ int RuntimeApp::run() {
     const bool dashboard_at_start = dashboard_open();
     if (dashboard_at_start != dashboard_was_open) {
       dashboard_was_open = dashboard_at_start;
+      core::DiagnosticRecord record{};
+      record.event = core::DiagnosticEventType::StateTransition;
+      record.code = "DASHBOARD_VISIBILITY_CHANGED";
+      record.debug_only = true;
+      record.available = dashboard_at_start;
+      record.details["steamvr_global_visible"] = vr_.overlays()->IsDashboardVisible() ? "true" : "false";
+      record.details["overlay_visible"] = overlays_->dashboard_visible() ? "true" : "false";
+      (void)log_.append(record);
       target_worker.request_refresh();
       update_dashboard(latest_resolution_, last_frame);
     }
@@ -832,6 +879,14 @@ int RuntimeApp::run() {
     const auto scene_pid =
         scene_active ? vr_.applications()->GetCurrentSceneProcessId() : 0;
     if (scene_state != observed_scene_state || scene_pid != observed_scene_pid) {
+      core::DiagnosticRecord scene_record{};
+      scene_record.event = core::DiagnosticEventType::AvailabilityChanged;
+      scene_record.code = "SCENE_CHANGED";
+      scene_record.debug_only = true;
+      scene_record.details = {{"previous_scene_pid", std::to_string(observed_scene_pid)},
+                              {"scene_pid", std::to_string(scene_pid)},
+                              {"scene_state", std::to_string(static_cast<int>(scene_state))}};
+      (void)log_.append(scene_record);
       observed_scene_state = scene_state;
       observed_scene_pid = scene_pid;
       if (latest_resolution_.scene_pid != scene_pid) {
@@ -845,9 +900,34 @@ int RuntimeApp::run() {
       target_worker.request_refresh();
     }
     platform::windows::TargetResolution resolved{};
-    if (target_worker.take(resolved) && resolved.scene_pid == observed_scene_pid)
-      latest_resolution_ = std::move(resolved);
-    const auto dashboard_events = overlays_->poll_dashboard_events();
+    std::chrono::steady_clock::time_point resolved_at{};
+    if (target_worker.take(resolved, resolved_at)) {
+      const bool current_scene = resolved.scene_pid == observed_scene_pid;
+      const std::string signature = std::to_string(resolved.scene_pid) + ":" +
+          platform::windows::diagnostic_code(resolved.game_status) + ":" +
+          platform::windows::diagnostic_code(resolved.target_status) + ":" +
+          (current_scene ? "current" : "stale");
+      if (signature != last_target_signature || now - last_target_log_at >= std::chrono::seconds(5)) {
+        core::DiagnosticRecord record{};
+        record.event = core::DiagnosticEventType::AvailabilityChanged;
+        record.code = "TARGET_RESOLUTION_RECEIVED";
+        record.debug_only = true;
+        record.current_game_status = platform::windows::diagnostic_code(resolved.game_status);
+        record.exit_target_status = platform::windows::diagnostic_code(resolved.target_status);
+        record.details = {{"resolved_scene_pid", std::to_string(resolved.scene_pid)},
+                          {"observed_scene_pid", std::to_string(observed_scene_pid)},
+                          {"scene_matches", current_scene ? "true" : "false"},
+                          {"result_age_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - resolved_at).count())},
+                          {"has_game", resolved.game ? "true" : "false"},
+                          {"has_target", resolved.target ? "true" : "false"}};
+        (void)log_.append(record);
+        last_target_signature = signature;
+        last_target_log_at = now;
+      }
+      if (current_scene)
+        latest_resolution_ = std::move(resolved);
+    }
+    const auto dashboard_events = overlays_->poll_dashboard_events(last_frame);
     if (!overlays_->error().empty())
       log_overlay_error(now);
     else {
@@ -872,6 +952,36 @@ int RuntimeApp::run() {
         log_overlay_error(std::chrono::steady_clock::now());
     }
     const auto frame = vr_.sample_tracking();
+    if (now - last_tracking_log_at_ >= std::chrono::seconds(1)) {
+      core::DiagnosticRecord record{};
+      record.event = core::DiagnosticEventType::AvailabilityChanged;
+      record.code = "TRACKING_SAMPLE";
+      record.debug_only = true;
+      record.details = {
+          {"source", "GetDeviceToAbsoluteTrackingPose"},
+          {"universe", "standing"},
+          {"prediction_seconds", "0"},
+          {"sample_interval_ms", last_frame.sampled_at == std::chrono::steady_clock::time_point{}
+                                     ? "first" : std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(frame.sampled_at - last_frame.sampled_at).count())},
+          {"sample_age_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - frame.sampled_at).count())},
+          {"hmd_connected", frame.headset_connected ? "true" : "false"},
+          {"hmd_tracked", frame.headset_tracked ? "true" : "false"},
+          {"hmd_pose_valid", frame.headset_pose_valid ? "true" : "false"},
+          {"hmd_tracking_result", tracking_result_name(frame.headset_tracking_result)},
+          {"left_device_index", std::to_string(frame.left.device_index)},
+          {"left_connected", frame.left.connected ? "true" : "false"},
+          {"left_tracked", frame.left.tracked ? "true" : "false"},
+          {"left_pose_valid", frame.left.pose_valid ? "true" : "false"},
+          {"left_tracking_result", tracking_result_name(frame.left.tracking_result)},
+          {"right_device_index", std::to_string(frame.right.device_index)},
+          {"right_connected", frame.right.connected ? "true" : "false"},
+          {"right_tracked", frame.right.tracked ? "true" : "false"},
+          {"right_pose_valid", frame.right.pose_valid ? "true" : "false"},
+          {"right_tracking_result", tracking_result_name(frame.right.tracking_result)},
+      };
+      (void)log_.append(record);
+      last_tracking_log_at_ = now;
+    }
     last_frame = frame;
     if (!frame.headset_connected || (!frame.left.connected && !frame.right.connected)) {
       if (!no_devices_since)
@@ -902,6 +1012,11 @@ int RuntimeApp::run() {
       r.status = availability;
       r.current_game_status = platform::windows::diagnostic_code(latest_resolution_.game_status);
       r.exit_target_status = platform::windows::diagnostic_code(latest_resolution_.target_status);
+      r.details = {{"flow_state", std::string(core::to_string(flow_->state()))},
+                   {"last_exit", std::string(core::to_string(flow_->snapshot(now).last_exit))},
+                   {"configured_hand", std::string(core::to_string(settings_.configured_hand))},
+                   {"ready", prereq.ready() ? "true" : "false"},
+                   {"scene_pid", std::to_string(observed_scene_pid)}};
       (void)log_.append(r);
     }
     apply(flow_->on_prerequisites(now, prereq), now, frame);
@@ -917,6 +1032,42 @@ int RuntimeApp::run() {
       gesture = gesture_.update({now, configured.tracked && frame.headset_tracked,
                                  cv(configured.position), cv(frame.headset_position),
                                  cv(frame.headset_forward)});
+    const auto& gesture_diagnostic = gesture_.diagnostic();
+    const std::string gesture_decision = dashboard_visible ? "dashboard_open" :
+        std::string(core::to_string(gesture_diagnostic.decision));
+    if ((gesture_decision != last_gesture_decision_ &&
+         now - last_gesture_log_at_ >= std::chrono::milliseconds(250)) ||
+        now - last_gesture_log_at_ >= std::chrono::seconds(2)) {
+      core::DiagnosticRecord record{};
+      record.event = core::DiagnosticEventType::GestureRecognized;
+      record.code = "GESTURE_EVALUATED";
+      record.debug_only = true;
+      record.status = gesture_decision;
+      record.details = {
+          {"configured_hand", std::string(core::to_string(settings_.configured_hand))},
+          {"device_index", std::to_string(configured.device_index)},
+          {"tracked", configured.tracked ? "true" : "false"},
+          {"headset_tracked", frame.headset_tracked ? "true" : "false"},
+          {"sample_count", std::to_string(gesture_diagnostic.sample_count)},
+          {"window_span_ms", std::to_string(gesture_diagnostic.span_ms)},
+          {"head_distance_m", std::to_string(gesture_diagnostic.head_distance_m)},
+          {"below_head_m", std::to_string(gesture_diagnostic.below_head_m)},
+          {"behind_head_m", std::to_string(gesture_diagnostic.behind_head_m)},
+          {"amplitude_m", std::to_string(gesture_diagnostic.amplitude_m)},
+          {"reversals", std::to_string(gesture_diagnostic.reversals)},
+          {"minimum_amplitude_m", std::to_string(gesture_.config().minimum_amplitude_metres)},
+          {"reversal_deadband_m", std::to_string(gesture_.config().reversal_deadband_metres)},
+          {"minimum_head_distance_m", std::to_string(gesture_.config().minimum_head_distance_metres)},
+          {"maximum_head_distance_m", std::to_string(gesture_.config().maximum_head_distance_metres)},
+          {"maximum_below_head_m", std::to_string(gesture_.config().maximum_hand_below_head_metres)},
+          {"maximum_behind_head_m", std::to_string(gesture_.config().maximum_behind_head_metres)},
+          {"clock_reset", gesture_diagnostic.clock_reset ? "true" : "false"},
+          {"prerequisites_ready", prereq.ready() ? "true" : "false"},
+      };
+      (void)log_.append(record);
+      last_gesture_decision_ = gesture_decision;
+      last_gesture_log_at_ = now;
+    }
     if (gesture && !dashboard_open()) {
       core::DiagnosticRecord recognized{};
       recognized.event = core::DiagnosticEventType::GestureRecognized;
@@ -926,8 +1077,27 @@ int RuntimeApp::run() {
           platform::windows::diagnostic_code(latest_resolution_.game_status);
       recognized.exit_target_status =
           platform::windows::diagnostic_code(latest_resolution_.target_status);
+      recognized.details = {{"flow_state", std::string(core::to_string(flow_->state()))},
+                            {"configured_hand", std::string(core::to_string(settings_.configured_hand))},
+                            {"device_index", std::to_string(configured.device_index)},
+                            {"prerequisites_ready", prereq.ready() ? "true" : "false"}};
       (void)log_.append(recognized);
-      apply(flow_->on_gesture(now, prereq), now, frame);
+      auto effects = flow_->on_gesture(now, prereq);
+      core::DiagnosticRecord dispatch{};
+      dispatch.event = core::DiagnosticEventType::StateTransition;
+      dispatch.code = "GESTURE_DISPATCH";
+      dispatch.debug_only = true;
+      dispatch.details = {{"effect_count", std::to_string(effects.size())},
+                          {"state_after", std::string(core::to_string(flow_->state()))},
+                          {"ready", prereq.ready() ? "true" : "false"}};
+      (void)log_.append(dispatch);
+      apply(std::move(effects), now, frame);
+    } else if (gesture) {
+      core::DiagnosticRecord record{};
+      record.event = core::DiagnosticEventType::GestureRecognized;
+      record.code = "GESTURE_SUPPRESSED_DASHBOARD";
+      record.debug_only = true;
+      (void)log_.append(record);
     }
     const auto state = flow_->state();
     if (!dashboard_visible) {
@@ -939,6 +1109,15 @@ int RuntimeApp::run() {
         for (const auto action : actions) {
           if (dashboard_open())
             break;
+          core::DiagnosticRecord action_record{};
+          action_record.event = core::DiagnosticEventType::StateTransition;
+          action_record.code = "WRIST_ACTION";
+          action_record.debug_only = true;
+          action_record.status = wrist_action_name(action);
+          action_record.details = {{"flow_state", std::string(core::to_string(flow_->state()))},
+                                   {"pointer_device_index", std::to_string(opposite.device_index)},
+                                   {"pointer_tracked", opposite.tracked ? "true" : "false"}};
+          (void)log_.append(action_record);
           if (action == platform::openvr::OverlayAction::Primary)
             apply(flow_->on_control_clicked(now), now, frame);
           else if (action == platform::openvr::OverlayAction::Dismiss)
@@ -952,14 +1131,27 @@ int RuntimeApp::run() {
               fresh = targets_->resolve_foreground();
             apply(flow_->on_prerequisites(now, prerequisites(frame, fresh, dashboard_now)), now,
                   frame);
-            if (!dashboard_now && fresh.target && latest_resolution_.target &&
-                core_target(*fresh.target) == core_target(*latest_resolution_.target) &&
-                flow_->state() == core::FlowState::Confirming) {
+            const bool same_target = fresh.target && latest_resolution_.target &&
+                core_target(*fresh.target) == core_target(*latest_resolution_.target);
+            if (!dashboard_now && same_target && flow_->state() == core::FlowState::Confirming) {
               locked_native_ = fresh.target;
               latest_resolution_ = fresh;
               apply(flow_->on_confirm(now, core_target(*fresh.target),
                                       std::chrono::seconds(settings_.countdown_seconds)),
                     now, frame);
+            } else {
+              core::DiagnosticRecord blocked{};
+              blocked.event = core::DiagnosticEventType::StateTransition;
+              blocked.code = "CONFIRM_BLOCKED";
+              blocked.debug_only = true;
+              blocked.current_game_status = platform::windows::diagnostic_code(fresh.game_status);
+              blocked.exit_target_status = platform::windows::diagnostic_code(fresh.target_status);
+              blocked.details = {{"dashboard_visible", dashboard_now ? "true" : "false"},
+                                 {"same_target", same_target ? "true" : "false"},
+                                 {"flow_state", std::string(core::to_string(flow_->state()))},
+                                 {"fresh_scene_pid", std::to_string(fresh.scene_pid)},
+                                 {"cached_scene_pid", std::to_string(latest_resolution_.scene_pid)}};
+              (void)log_.append(blocked);
             }
           }
         }

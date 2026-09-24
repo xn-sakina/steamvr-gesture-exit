@@ -14,6 +14,8 @@ struct Vec3 {
 struct HandPose {
   bool connected = false;
   bool tracked = false;
+  bool pose_valid = false;
+  int tracking_result = -1;
   std::uint32_t device_index = 0xFFFFFFFFU;
   Vec3 position{}, forward{}, up{}, right{};
 
@@ -32,6 +34,8 @@ struct TrackingFrame {
   std::chrono::steady_clock::time_point sampled_at{};
   bool headset_connected = false;
   bool headset_tracked = false;
+  bool headset_pose_valid = false;
+  int headset_tracking_result = -1;
   Vec3 headset_position{}, headset_forward{};
   HandPose left{}, right{};
 };

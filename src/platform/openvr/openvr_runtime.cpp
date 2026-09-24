@@ -46,6 +46,8 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
   // throughout a button-free wave. Use the same current tracking frame as the
   // HMD so gesture motion and wrist placement continue to update.
   const auto& pose = poses[i];
+  out.pose_valid = pose.bPoseIsValid;
+  out.tracking_result = static_cast<int>(pose.eTrackingResult);
   out.tracked = out.connected && pose.bPoseIsValid &&
                 pose.eTrackingResult == vr::TrackingResult_Running_OK;
   if (out.tracked) {
@@ -67,6 +69,8 @@ app::TrackingFrame OpenVrRuntime::sample_tracking() const {
     f.right = sample_hand(vr::TrackedControllerRole_RightHand, p);
     f.headset_connected = s->IsTrackedDeviceConnected(vr::k_unTrackedDeviceIndex_Hmd);
     auto& h = p[vr::k_unTrackedDeviceIndex_Hmd];
+    f.headset_pose_valid = h.bPoseIsValid;
+    f.headset_tracking_result = static_cast<int>(h.eTrackingResult);
     f.headset_tracked = f.headset_connected && h.bPoseIsValid &&
                         h.eTrackingResult == vr::TrackingResult_Running_OK;
     if (f.headset_tracked) {

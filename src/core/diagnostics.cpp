@@ -87,6 +87,9 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
   std::ostringstream output;
   output << "{\"timestamp\":\"" << escape_json(timestamp_utc) << "\",\"event\":\""
          << to_string(record.event) << '"';
+  output << ",\"level\":\""
+         << (record.debug_only ? "debug" : record.event == DiagnosticEventType::Error ? "error" : "info")
+         << '"';
   const auto field = [&](std::string_view name, std::string_view value) {
     if (!value.empty())
       output << ",\"" << name << "\":\"" << escape_json(value) << '"';
@@ -102,6 +105,17 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
   field("target", record.target_name);
   if (record.available)
     output << ",\"available\":" << (*record.available ? "true" : "false");
+  if (!record.details.empty()) {
+    output << ",\"details\":{";
+    bool first = true;
+    for (const auto& [name, value] : record.details) {
+      if (!first)
+        output << ',';
+      output << '"' << escape_json(name) << "\":\"" << escape_json(value) << '"';
+      first = false;
+    }
+    output << '}';
+  }
   output << '}';
   return output.str();
 }
@@ -109,6 +123,10 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
 DiagnosticLog::DiagnosticLog(std::filesystem::path path) : path_(std::move(path)) {}
 
 bool DiagnosticLog::append(const DiagnosticRecord& record, std::string* error) {
+#ifdef NDEBUG
+  if (record.debug_only)
+    return true;
+#endif
   std::scoped_lock lock(mutex_);
   std::error_code ec;
   if (!path_.parent_path().empty())
@@ -157,7 +175,10 @@ bool DiagnosticLog::append(const DiagnosticRecord& record, std::string* error) {
   }
   std::ofstream output(path_, std::ios::binary | std::ios::app);
   output << line;
-  if (!output) {
+  output.flush();
+  const bool written = static_cast<bool>(output);
+  output.close();
+  if (!written || output.fail()) {
     if (error)
       *error = "LOG_WRITE_FAILED";
     return false;

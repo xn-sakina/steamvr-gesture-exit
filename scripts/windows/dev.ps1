@@ -994,7 +994,7 @@ function Invoke-Update {
 
 function Show-Help {
     @"
-SteamVR Bail Out Windows development helper
+SteamVR Gesture Exit Windows development helper
 
 Usage:
   .\scripts\windows\dev.cmd <action> [-Configuration Debug|Release]

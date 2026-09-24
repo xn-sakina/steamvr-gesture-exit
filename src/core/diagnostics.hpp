@@ -3,9 +3,11 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace bailout::core {
 
@@ -23,6 +25,9 @@ enum class DiagnosticEventType {
 // Fixed fields keep diagnostics useful without providing an accidental channel
 // for pose streams, game content, chat, audio, or process enumeration.
 struct DiagnosticRecord {
+  DiagnosticRecord() = default;
+  DiagnosticRecord(DiagnosticEventType kind, std::string event_code)
+      : event(kind), code(std::move(event_code)) {}
   DiagnosticEventType event{DiagnosticEventType::Lifecycle};
   std::string code;
   std::string from_state;
@@ -34,6 +39,9 @@ struct DiagnosticRecord {
   std::string setting_value;
   std::string target_name;
   std::optional<bool> available;
+  bool debug_only = false;
+  // Code-owned keys and bounded, non-sensitive measurements only.
+  std::map<std::string, std::string> details;
 };
 
 class DiagnosticLog {

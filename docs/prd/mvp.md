@@ -1,4 +1,4 @@
-# SteamVR Bail Out MVP PRD
+# SteamVR Gesture Exit MVP PRD
 
 Issue label: `ready-for-agent`
 

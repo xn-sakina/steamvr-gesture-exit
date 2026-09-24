@@ -20,6 +20,34 @@ constexpr float kLeftButtonRight = 372.0f;
 constexpr float kRightButtonLeft = 396.0f;
 constexpr float kRightButtonRight = 726.0f;
 enum class WristHit { None, Left, Right };
+const char* tab_name(core::DashboardTab tab) {
+  switch (tab) {
+    case core::DashboardTab::Settings: return "settings";
+    case core::DashboardTab::Status: return "status";
+    case core::DashboardTab::Help: return "help";
+  }
+  return "unknown";
+}
+const char* action_name(core::DashboardAction action) {
+  using A = core::DashboardAction;
+  switch (action) {
+    case A::SetLeftHand: return "set_left_hand";
+    case A::SetRightHand: return "set_right_hand";
+    case A::SetCountdown1: return "set_countdown_1";
+    case A::SetCountdown3: return "set_countdown_3";
+    case A::SetCountdown5: return "set_countdown_5";
+    case A::SetCountdown10: return "set_countdown_10";
+    case A::SetCountdown15: return "set_countdown_15";
+    case A::DecreaseControlTimeout: return "decrease_control_timeout";
+    case A::IncreaseControlTimeout: return "increase_control_timeout";
+    case A::EnableCountdownSound: return "enable_countdown_sound";
+    case A::DisableCountdownSound: return "disable_countdown_sound";
+    case A::SetLanguageAuto: return "set_language_auto";
+    case A::SetLanguageEnglish: return "set_language_english";
+    case A::SetLanguageChinese: return "set_language_chinese";
+  }
+  return "unknown";
+}
 WristHit wrist_hit(const SurfaceModel& model, const float x, const float y) {
   if (y < kButtonTop || y > kButtonBottom)
     return WristHit::None;
@@ -59,17 +87,17 @@ bool OverlayManager::initialize() {
       !renderer_.create_surface("thumbnail", 256, 256) ||
       !renderer_.create_surface("wrist", 768, 384) || !renderer_.create_surface("hud", 768, 256))
     return fail("overlay texture creation failed");
-  auto result = overlays_->CreateDashboardOverlay(kDashboardKey, "SteamVR Bail Out", &dashboard_,
-                                                  &thumbnail_);
+  auto result = overlays_->CreateDashboardOverlay(kDashboardKey, "SteamVR Gesture Exit",
+                                                  &dashboard_, &thumbnail_);
   if (result != vr::VROverlayError_None)
     return fail("CreateDashboardOverlay", result);
-  result = overlays_->CreateOverlay(kWristKey, "Bail Out Wrist", &wrist_);
+  result = overlays_->CreateOverlay(kWristKey, "SteamVR Gesture Exit Wrist", &wrist_);
   if (result != vr::VROverlayError_None) {
     fail("CreateOverlay(wrist)", result);
     shutdown();
     return false;
   }
-  result = overlays_->CreateOverlay(kHudKey, "Bail Out HUD", &hud_);
+  result = overlays_->CreateOverlay(kHudKey, "SteamVR Gesture Exit HUD", &hud_);
   if (result != vr::VROverlayError_None) {
     fail("CreateOverlay(hud)", result);
     shutdown();
@@ -431,7 +459,7 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
   }
   return out;
 }
-DashboardEvents OverlayManager::poll_dashboard_events() {
+DashboardEvents OverlayManager::poll_dashboard_events(const app::TrackingFrame& frame) {
   DashboardEvents out;
   auto hovered = dashboard_model_.hovered_action;
   auto hovered_tab = dashboard_model_.hovered_tab;
@@ -450,6 +478,7 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
   bool allow_hover_sound = dashboard_pointer_primed_;
   vr::HmdVector2_t mouse_scale{{kDashboardWidth, kDashboardHeight}};
   bool mouse_scale_loaded = false;
+  auto mouse_scale_error = vr::VROverlayError_None;
   vr::VREvent_t e{};
   while (overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e))) {
     if (e.eventType == vr::VREvent_FocusLeave ||
@@ -466,7 +495,8 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
       continue;
     if (!mouse_scale_loaded) {
       vr::HmdVector2_t current{};
-      if (overlays_->GetOverlayMouseScale(dashboard_, &current) == vr::VROverlayError_None)
+      mouse_scale_error = overlays_->GetOverlayMouseScale(dashboard_, &current);
+      if (mouse_scale_error == vr::VROverlayError_None)
         mouse_scale = current;
       mouse_scale_loaded = true;
     }
@@ -477,6 +507,96 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
     const auto hit = point && dashboard_tab_ == core::DashboardTab::Settings && !tab_hit
                          ? core::dashboard_hit_test(dashboard_model_.buttons, point->x, point->y)
                          : std::nullopt;
+    const auto event_now = std::chrono::steady_clock::now();
+    if (log_ && (e.eventType == vr::VREvent_MouseButtonDown ||
+                 ((hit != hovered || tab_hit != hovered_tab) &&
+                  event_now - last_pointer_log_at_ >= std::chrono::milliseconds(150)) ||
+                 event_now - last_pointer_log_at_ >= std::chrono::seconds(1))) {
+      core::DiagnosticRecord record{};
+      record.event = core::DiagnosticEventType::StateTransition;
+      record.code = "DASHBOARD_POINTER_EVENT";
+      record.debug_only = true;
+      record.status = e.eventType == vr::VREvent_MouseMove ? "move" : "button_down";
+      record.details = {
+          {"device_index", std::to_string(e.trackedDeviceIndex)},
+          {"raw_x", std::to_string(e.data.mouse.x)},
+          {"raw_y", std::to_string(e.data.mouse.y)},
+          {"mouse_scale_x", std::to_string(mouse_scale.v[0])},
+          {"mouse_scale_y", std::to_string(mouse_scale.v[1])},
+          {"mouse_scale_error", std::to_string(static_cast<int>(mouse_scale_error))},
+          {"texture_width", std::to_string(kDashboardWidth)},
+          {"texture_height", std::to_string(kDashboardHeight)},
+          {"ray_source", "controller_pose_forward"},
+          {"active_tab", tab_name(dashboard_tab_)},
+          {"hit_action", hit ? action_name(*hit) : "none"},
+          {"hit_tab", tab_hit ? tab_name(*tab_hit) : "none"},
+          {"converted_x", point ? std::to_string(point->x) : "invalid"},
+          {"converted_y", point ? std::to_string(point->y) : "invalid"},
+      };
+      float overlay_width_m = 0;
+      const auto width_error = overlays_->GetOverlayWidthInMeters(dashboard_, &overlay_width_m);
+      record.details["overlay_width_m"] = width_error == vr::VROverlayError_None
+          ? std::to_string(overlay_width_m) : "unavailable";
+      const app::HandPose* source_hand = nullptr;
+      if (frame.left.device_index != vr::k_unTrackedDeviceIndexInvalid &&
+          frame.left.device_index == e.trackedDeviceIndex)
+        source_hand = &frame.left;
+      else if (frame.right.device_index != vr::k_unTrackedDeviceIndexInvalid &&
+               frame.right.device_index == e.trackedDeviceIndex)
+        source_hand = &frame.right;
+      record.details["source_hand"] = source_hand == &frame.left ? "left" :
+          source_hand == &frame.right ? "right" : "unknown";
+      if (source_hand && source_hand->tracked) {
+        vr::VROverlayIntersectionParams_t params{};
+        params.vSource = {{source_hand->position.x, source_hand->position.y, source_hand->position.z}};
+        params.vDirection = {{source_hand->forward.x, source_hand->forward.y,
+                              source_hand->forward.z}};
+        params.eOrigin = vr::TrackingUniverseStanding;
+        vr::VROverlayIntersectionResults_t intersection{};
+        const bool intersects = overlays_->ComputeOverlayIntersection(dashboard_, &params, &intersection);
+        record.details["ray_intersects"] = intersects ? "true" : "false";
+        record.details["hand_sample_age_ms"] = std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(event_now - frame.sampled_at).count());
+        if (intersects) {
+          const float ray_x = intersection.vUVs.v[0] * kDashboardWidth;
+          const float ray_y = (1.0f - intersection.vUVs.v[1]) * kDashboardHeight;
+          record.details["ray_uv_x"] = std::to_string(intersection.vUVs.v[0]);
+          record.details["ray_uv_y"] = std::to_string(intersection.vUVs.v[1]);
+          record.details["ray_pixel_x"] = std::to_string(ray_x);
+          record.details["ray_pixel_y"] = std::to_string(ray_y);
+          if (point) {
+            record.details["event_minus_ray_x"] = std::to_string(point->x - ray_x);
+            record.details["event_minus_ray_y"] = std::to_string(point->y - ray_y);
+          }
+        }
+      } else {
+        record.details["ray_intersects"] = "unavailable";
+      }
+      if (hit) {
+        for (const auto& button : dashboard_model_.buttons) {
+          if (button.action == *hit) {
+            record.details["hit_bounds"] = std::to_string(button.bounds.left) + "," +
+                std::to_string(button.bounds.top) + "," +
+                std::to_string(button.bounds.right) + "," +
+                std::to_string(button.bounds.bottom);
+            break;
+          }
+        }
+      }
+      if (tab_hit) {
+        for (const auto& tab : core::dashboard_tabs()) {
+          if (tab.tab == *tab_hit) {
+            record.details["hit_bounds"] = std::to_string(tab.bounds.left) + "," +
+                std::to_string(tab.bounds.top) + "," +
+                std::to_string(tab.bounds.right) + "," +
+                std::to_string(tab.bounds.bottom);
+            break;
+          }
+        }
+      }
+      (void)log_->append(record);
+      last_pointer_log_at_ = event_now;
+    }
     if (e.eventType == vr::VREvent_MouseMove) {
       pointer_seen = true;
       hovered = hit;

@@ -2,6 +2,7 @@
 #include "app/runtime_interfaces.h"
 #include "platform/openvr/d3d_overlay_renderer.hpp"
 #include "core/wrist_pose_smoother.hpp"
+#include "core/diagnostics.hpp"
 #include "openvr.h"
 #include <optional>
 #include <string>
@@ -17,7 +18,8 @@ struct DashboardEvents {
 };
 class OverlayManager {
  public:
-  explicit OverlayManager(vr::IVROverlay* overlays) : overlays_(overlays) {}
+  explicit OverlayManager(vr::IVROverlay* overlays, core::DiagnosticLog* log = nullptr)
+      : overlays_(overlays), log_(log) {}
   bool initialize();
   void shutdown();
   [[nodiscard]] bool show_wrist(const app::HandPose& hand, core::TimePoint sampled_at,
@@ -35,7 +37,7 @@ class OverlayManager {
                                       const std::string& friendly_name);
   std::vector<OverlayAction> poll_wrist_events(const app::HandPose& opposite_hand, bool confirming,
                                                bool counting_down);
-  DashboardEvents poll_dashboard_events();
+  DashboardEvents poll_dashboard_events(const app::TrackingFrame& frame);
   bool wrist_visible() const {
     return wrist_visible_;
   }
@@ -58,6 +60,8 @@ class OverlayManager {
   bool fail(const char* operation, vr::EVROverlayError result);
   bool fail(const char* operation);
   vr::IVROverlay* overlays_ = nullptr;
+  core::DiagnosticLog* log_ = nullptr;
+  std::chrono::steady_clock::time_point last_pointer_log_at_{};
   D3dOverlayRenderer renderer_;
   vr::VROverlayHandle_t dashboard_ = vr::k_ulOverlayHandleInvalid,
                         thumbnail_ = vr::k_ulOverlayHandleInvalid,

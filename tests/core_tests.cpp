@@ -121,17 +121,22 @@ void gesture_rejects_unsafe_or_weak_motion() {
   for (int i = 0; i < 8; ++i) {
     CHECK(!jitter.update(sample(i * 100, {0.20 + (i % 2 ? 0.01 : 0.0), 0.1, -0.5})));
   }
+  CHECK(jitter.diagnostic().decision == GestureDecision::InsufficientAmplitude);
+  CHECK(jitter.diagnostic().amplitude_m < jitter.config().minimum_amplitude_metres);
   GestureDetector behind;
   for (int i = 0; i < 4; ++i)
     CHECK(!behind.update(sample(i * 400, {i % 2 ? 0.3 : 0.1, 0.1, 0.5})));
+  CHECK(behind.diagnostic().decision == GestureDecision::BehindHead);
   GestureDetector low;
   const Vec3 headset{0.0, 1.65, 0.0};
   CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true, headset)));
   CHECK(!low.update(sample(400, {0.30, 0.90, -0.50}, {0, 0, -1}, true, headset)));
   CHECK(!low.update(sample(800, {0.10, 0.90, -0.50}, {0, 0, -1}, true, headset)));
   CHECK(!low.update(sample(1200, {0.30, 0.90, -0.50}, {0, 0, -1}, true, headset)));
+  CHECK(low.diagnostic().decision == GestureDecision::TooLow);
   GestureDetector untracked;
   CHECK(!untracked.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, false)));
+  CHECK(untracked.diagnostic().decision == GestureDecision::HandUntracked);
   GestureDetector too_slow;
   CHECK(!too_slow.update(sample(0, {0.10, 0.10, -0.50})));
   CHECK(!too_slow.update(sample(900, {0.30, 0.10, -0.50})));
@@ -231,23 +236,25 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
   CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");
-  CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "点击手柄");
-  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "位置正常");
+  CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "另一只手柄");
+  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "可用");
   CHECK(localize(StringId::ClickHandReady, Language::ChineseSimplified) ==
-        "退出按钮出现后，用这只手柄指向并按扳机。");
+        "退出按钮出现后，指向按钮并扣动扳机。");
   CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
-        "无法保存设置，修改未生效。");
-  CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "安全退场");
+        "设置未保存，重启后可能丢失。");
+  CHECK(localize(StringId::AppName, Language::ChineseSimplified) == "SteamVR手势退出");
+  CHECK(localize(StringId::AppName, Language::English) == "SteamVR Gesture Exit");
+  CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "SteamVR手势退出");
   CHECK(localize(StringId::ThumbnailDescription, Language::ChineseSimplified) ==
-        "安全退出 VR 游戏");
+        "挥手唤出退出按钮");
   CHECK(localize(StringId::SecondsUnit, Language::ChineseSimplified) == "秒");
   CHECK(localize_last_exit(LastExitStatus::Never, Language::ChineseSimplified) == "从未");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::ChineseSimplified) == "成功");
   CHECK(localize_last_exit(LastExitStatus::Cancelled, Language::ChineseSimplified) == "已取消");
   CHECK(localize_last_exit(LastExitStatus::Failed, Language::ChineseSimplified) == "失败");
   CHECK(localize_last_exit(LastExitStatus::TargetUnavailable, Language::ChineseSimplified) ==
-        "目标不可用");
+        "游戏已关闭或切换");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::English) == "Succeeded");
 }
 
@@ -260,8 +267,14 @@ void diagnostics_are_structured_and_privacy_bounded() {
   record.current_game_status = "AVAILABLE";
   record.exit_target_status = "PROCESS_ACCESS_DENIED";
   record.target_name = "Example Game";
+  record.debug_only = true;
+  record.details["sample_count"] = "4";
+  record.details["reason"] = "quoted \"value\"";
   const std::string json = serialize_diagnostic_record(record, "2026-01-01T00:00:00Z");
   CHECK(json.find("\"event\":\"state_transition\"") != std::string::npos);
+  CHECK(json.find("\"level\":\"debug\"") != std::string::npos);
+  CHECK(json.find("\"sample_count\":\"4\"") != std::string::npos);
+  CHECK(json.find("\"reason\":\"quoted \\\"value\\\"\"") != std::string::npos);
   CHECK(json.find("FLOW_\\\"OK\\\"\\n") != std::string::npos);
   CHECK(json.find("\"current_game_status\":\"AVAILABLE\"") != std::string::npos);
   CHECK(json.find("\"exit_target_status\":\"PROCESS_ACCESS_DENIED\"") != std::string::npos);
@@ -269,6 +282,30 @@ void diagnostics_are_structured_and_privacy_bounded() {
   CHECK(json.find("chat") == std::string::npos);
   CHECK(json.find("audio") == std::string::npos);
   CHECK(json.find("processes") == std::string::npos);
+}
+
+void diagnostics_debug_records_follow_build_type() {
+  const auto path = std::filesystem::temp_directory_path() / "bailout-debug-filter.jsonl";
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+  DiagnosticLog log(path);
+  DiagnosticRecord normal{DiagnosticEventType::Lifecycle, "NORMAL"};
+  DiagnosticRecord detailed{DiagnosticEventType::StateTransition, "DEBUG_ONLY"};
+  detailed.debug_only = true;
+  CHECK(log.append(normal));
+  CHECK(log.append(detailed));
+  std::ifstream input(path);
+  std::string first, second;
+  CHECK(static_cast<bool>(std::getline(input, first)));
+  CHECK(first.find("NORMAL") != std::string::npos);
+#ifdef NDEBUG
+  CHECK(!static_cast<bool>(std::getline(input, second)));
+#else
+  CHECK(static_cast<bool>(std::getline(input, second)));
+  CHECK(second.find("DEBUG_ONLY") != std::string::npos);
+  CHECK(!static_cast<bool>(std::getline(input, second)));
+#endif
+  std::filesystem::remove(path, ec);
 }
 
 void diagnostics_rotate_at_a_fixed_size() {
@@ -788,6 +825,7 @@ int main() {
       {"settings round trip and recovery", settings_round_trip_and_recovery},
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
+      {"diagnostics debug filtering", diagnostics_debug_records_follow_build_type},
       {"diagnostics bounded rotation", diagnostics_rotate_at_a_fixed_size},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer uses tracked controller", pointer_availability_uses_tracked_controller},

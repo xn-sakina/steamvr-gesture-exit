@@ -1,4 +1,4 @@
-# SteamVR Bail Out
+# SteamVR Gesture Exit（SteamVR手势退出）
 
 This context defines the user-facing domain language for a SteamVR add-on that lets a player intentionally leave the current VR game through an in-world farewell gesture.
 
