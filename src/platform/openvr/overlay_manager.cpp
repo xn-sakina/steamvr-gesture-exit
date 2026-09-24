@@ -1,5 +1,7 @@
 #include "platform/openvr/overlay_manager.hpp"
+#include "platform/windows/paths.hpp"
 #include <array>
+#include <filesystem>
 #include <utility>
 namespace bailout::platform::openvr {
 namespace {
@@ -132,6 +134,19 @@ bool OverlayManager::update_thumbnail(const std::wstring& title, const std::wstr
   auto result = overlays_->SetOverlayName(dashboard_, friendly_name.c_str());
   if (result != vr::VROverlayError_None)
     return fail("SetOverlayName(dashboard)", result);
+  // Use the packaged PNG for the Dashboard icon without depending on D3D.
+  const auto package_root =
+      platform::windows::executable_path().parent_path().parent_path().parent_path();
+  const auto image_path = package_root / L"assets" / L"brand" / L"bailout.png";
+  if (std::filesystem::is_regular_file(image_path)) {
+    const auto utf8 = image_path.u8string();
+    const std::string native(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+    result = overlays_->SetOverlayFromFile(thumbnail_, native.c_str());
+    if (result == vr::VROverlayError_None) {
+      thumbnail_requested_ = false;
+      return true;
+    }
+  }
   thumbnail_title_ = title;
   thumbnail_description_ = description;
   thumbnail_requested_ = true;

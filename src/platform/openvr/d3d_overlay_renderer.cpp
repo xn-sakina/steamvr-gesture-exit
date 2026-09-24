@@ -1,5 +1,6 @@
 #include "platform/openvr/d3d_overlay_renderer.hpp"
 #include "resource_ids.h"
+#include "openvr.h"
 #include <windows.h>
 #include <d3d11.h>
 #include <d2d1.h>
@@ -33,13 +34,36 @@ struct D3dOverlayRenderer::Impl {
     D3D_FEATURE_LEVEL got{};
     constexpr D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
                                             D3D_FEATURE_LEVEL_10_1};
-    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, levels, 3,
-                                   D3D11_SDK_VERSION, &next_device, &got, &next_context);
-    if (FAILED(hr)) {
+    ComPtr<IDXGIAdapter> adapter;
+    int32_t adapter_index = -1;
+    // The default Windows adapter can differ from the one driving the headset.
+    if (auto* system = vr::VRSystem())
+      system->GetDXGIOutputInfo(&adapter_index);
+    if (adapter_index >= 0) {
+      ComPtr<IDXGIFactory> factory;
+      if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(&factory))) ||
+          FAILED(factory->EnumAdapters(static_cast<UINT>(adapter_index), &adapter))) {
+        error = "SteamVR DXGI adapter unavailable";
+        return false;
+      }
+    }
+    auto create = [&](IDXGIAdapter* selected_adapter, D3D_DRIVER_TYPE driver) {
+      HRESULT hr = D3D11CreateDevice(selected_adapter, driver, nullptr, flags, levels, 3,
+                                     D3D11_SDK_VERSION, &next_device, &got, &next_context);
+      if (hr == E_INVALIDARG) {
+        next_device.Reset();
+        next_context.Reset();
+        hr = D3D11CreateDevice(selected_adapter, driver, nullptr, flags, levels + 1, 2,
+                               D3D11_SDK_VERSION, &next_device, &got, &next_context);
+      }
+      return hr;
+    };
+    HRESULT hr = create(adapter.Get(),
+                        adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE);
+    if (FAILED(hr) && !adapter) {
       next_device.Reset();
       next_context.Reset();
-      hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags, levels, 3,
-                             D3D11_SDK_VERSION, &next_device, &got, &next_context);
+      hr = create(nullptr, D3D_DRIVER_TYPE_WARP);
     }
     if (FAILED(hr))
       error = "D3D11CreateDevice failed";
@@ -349,6 +373,9 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
   }
   if (FAILED(result) && impl_->error.empty())
     impl_->error = "EndDraw(thumbnail) failed";
+  // SteamVR may copy the thumbnail immediately after SetOverlayTexture.
+  if (SUCCEEDED(result))
+    impl_->context->Flush();
   return SUCCEEDED(result);
 }
 bool D3dOverlayRenderer::render_dashboard(const std::string& id, const DashboardSurfaceModel& m) {
@@ -448,6 +475,8 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   }
   if (FAILED(result) && impl_->error.empty())
     impl_->error = "EndDraw(dashboard) failed";
+  if (SUCCEEDED(result))
+    impl_->context->Flush();
   return SUCCEEDED(result);
 }
 void* D3dOverlayRenderer::texture(const std::string& id) const {

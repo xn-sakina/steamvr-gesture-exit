@@ -2,9 +2,13 @@
 
 `origin.png` is the canonical square raster source. `bailout-master.png` is a
 byte-for-byte synchronized copy kept for compatibility with the existing asset
-layout. `bailout.png` is the 256 × 256 production image. The Dashboard thumbnail
-decodes that PNG from the executable's RCDATA resource; the Windows application
-icon uses `bailout.ico`.
+layout. `bailout.png` is the 256 × 256 production image. The packaged Dashboard
+thumbnail loads that PNG through OpenVR's file API; a direct EXE launch can
+still decode the executable's RCDATA copy. The Windows application icon uses
+`bailout.ico`.
+The Release package also includes `bailout.png` because the SteamVR application
+manifest refers to it with `image_path`; the EXE resource alone is not visible
+to SteamVR's application list.
 
 Rebuild both production assets from the master with ImageMagick:
 

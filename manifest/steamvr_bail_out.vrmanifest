@@ -5,6 +5,7 @@
       "app_key": "com.steamvr-bail-out.overlay",
       "launch_type": "binary",
       "binary_path_windows": "..\\bin\\win64\\steamvr_bail_out.exe",
+      "image_path": "..\\assets\\brand\\bailout.png",
       "is_dashboard_overlay": true,
       "strings": {
         "en_us": {

@@ -26,7 +26,8 @@ $script:PackageIntegrityCatalogPath = Join-Path (Split-Path $script:PackageDirec
 $script:RuntimePackageFiles = @(
     "bin/win64/steamvr_bail_out.exe",
     "bin/win64/openvr_api.dll",
-    "manifest/steamvr_bail_out.vrmanifest"
+    "manifest/steamvr_bail_out.vrmanifest",
+    "assets/brand/bailout.png"
 )
 $script:DebugOnlyPackageFiles = @("bin/win64/steamvr_bail_out_cli.exe")
 $script:AppKey = "com.steamvr-bail-out.overlay"
@@ -259,7 +260,7 @@ function Assert-PackageIntegrity([string]$PackageRoot, [object]$Integrity) {
             $_.FullName.Substring($PackageRoot.Length).TrimStart('\') -replace '\\', '/'
         })
         if (@(Compare-Object $requiredFiles $actualFiles).Count -ne 0) {
-            throw "Release package contains files outside the three-file runtime payload: $PackageRoot"
+            throw "Release package contains files outside the required runtime payload: $PackageRoot"
         }
     }
 }
@@ -289,6 +290,11 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
     $expectedBinary = [IO.Path]::GetFullPath((Join-Path (Split-Path $manifestPath -Parent) ([string]$application.binary_path_windows)))
     if ($expectedBinary -ne [IO.Path]::GetFullPath($executablePath)) {
         throw "Manifest binary path resolves to '$expectedBinary', expected '$executablePath'."
+    }
+    $expectedImage = Get-PackageFilePath $PackageRoot "assets/brand/bailout.png"
+    $manifestImage = [IO.Path]::GetFullPath((Join-Path (Split-Path $manifestPath -Parent) ([string]$application.image_path)))
+    if ($manifestImage -ne [IO.Path]::GetFullPath($expectedImage)) {
+        throw "Manifest image path resolves to '$manifestImage', expected '$expectedImage'."
     }
 }
 

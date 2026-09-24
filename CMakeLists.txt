@@ -180,6 +180,8 @@ if(WIN32)
     install(FILES "${OPENVR_ROOT}/bin/win64/openvr_api.dll" DESTINATION bin/win64)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/manifest/steamvr_bail_out.vrmanifest"
         DESTINATION manifest)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.png"
+        DESTINATION assets/brand)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/docs/"
         DESTINATION docs
         CONFIGURATIONS Debug
