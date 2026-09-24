@@ -1,12 +1,15 @@
 #pragma once
 
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <fstream>
-#include <mutex>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 namespace bailout::core {
@@ -47,6 +50,12 @@ struct DiagnosticRecord {
 class DiagnosticLog {
  public:
   explicit DiagnosticLog(std::filesystem::path path);
+  ~DiagnosticLog();
+
+  // Runtime logging queues records and drains them before shutdown; standalone
+  // callers retain synchronous append semantics until start_async is called.
+  void start_async();
+  void stop_async();
 
   [[nodiscard]] bool append(const DiagnosticRecord& record, std::string* error = nullptr);
   [[nodiscard]] const std::filesystem::path& path() const noexcept {
@@ -54,8 +63,16 @@ class DiagnosticLog {
   }
 
  private:
+  bool append_sync(const DiagnosticRecord& record, std::string* error);
+  void run_async();
   std::filesystem::path path_;
   std::mutex mutex_;
+  std::mutex queue_mutex_;
+  std::condition_variable queue_wake_;
+  std::deque<DiagnosticRecord> queue_;
+  std::thread worker_;
+  bool async_enabled_ = false;
+  bool stopping_ = false;
 };
 
 [[nodiscard]] std::string_view to_string(DiagnosticEventType value) noexcept;

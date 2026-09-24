@@ -308,6 +308,25 @@ void diagnostics_debug_records_follow_build_type() {
   std::filesystem::remove(path, ec);
 }
 
+void diagnostics_async_queue_drains_in_order() {
+  const auto path = std::filesystem::temp_directory_path() / "bailout-async-log.jsonl";
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+  DiagnosticLog log(path);
+  log.start_async();
+  for (int i = 0; i < 100; ++i)
+    CHECK(log.append({DiagnosticEventType::Lifecycle, "ASYNC_" + std::to_string(i)}));
+  log.stop_async();
+  std::ifstream input(path);
+  std::string line;
+  for (int i = 0; i < 100; ++i) {
+    CHECK(static_cast<bool>(std::getline(input, line)));
+    CHECK(line.find("\"code\":\"ASYNC_" + std::to_string(i) + "\"") != std::string::npos);
+  }
+  CHECK(!static_cast<bool>(std::getline(input, line)));
+  std::filesystem::remove(path, ec);
+}
+
 void diagnostics_rotate_at_a_fixed_size() {
   const auto root = std::filesystem::temp_directory_path() / "bailout-core-log-test";
   std::error_code ec;
@@ -826,6 +845,7 @@ int main() {
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"diagnostics debug filtering", diagnostics_debug_records_follow_build_type},
+      {"diagnostics async drain", diagnostics_async_queue_drains_in_order},
       {"diagnostics bounded rotation", diagnostics_rotate_at_a_fixed_size},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer uses tracked controller", pointer_availability_uses_tracked_controller},

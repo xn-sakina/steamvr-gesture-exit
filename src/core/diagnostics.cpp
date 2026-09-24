@@ -1,4 +1,5 @@
 #include "core/diagnostics.hpp"
+#include "json/json.h"
 
 #include <chrono>
 #include <cstdint>
@@ -9,40 +10,6 @@ namespace bailout::core {
 namespace {
 
 constexpr std::uintmax_t kMaxLogBytes = 4 * 1024 * 1024;
-
-std::string escape_json(std::string_view value) {
-  std::string output;
-  output.reserve(value.size());
-  for (const unsigned char character : value) {
-    switch (character) {
-      case '\"':
-        output += "\\\"";
-        break;
-      case '\\':
-        output += "\\\\";
-        break;
-      case '\n':
-        output += "\\n";
-        break;
-      case '\r':
-        output += "\\r";
-        break;
-      case '\t':
-        output += "\\t";
-        break;
-      default:
-        if (character < 0x20) {
-          std::ostringstream encoded;
-          encoded << "\\u" << std::hex << std::setw(4) << std::setfill('0')
-                  << static_cast<int>(character);
-          output += encoded.str();
-        } else {
-          output += static_cast<char>(character);
-        }
-    }
-  }
-  return output;
-}
 
 std::string now_utc() {
   const auto now = std::chrono::system_clock::now();
@@ -84,15 +51,14 @@ std::string_view to_string(const DiagnosticEventType value) noexcept {
 
 std::string serialize_diagnostic_record(const DiagnosticRecord& record,
                                         const std::string_view timestamp_utc) {
-  std::ostringstream output;
-  output << "{\"timestamp\":\"" << escape_json(timestamp_utc) << "\",\"event\":\""
-         << to_string(record.event) << '"';
-  output << ",\"level\":\""
-         << (record.debug_only ? "debug" : record.event == DiagnosticEventType::Error ? "error" : "info")
-         << '"';
+  Json::Value root(Json::objectValue);
+  root["timestamp"] = std::string(timestamp_utc);
+  root["event"] = std::string(to_string(record.event));
+  root["level"] = record.debug_only ? "debug"
+                  : record.event == DiagnosticEventType::Error ? "error" : "info";
   const auto field = [&](std::string_view name, std::string_view value) {
     if (!value.empty())
-      output << ",\"" << name << "\":\"" << escape_json(value) << '"';
+      root[std::string(name)] = std::string(value);
   };
   field("code", record.code);
   field("from", record.from_state);
@@ -104,29 +70,73 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
   field("value", record.setting_value);
   field("target", record.target_name);
   if (record.available)
-    output << ",\"available\":" << (*record.available ? "true" : "false");
+    root["available"] = *record.available;
   if (!record.details.empty()) {
-    output << ",\"details\":{";
-    bool first = true;
-    for (const auto& [name, value] : record.details) {
-      if (!first)
-        output << ',';
-      output << '"' << escape_json(name) << "\":\"" << escape_json(value) << '"';
-      first = false;
-    }
-    output << '}';
+    Json::Value details(Json::objectValue);
+    for (const auto& [name, value] : record.details)
+      details[name] = value;
+    root["details"] = std::move(details);
   }
-  output << '}';
-  return output.str();
+  Json::FastWriter writer;
+  writer.omitEndingLineFeed();
+  return writer.write(root);
 }
 
 DiagnosticLog::DiagnosticLog(std::filesystem::path path) : path_(std::move(path)) {}
+DiagnosticLog::~DiagnosticLog() { stop_async(); }
+
+void DiagnosticLog::start_async() {
+  std::scoped_lock lock(queue_mutex_);
+  if (async_enabled_)
+    return;
+  stopping_ = false;
+  worker_ = std::thread([this] { run_async(); });
+  async_enabled_ = true;
+}
+
+void DiagnosticLog::stop_async() {
+  {
+    std::scoped_lock lock(queue_mutex_);
+    if (!async_enabled_)
+      return;
+    async_enabled_ = false;
+    stopping_ = true;
+  }
+  queue_wake_.notify_one();
+  if (worker_.joinable())
+    worker_.join();
+}
+
+void DiagnosticLog::run_async() {
+  for (;;) {
+    std::unique_lock lock(queue_mutex_);
+    queue_wake_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
+    if (queue_.empty())
+      return;
+    auto record = std::move(queue_.front());
+    queue_.pop_front();
+    lock.unlock();
+    (void)append_sync(record, nullptr);
+  }
+}
 
 bool DiagnosticLog::append(const DiagnosticRecord& record, std::string* error) {
 #ifdef NDEBUG
   if (record.debug_only)
     return true;
 #endif
+  if (!error) {
+    std::scoped_lock lock(queue_mutex_);
+    if (async_enabled_) {
+      queue_.push_back(record);
+      queue_wake_.notify_one();
+      return true;
+    }
+  }
+  return append_sync(record, error);
+}
+
+bool DiagnosticLog::append_sync(const DiagnosticRecord& record, std::string* error) {
   std::scoped_lock lock(mutex_);
   std::error_code ec;
   if (!path_.parent_path().empty())

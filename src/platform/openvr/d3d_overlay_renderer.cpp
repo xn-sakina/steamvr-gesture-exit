@@ -9,6 +9,7 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <array>
 #include <map>
 namespace bailout::platform::openvr {
 using Microsoft::WRL::ComPtr;
@@ -19,6 +20,10 @@ struct D3dOverlayRenderer::Impl {
     ComPtr<ID2D1RenderTarget> target;
     ComPtr<ID2D1Bitmap> dashboard_logo;
     bool dashboard_logo_attempted = false;
+    std::array<ComPtr<ID2D1SolidColorBrush>, 11> dashboard_brushes;
+    std::unique_ptr<Surface> dashboard_background;
+    core::DashboardTab dashboard_background_tab = core::DashboardTab::Settings;
+    bool dashboard_background_ready = false;
   };
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> context;
@@ -83,12 +88,16 @@ struct D3dOverlayRenderer::Impl {
     d.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     s.w = w;
     s.h = h;
-    if (FAILED(source->CreateTexture2D(&d, nullptr, &s.texture))) {
+    const auto texture_result = source->CreateTexture2D(&d, nullptr, &s.texture);
+    if (FAILED(texture_result)) {
+      resource_status = texture_result;
       error = "CreateTexture2D failed";
       return false;
     }
     ComPtr<IDXGISurface> dxgi;
-    if (FAILED(s.texture.As(&dxgi))) {
+    const auto surface_result = s.texture.As(&dxgi);
+    if (FAILED(surface_result)) {
+      resource_status = surface_result;
       error = "IDXGISurface query failed";
       return false;
     }
@@ -96,7 +105,9 @@ struct D3dOverlayRenderer::Impl {
         D2D1_RENDER_TARGET_TYPE_DEFAULT,
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
         96.0f, 96.0f);
-    if (FAILED(d2d->CreateDxgiSurfaceRenderTarget(dxgi.Get(), &props, &s.target))) {
+    const auto target_result = d2d->CreateDxgiSurfaceRenderTarget(dxgi.Get(), &props, &s.target);
+    if (FAILED(target_result)) {
+      resource_status = target_result;
       error = "CreateDxgiSurfaceRenderTarget failed";
       return false;
     }
@@ -110,6 +121,23 @@ struct D3dOverlayRenderer::Impl {
       error = "CreateSolidColorBrush failed";
     }
     return b;
+  }
+  bool ensure_dashboard_brushes(Surface& s) {
+    const std::array<D2D1_COLOR_F, 11> colors = {
+        D2D1::ColorF(0.96f, 0.98f, 1, 1), D2D1::ColorF(0.66f, 0.72f, 0.81f, 1),
+        D2D1::ColorF(0.38f, 0.44f, 0.52f, 1), D2D1::ColorF(0.10f, 0.58f, 0.82f, 1),
+        D2D1::ColorF(0.20f, 0.74f, 0.94f, 1), D2D1::ColorF(0.075f, 0.12f, 0.18f, 1),
+        D2D1::ColorF(0.055f, 0.085f, 0.13f, 0.92f),
+        D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.97f),
+        D2D1::ColorF(0.10f, 0.24f, 0.34f, 1), D2D1::ColorF(0.35f, 0.86f, 0.62f, 1),
+        D2D1::ColorF(0.98f, 0.55f, 0.38f, 1)};
+    for (size_t i = 0; i < colors.size(); ++i) {
+      if (!s.dashboard_brushes[i])
+        s.dashboard_brushes[i] = brush(s.target.Get(), colors[i]);
+      if (!s.dashboard_brushes[i])
+        return false;
+    }
+    return true;
   }
   void load_dashboard_logo(Surface& surface) {
     if (surface.dashboard_logo_attempted)
@@ -438,54 +466,80 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     return false;
   auto& s = it->second;
   auto* t = s.target.Get();
-  auto white = impl_->brush(t, D2D1::ColorF(0.96f, 0.98f, 1, 1));
-  auto muted = impl_->brush(t, D2D1::ColorF(0.66f, 0.72f, 0.81f, 1));
-  auto faint = impl_->brush(t, D2D1::ColorF(0.38f, 0.44f, 0.52f, 1));
-  auto accent = impl_->brush(t, D2D1::ColorF(0.10f, 0.58f, 0.82f, 1));
-  auto hover = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 1));
-  auto normal = impl_->brush(t, D2D1::ColorF(0.075f, 0.12f, 0.18f, 1));
-  auto card = impl_->brush(t, D2D1::ColorF(0.055f, 0.085f, 0.13f, 0.92f));
-  auto panel = impl_->brush(t, D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.97f));
-  auto active_tab = impl_->brush(t, D2D1::ColorF(0.10f, 0.24f, 0.34f, 1));
-  auto good = impl_->brush(t, D2D1::ColorF(0.35f, 0.86f, 0.62f, 1));
-  auto bad = impl_->brush(t, D2D1::ColorF(0.98f, 0.55f, 0.38f, 1));
-  if (!white || !muted || !faint || !accent || !hover || !normal || !card || !panel ||
-      !active_tab || !good || !bad) {
+  if (!impl_->ensure_dashboard_brushes(s)) {
     if (recover_target(id, impl_->resource_status) && !retried)
       return render_dashboard(id, m, true);
     return false;
   }
-  impl_->load_dashboard_logo(s);
-  t->BeginDraw();
-  t->Clear(D2D1::ColorF(0, 0, 0, 0));
-  t->FillRoundedRectangle(
-      D2D1::RoundedRect(D2D1::RectF(8, 8, float(s.w - 8), float(s.h - 8)), 24, 24), panel.Get());
-  const size_t row_count = m.active_tab == core::DashboardTab::Settings ? m.settings.size()
-                           : m.active_tab == core::DashboardTab::Status ? m.statuses.size()
-                                                                         : m.help_lines.size();
-  for (size_t i = 0; i < row_count; ++i) {
-    const bool help = m.active_tab == core::DashboardTab::Help;
-    const float top = (help ? 192.0f : 190.0f) + (help ? 116.0f : 78.0f) * i;
-    t->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(44, top, 980, top + (help ? 100.0f : 74.0f)), 10, 10),
-        card.Get());
-  }
-  if (s.dashboard_logo) {
-    const auto logo_size = s.dashboard_logo->GetSize();
-    // Keep the avatar behind the content and fade it out across the panel.
-    constexpr int kFadeSlices = 32;
-    for (int slice = 0; slice < kFadeSlices; ++slice) {
-      const float start = static_cast<float>(slice) / kFadeSlices;
-      const float end = static_cast<float>(slice + 1) / kFadeSlices;
-      const float fade = 1.0f - (start + end) * 0.5f;
-      t->DrawBitmap(s.dashboard_logo.Get(),
-                    D2D1::RectF(510.0f + 450.0f * start, 178.0f,
-                                510.0f + 450.0f * end, 628.0f),
-                    0.20f * fade * fade, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                    D2D1::RectF(logo_size.width * start * 0.9f, logo_size.height * 0.11f,
-                                logo_size.width * end * 0.9f, logo_size.height));
+  auto& white = s.dashboard_brushes[0];
+  auto& muted = s.dashboard_brushes[1];
+  auto& faint = s.dashboard_brushes[2];
+  auto& accent = s.dashboard_brushes[3];
+  auto& hover = s.dashboard_brushes[4];
+  auto& normal = s.dashboard_brushes[5];
+  auto& active_tab = s.dashboard_brushes[8];
+  auto& good = s.dashboard_brushes[9];
+  auto& bad = s.dashboard_brushes[10];
+  // The panel, cards and logo change only with the tab. Keep their GPU result
+  // and copy it before drawing the current labels and selection state.
+  if (!s.dashboard_background) {
+    auto background = std::make_unique<Impl::Surface>();
+    if (!impl_->make_surface(impl_->device.Get(), s.w, s.h, *background) ||
+        !impl_->ensure_dashboard_brushes(*background)) {
+      if (recover_target(id, impl_->resource_status) && !retried)
+        return render_dashboard(id, m, true);
+      return false;
     }
+    s.dashboard_background = std::move(background);
   }
+  auto& background = *s.dashboard_background;
+  if (!s.dashboard_background_ready || s.dashboard_background_tab != m.active_tab) {
+    auto* base = background.target.Get();
+    auto& base_card = background.dashboard_brushes[6];
+    auto& base_panel = background.dashboard_brushes[7];
+    impl_->load_dashboard_logo(background);
+    base->BeginDraw();
+    base->Clear(D2D1::ColorF(0, 0, 0, 0));
+    base->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(8, 8, float(s.w - 8), float(s.h - 8)), 24, 24),
+        base_panel.Get());
+    const size_t row_count = m.active_tab == core::DashboardTab::Settings ? m.settings.size()
+                             : m.active_tab == core::DashboardTab::Status ? m.statuses.size()
+                                                                           : m.help_lines.size();
+    for (size_t i = 0; i < row_count; ++i) {
+      const bool help = m.active_tab == core::DashboardTab::Help;
+      const float top = (help ? 192.0f : 190.0f) + (help ? 116.0f : 78.0f) * i;
+      base->FillRoundedRectangle(
+          D2D1::RoundedRect(D2D1::RectF(44, top, 980, top + (help ? 100.0f : 74.0f)), 10, 10),
+          base_card.Get());
+    }
+    if (background.dashboard_logo) {
+      const auto logo_size = background.dashboard_logo->GetSize();
+      // Keep the avatar behind the content and fade it out across the panel.
+      constexpr int kFadeSlices = 32;
+      for (int slice = 0; slice < kFadeSlices; ++slice) {
+        const float start = static_cast<float>(slice) / kFadeSlices;
+        const float end = static_cast<float>(slice + 1) / kFadeSlices;
+        const float fade = 1.0f - (start + end) * 0.5f;
+        base->DrawBitmap(background.dashboard_logo.Get(),
+                         D2D1::RectF(510.0f + 450.0f * start, 178.0f,
+                                     510.0f + 450.0f * end, 628.0f),
+                         0.20f * fade * fade, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                         D2D1::RectF(logo_size.width * start * 0.9f, logo_size.height * 0.11f,
+                                     logo_size.width * end * 0.9f, logo_size.height));
+      }
+    }
+    const auto background_result = base->EndDraw();
+    if (FAILED(background_result)) {
+      if (recover_target(id, background_result) && !retried)
+        return render_dashboard(id, m, true);
+      return false;
+    }
+    s.dashboard_background_ready = true;
+    s.dashboard_background_tab = m.active_tab;
+  }
+  impl_->context->CopyResource(s.texture.Get(), background.texture.Get());
+  t->BeginDraw();
   t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
                D2D1::RectF(44, 18, 620, 76), white.Get());
   if (!m.notice.empty())

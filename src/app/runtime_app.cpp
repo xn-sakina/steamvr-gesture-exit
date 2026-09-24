@@ -2,6 +2,7 @@
 #include "platform/windows/paths.hpp"
 #include <windows.h>
 #include <tlhelp32.h>
+#include <mmsystem.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -49,6 +50,21 @@ class ScopedHandle {
 
  private:
   HANDLE value_;
+};
+
+class TimerResolution {
+ public:
+  ~TimerResolution() { set_active(false); }
+  void set_active(bool active) {
+    if (active && !active_)
+      active_ = timeBeginPeriod(1) == TIMERR_NOERROR;
+    else if (!active && active_) {
+      timeEndPeriod(1);
+      active_ = false;
+    }
+  }
+ private:
+  bool active_;
 };
 
 uint64_t process_creation_token(HANDLE process) {
@@ -797,6 +813,7 @@ int RuntimeApp::run() {
   started.details["tracking_source"] = "GetDeviceToAbsoluteTrackingPose(standing,0)";
   started.details["configured_hand"] = std::string(core::to_string(settings_.configured_hand));
   (void)log_.append(started);
+  log_.start_async();
   SettingsPersistenceWorker settings_writer(settings_store_.path(), log_);
   ForegroundResolutionWorker target_worker(*targets_, vr_.applications(), log_);
   const auto started_at = std::chrono::steady_clock::now();
@@ -810,6 +827,7 @@ int RuntimeApp::run() {
   auto last_slow_loop_at = std::chrono::steady_clock::time_point{};
   auto last_target_log_at = std::chrono::steady_clock::time_point{};
   std::string last_target_signature;
+  TimerResolution timer_resolution;
   while (true) {
     if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
       stop_ = true;
@@ -1205,10 +1223,12 @@ int RuntimeApp::run() {
       (void)log_.append(record);
       last_slow_loop_at = loop_finished;
     }
-    Sleep(11);
+    timer_resolution.set_active(dashboard_visible);
+    (void)WaitForSingleObject(stop_event.get(), dashboard_visible ? 4 : 11);
   }
   target_worker.stop();
   settings_writer.stop();
+  log_.stop_async();
   process_.clear();
   overlays_->shutdown();
   vr_.shutdown();

@@ -20,6 +20,7 @@ constexpr float kLeftButtonRight = 372.0f;
 constexpr float kRightButtonLeft = 396.0f;
 constexpr float kRightButtonRight = 726.0f;
 enum class WristHit { None, Left, Right };
+#ifndef NDEBUG
 const char* tab_name(core::DashboardTab tab) {
   switch (tab) {
     case core::DashboardTab::Settings: return "settings";
@@ -48,6 +49,7 @@ const char* action_name(core::DashboardAction action) {
   }
   return "unknown";
 }
+#endif
 WristHit wrist_hit(const SurfaceModel& model, const float x, const float y) {
   if (y < kButtonTop || y > kButtonBottom)
     return WristHit::None;
@@ -460,6 +462,9 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
   return out;
 }
 DashboardEvents OverlayManager::poll_dashboard_events(const app::TrackingFrame& frame) {
+#ifdef NDEBUG
+  (void)frame;
+#endif
   DashboardEvents out;
   auto hovered = dashboard_model_.hovered_action;
   auto hovered_tab = dashboard_model_.hovered_tab;
@@ -507,6 +512,7 @@ DashboardEvents OverlayManager::poll_dashboard_events(const app::TrackingFrame& 
     const auto hit = point && dashboard_tab_ == core::DashboardTab::Settings && !tab_hit
                          ? core::dashboard_hit_test(dashboard_model_.buttons, point->x, point->y)
                          : std::nullopt;
+#ifndef NDEBUG
     const auto event_now = std::chrono::steady_clock::now();
     if (log_ && (e.eventType == vr::VREvent_MouseButtonDown ||
                  ((hit != hovered || tab_hit != hovered_tab) &&
@@ -597,6 +603,7 @@ DashboardEvents OverlayManager::poll_dashboard_events(const app::TrackingFrame& 
       (void)log_->append(record);
       last_pointer_log_at_ = event_now;
     }
+#endif
     if (e.eventType == vr::VREvent_MouseMove) {
       pointer_seen = true;
       hovered = hit;
