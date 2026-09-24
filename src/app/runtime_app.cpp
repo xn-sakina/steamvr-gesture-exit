@@ -27,9 +27,9 @@ class ScopedHandle {
   HANDLE value_;
 };
 
-uint64_t process_creation_token() {
+uint64_t process_creation_token(HANDLE process) {
   FILETIME created{}, exited{}, kernel{}, user{};
-  if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+  if (!GetProcessTimes(process, &created, &exited, &kernel, &user))
     return 0;
   ULARGE_INTEGER token{};
   token.LowPart = created.dwLowDateTime;
@@ -76,6 +76,7 @@ class SteamVrServerMonitor {
     entry.dwSize = sizeof(entry);
     if (!Process32FirstW(snapshot.get(), &entry))
       return false;
+    uint64_t latest_creation = 0;
     do {
       if (_wcsicmp(entry.szExeFile, L"vrserver.exe") != 0)
         continue;
@@ -92,12 +93,18 @@ class SteamVrServerMonitor {
                         .c_str(),
                     expected.c_str()) == 0;
       if (matches && WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
-        process_ = process;
-        return true;
+        const auto creation = process_creation_token(process);
+        if (creation > latest_creation) {
+          if (process_)
+            CloseHandle(process_);
+          process_ = process;
+          latest_creation = creation;
+          continue;
+        }
       }
       CloseHandle(process);
     } while (Process32NextW(snapshot.get(), &entry));
-    return false;
+    return process_ != nullptr;
   }
   ~SteamVrServerMonitor() {
     if (process_)
@@ -539,7 +546,7 @@ int RuntimeApp::run() {
     (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_UNAVAILABLE"});
     return 0;
   }
-  const uint64_t creation_token = process_creation_token();
+  const uint64_t creation_token = process_creation_token(GetCurrentProcess());
   if (creation_token == 0) {
     (void)log_.append({core::DiagnosticEventType::Error, "STOP_SIGNAL_INIT_FAILED"});
     return 1;
@@ -567,39 +574,8 @@ int RuntimeApp::run() {
     vr_.shutdown();
     return 0;
   }
-  // SteamVR can launch overlay applications before it finishes discovering devices.
-  // Give that discovery a bounded window, then exit instead of idling with no VR setup.
-  const auto device_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-  while (true) {
-    const auto frame = vr_.sample_tracking();
-    if (frame.headset_connected && (frame.left.connected || frame.right.connected))
-      break;
-    vr::VREvent_t startup_event{};
-    while (vr_.system()->PollNextEvent(&startup_event, sizeof(startup_event))) {
-      if (startup_event.eventType == vr::VREvent_Quit) {
-        vr_.system()->AcknowledgeQuit_Exiting();
-        vr_.shutdown();
-        return 0;
-      }
-    }
-    if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
-        !vr_.applications()->GetApplicationAutoLaunch(kAppKey)) {
-      (void)log_.append({core::DiagnosticEventType::Lifecycle, "AUTO_LAUNCH_DISABLED"});
-      vr_.shutdown();
-      return 0;
-    }
-    if (WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0 || stop_ || !server.alive()) {
-      (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STOPPED"});
-      vr_.shutdown();
-      return 0;
-    }
-    if (std::chrono::steady_clock::now() >= device_deadline) {
-      (void)log_.append({core::DiagnosticEventType::Lifecycle, "VR_DEVICES_UNAVAILABLE"});
-      vr_.shutdown();
-      return 0;
-    }
-    Sleep(250);
-  }
+  // Create the Dashboard immediately. SteamVR may start an overlay before
+  // discovering devices, so hardware gating belongs in the normal loop below.
   overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays());
   if (!overlays_->initialize()) {
     core::DiagnosticRecord record{};
@@ -643,6 +619,13 @@ int RuntimeApp::run() {
     if (stop_ && flow_->state() != core::FlowState::Exiting)
       break;
     const auto loop_start = std::chrono::steady_clock::now();
+    if (loop_start >= next_server_check) {
+      if (!server.alive()) {
+        (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_EXITED"});
+        break;
+      }
+      next_server_check = loop_start + std::chrono::milliseconds(250);
+    }
     if (loop_start >= next_autolaunch_check) {
       if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
           !vr_.applications()->GetApplicationAutoLaunch(kAppKey)) {
@@ -653,13 +636,6 @@ int RuntimeApp::run() {
           break;
       }
       next_autolaunch_check = loop_start + std::chrono::seconds(1);
-    }
-    if (loop_start >= next_server_check) {
-      if (!server.alive()) {
-        (void)log_.append({core::DiagnosticEventType::Lifecycle, "STEAMVR_SERVER_EXITED"});
-        break;
-      }
-      next_server_check = loop_start + std::chrono::milliseconds(250);
     }
     vr::VREvent_t system_event{};
     bool vr_quit = false;

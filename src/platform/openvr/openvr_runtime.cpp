@@ -19,8 +19,10 @@ bool OpenVrRuntime::initialize(vr::EVRApplicationType type) {
   initialized_ = vr::VRSystem() && vr::VRApplications();
   if (type == vr::VRApplication_Overlay)
     initialized_ = initialized_ && vr::VROverlay();
-  if (!initialized_)
+  if (!initialized_) {
     error_ = "required OpenVR interface unavailable";
+    vr::VR_Shutdown();
+  }
   return initialized_;
 }
 void OpenVrRuntime::shutdown() {

@@ -837,6 +837,11 @@ function Invoke-Status {
     $allAddOnProcesses = @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)
     Write-Host "SteamVR process:   $(if ($steamVrRunning) { 'running' } else { 'stopped' })"
     Write-Host "Add-on process:    $(if ($addOnRunning) { 'running' } else { 'stopped' })"
+    if ($allAddOnProcesses.Count -gt 1) {
+        Write-Host "Instance check:    $($allAddOnProcesses.Count) processes; possible startup handoff, recheck after 15 seconds" -ForegroundColor Yellow
+    } else {
+        Write-Host "Instance check:    $($allAddOnProcesses.Count) process(es)" -ForegroundColor Green
+    }
     if (-not $steamVrRunning) {
         if ($allAddOnProcesses.Count -eq 0) {
             Write-Host "Orphan check:      clear" -ForegroundColor Green

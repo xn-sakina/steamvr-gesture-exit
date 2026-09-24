@@ -34,6 +34,10 @@ CountdownSound::CountdownSound() {
     wave_[44 + i] = static_cast<unsigned char>(128 + std::clamp(s * 20.0 * fade, -20.0, 20.0));
   }
 }
+CountdownSound::~CountdownSound() {
+  // SND_MEMORY | SND_ASYNC keeps using wave_ after tick() returns.
+  PlaySoundW(nullptr, nullptr, 0);
+}
 void CountdownSound::tick(bool enabled) {
   if (enabled)
     PlaySoundW(reinterpret_cast<LPCWSTR>(wave_), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);

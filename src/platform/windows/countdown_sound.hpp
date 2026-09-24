@@ -3,6 +3,7 @@ namespace bailout::platform::windows {
 class CountdownSound {
  public:
   CountdownSound();
+  ~CountdownSound();
   void tick(bool enabled);
 
  private:
