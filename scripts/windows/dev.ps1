@@ -242,7 +242,8 @@ function Remove-OpenVrResiduals {
                     if (@($check.manifest_paths).Count -ne $remaining.Count) {
                         throw "OpenVR app config verification failed: $appConfig"
                     }
-                    [IO.File]::Replace($temporary, $appConfig, $null)
+                    # PowerShell converts $null to an empty string for .NET string parameters.
+                    [IO.File]::Replace($temporary, $appConfig, [NullString]::Value)
                     Write-Host "Removed $($original.Count - $remaining.Count) owned manifest path(s) from $appConfig"
                 } finally {
                     Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
@@ -292,7 +293,8 @@ function Write-PackageIntegrityCatalog([object[]]$Records) {
     try {
         $catalog | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
         if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
-            [IO.File]::Replace($temporaryPath, $script:PackageIntegrityCatalogPath, $null)
+            # PowerShell converts $null to an empty string for .NET string parameters.
+            [IO.File]::Replace($temporaryPath, $script:PackageIntegrityCatalogPath, [NullString]::Value)
         } else {
             [IO.File]::Move($temporaryPath, $script:PackageIntegrityCatalogPath)
         }
