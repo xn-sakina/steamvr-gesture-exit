@@ -66,11 +66,13 @@ app::TrackingFrame OpenVrRuntime::sample_tracking() const {
   f.left = sample_hand(vr::TrackedControllerRole_LeftHand);
   f.right = sample_hand(vr::TrackedControllerRole_RightHand);
   if (auto* s = vr::VRSystem()) {
+    f.headset_connected = s->IsTrackedDeviceConnected(vr::k_unTrackedDeviceIndex_Hmd);
     vr::TrackedDevicePose_t p[vr::k_unMaxTrackedDeviceCount]{};
     s->GetDeviceToAbsoluteTrackingPose(vr::TrackingUniverseStanding, 0, p,
                                        vr::k_unMaxTrackedDeviceCount);
     auto& h = p[vr::k_unTrackedDeviceIndex_Hmd];
-    f.headset_tracked = h.bPoseIsValid && h.eTrackingResult == vr::TrackingResult_Running_OK;
+    f.headset_tracked = f.headset_connected && h.bPoseIsValid &&
+                        h.eTrackingResult == vr::TrackingResult_Running_OK;
     if (f.headset_tracked) {
       f.headset_position = position(h.mDeviceToAbsoluteTracking);
       f.headset_forward = axis(h.mDeviceToAbsoluteTracking, 2, -1);

@@ -17,6 +17,8 @@ enum class CloseRequestResult { Accepted, TargetExited, Failed };
 
 struct Prerequisites {
   bool current_vr_game{};
+  bool hardware_available{};
+  bool headset_tracked{};
   bool configured_hand_tracked{};
   bool opposite_pointer_available{};
   std::optional<TargetIdentity> exit_target;

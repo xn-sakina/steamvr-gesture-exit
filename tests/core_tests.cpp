@@ -43,7 +43,7 @@ TargetIdentity target(std::uint32_t pid = 42, std::uint64_t token = 7) {
 }
 
 Prerequisites ready(const TargetIdentity& identity = target()) {
-  return {true, true, true, identity};
+  return {true, true, true, true, true, identity};
 }
 
 bool has_effect(const Effects& effects, const EffectType type) {
@@ -411,10 +411,12 @@ void dashboard_actions_change_only_the_intended_setting() {
 
 void state_machine_requires_all_prerequisites() {
   const auto identity = target();
-  const std::vector<Prerequisites> unavailable{{false, true, true, identity},
-                                               {true, false, true, identity},
-                                               {true, true, false, identity},
-                                               {true, true, true, std::nullopt}};
+  const std::vector<Prerequisites> unavailable{{false, true, true, true, true, identity},
+                                               {true, false, true, true, true, identity},
+                                               {true, true, false, true, true, identity},
+                                               {true, true, true, false, true, identity},
+                                               {true, true, true, true, false, identity},
+                                               {true, true, true, true, true, std::nullopt}};
   for (const auto& prerequisites : unavailable) {
     FlowStateMachine machine;
     CHECK(machine.on_gesture(at(0), prerequisites).empty());
@@ -501,6 +503,7 @@ void state_machine_countdown_rules_and_target_lock() {
   CHECK(update_countdown->target == target());
 
   auto tracking_lost = ready();
+  tracking_lost.headset_tracked = false;
   tracking_lost.configured_hand_tracked = false;
   tracking_lost.opposite_pointer_available = false;
   CHECK(machine.on_prerequisites(at(100), tracking_lost).empty());
@@ -508,6 +511,16 @@ void state_machine_countdown_rules_and_target_lock() {
   CHECK(machine.on_gesture(at(200), ready()).empty());
   CHECK(has_effect(machine.on_cancel(), EffectType::HideHud));
   CHECK(machine.snapshot(at(300)).last_exit == LastExitStatus::Cancelled);
+
+  FlowStateMachine disconnected;
+  (void)disconnected.on_gesture(at(0), ready());
+  (void)disconnected.on_control_clicked(at(1));
+  (void)disconnected.on_confirm(at(2), target(), 5s);
+  auto hardware_lost = ready();
+  hardware_lost.hardware_available = false;
+  CHECK(has_effect(disconnected.on_prerequisites(at(100), hardware_lost), EffectType::HideHud));
+  CHECK(disconnected.state() == FlowState::NoActiveFlow);
+  CHECK(disconnected.snapshot(at(100)).last_exit == LastExitStatus::Cancelled);
 }
 
 void state_machine_target_change_is_safe_noop() {

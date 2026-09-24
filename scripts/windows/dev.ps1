@@ -132,6 +132,137 @@ function Find-SteamVr {
     throw "SteamVR was not found. Install SteamVR, pass -SteamVrPath, or set STEAMVR_PATH."
 }
 
+function Get-OpenVrConfigDirectories {
+    $directories = [Collections.Generic.List[string]]::new()
+    $registryPath = if ($env:VR_PATHREG_OVERRIDE) { $env:VR_PATHREG_OVERRIDE } else {
+        Join-Path $env:LOCALAPPDATA "openvr\openvrpaths.vrpath"
+    }
+    if (Test-Path -LiteralPath $registryPath -PathType Leaf) {
+        try { $registry = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+        catch { throw "Cannot inspect OpenVR path registry '$registryPath': $($_.Exception.Message)" }
+        if (-not $registry -or -not $registry.PSObject.Properties["config"]) {
+            throw "OpenVR path registry has no config list: $registryPath"
+        }
+        foreach ($path in @($registry.config)) {
+            if ($path) { $directories.Add([IO.Path]::GetFullPath([string]$path)) }
+        }
+    }
+    foreach ($location in @("HKCU:\Software\Valve\Steam", "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam")) {
+        $entry = Get-ItemProperty -LiteralPath $location -ErrorAction SilentlyContinue
+        if (-not $entry) { continue }
+        foreach ($property in @("SteamPath", "InstallPath")) {
+            $value = $entry.PSObject.Properties[$property]
+            if ($value -and $value.Value) {
+                $directories.Add((Join-Path ([IO.Path]::GetFullPath([string]$value.Value)) "config"))
+            }
+        }
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $directories.Add((Join-Path ${env:ProgramFiles(x86)} "Steam\config"))
+    }
+    if ($env:ProgramFiles) {
+        $directories.Add((Join-Path $env:ProgramFiles "Steam\config"))
+    }
+    return @($directories | Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+}
+
+function Test-OwnedManifestPath([string]$Path) {
+    if (-not $Path) { return $false }
+    if (-not [IO.Path]::IsPathRooted($Path)) { return $false }
+    try { $fullPath = [IO.Path]::GetFullPath($Path) } catch { return $false }
+    if ($fullPath -ieq [IO.Path]::GetFullPath($script:ManifestPath)) { return $true }
+    foreach ($receipt in @($script:RegistrationReceiptPath, $script:PendingRegistrationReceiptPath)) {
+        $recorded = Get-ReceiptValue $receipt
+        if ($recorded -and $fullPath -ieq [IO.Path]::GetFullPath($recorded)) { return $true }
+    }
+    if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+        try {
+            $manifest = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $apps = @($manifest.applications)
+            if ($apps.Count -eq 1 -and $apps[0].app_key -eq $script:AppKey) {
+                return $true
+            }
+            return $false
+        } catch { }
+    }
+    # A deleted or damaged old package can only be identified by its unique manifest name.
+    return [IO.Path]::GetFileName($fullPath) -ieq "steamvr_bail_out.vrmanifest"
+}
+
+function Get-OpenVrResiduals {
+    foreach ($directory in @(Get-OpenVrConfigDirectories)) {
+        foreach ($name in @("$($script:AppKey).vrappconfig", $script:AppKey)) {
+            $path = Join-Path (Join-Path $directory "vrappconfig") $name
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+                [pscustomobject]@{ Kind = "vrappconfig"; File = $path; Manifest = $null }
+            }
+        }
+        $appConfig = Join-Path $directory "appconfig.json"
+        if (-not (Test-Path -LiteralPath $appConfig -PathType Leaf)) { continue }
+        try { $config = Get-Content -LiteralPath $appConfig -Raw -Encoding UTF8 | ConvertFrom-Json }
+        catch { throw "Cannot inspect OpenVR app config '$appConfig': $($_.Exception.Message)" }
+        if (-not $config) { throw "OpenVR app config is empty: $appConfig" }
+        $paths = @()
+        if ($config.PSObject.Properties["manifest_paths"]) { $paths = @($config.manifest_paths) }
+        foreach ($path in $paths) {
+            if (Test-OwnedManifestPath ([string]$path)) {
+                [pscustomobject]@{ Kind = "manifest_path"; File = $appConfig; Manifest = [string]$path }
+            }
+        }
+    }
+}
+
+function Remove-OpenVrResiduals {
+    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "Close SteamVR before editing its on-disk application config."
+    }
+    $directories = @(Get-OpenVrConfigDirectories)
+    if ($directories.Count -eq 0) {
+        throw "No OpenVR configuration directory could be located; clean stopped before deleting the package."
+    }
+    foreach ($directory in $directories) {
+        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            throw "SteamVR started during clean; no further config files were changed."
+        }
+        $appConfig = Join-Path $directory "appconfig.json"
+        if (Test-Path -LiteralPath $appConfig -PathType Leaf) {
+            try { $config = Get-Content -LiteralPath $appConfig -Raw -Encoding UTF8 | ConvertFrom-Json }
+            catch { throw "Cannot clean OpenVR app config '$appConfig': $($_.Exception.Message)" }
+            if (-not $config) { throw "OpenVR app config is empty: $appConfig" }
+            $original = @()
+            if ($config.PSObject.Properties["manifest_paths"]) { $original = @($config.manifest_paths) }
+            $remaining = @($original | Where-Object { -not (Test-OwnedManifestPath ([string]$_)) })
+            if ($remaining.Count -ne $original.Count) {
+                $config.manifest_paths = $remaining
+                $temporary = "$appConfig.steamvr-bail-out.tmp"
+                try {
+                    $json = $config | ConvertTo-Json -Depth 64
+                    [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
+                    $check = Get-Content -LiteralPath $temporary -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if (@($check.manifest_paths).Count -ne $remaining.Count) {
+                        throw "OpenVR app config verification failed: $appConfig"
+                    }
+                    [IO.File]::Replace($temporary, $appConfig, $null)
+                    Write-Host "Removed $($original.Count - $remaining.Count) owned manifest path(s) from $appConfig"
+                } finally {
+                    Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        foreach ($name in @("$($script:AppKey).vrappconfig", $script:AppKey)) {
+            $path = Join-Path (Join-Path $directory "vrappconfig") $name
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+                Remove-Item -LiteralPath $path -Force
+                Write-Host "Removed $path"
+            }
+        }
+    }
+    $remaining = @(Get-OpenVrResiduals)
+    if ($remaining.Count -gt 0) {
+        throw "OpenVR config still contains $($remaining.Count) add-on residue(s); no package files were removed."
+    }
+}
+
 function Get-PackageFilePath([string]$PackageRoot, [string]$RelativePath) {
     return Join-Path $PackageRoot ($RelativePath -replace '/', '\')
 }
@@ -569,7 +700,6 @@ function Invoke-Package {
 }
 
 function Invoke-Register {
-    Repair-PackageSwap
     Require-Package
     $script:CliPath = Resolve-CliPath
     [void](Find-SteamVr)
@@ -622,7 +752,14 @@ function Invoke-Register {
 }
 
 function Invoke-Unregister {
-    Repair-PackageSwap
+    if (-not (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Invoke-Stop-Orphans
+        Write-Step "Removing this application's OpenVR configuration"
+        Remove-OpenVrResiduals
+        Remove-RegistrationReceipts
+        Write-Host "Unregistered. SteamVR was not started; package and build files were kept." -ForegroundColor Green
+        return
+    }
     Require-Package
     $script:CliPath = Resolve-CliPath
     Require-SteamVrRunning
@@ -632,7 +769,7 @@ function Invoke-Unregister {
     if ($manifestState -eq 2) {
         Stop-AddOn
         Remove-RegistrationReceipts
-        Write-Host "Manifest is already unregistered." -ForegroundColor Green
+        Write-Host "Manifest is already unregistered. Close SteamVR and run 'clean' for full disk cleanup." -ForegroundColor Green
         return
     }
     if ($manifestState -ne 0) {
@@ -643,15 +780,34 @@ function Invoke-Unregister {
     $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
     if ($pendingManifest) { $registeredManifest = $pendingManifest }
     elseif ($confirmedManifest) { $registeredManifest = $confirmedManifest }
-    Write-Step "Disabling auto-launch and unregistering the application manifest"
-    Invoke-Checked $script:CliPath @("--unregister-manifest", $registeredManifest)
+    $candidates = [Collections.Generic.List[string]]::new()
+    $manifestResiduals = @()
+    try { $manifestResiduals = @(Get-OpenVrResiduals | Where-Object { $_.Kind -eq "manifest_path" }) }
+    catch { Write-Warning "OpenVR config audit failed; trying recorded manifest paths: $($_.Exception.Message)" }
+    foreach ($residual in $manifestResiduals) {
+        if (-not ($candidates | Where-Object { $_ -ieq $residual.Manifest })) {
+            $candidates.Add($residual.Manifest)
+        }
+    }
+    if (-not ($candidates | Where-Object { $_ -ieq $registeredManifest })) {
+        $candidates.Add($registeredManifest)
+    }
+    Write-Step "Disabling auto-launch and unregistering this application's manifest paths"
+    foreach ($candidate in $candidates) {
+        & $script:CliPath "--manifest-status" $script:AppKey
+        if ($LASTEXITCODE -eq 2) { break }
+        & $script:CliPath "--unregister-manifest" $candidate
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Could not remove candidate manifest path: $candidate"
+        }
+    }
     Stop-AddOn
     & $script:CliPath "--manifest-status" $script:AppKey
     if ($LASTEXITCODE -ne 2) {
         throw "Manifest removal could not be verified (status exit code $LASTEXITCODE); no build or user data was removed."
     }
     Remove-RegistrationReceipts
-    Write-Host "Unregistered: $registeredManifest" -ForegroundColor Green
+    Write-Host "Unregistered. Close SteamVR, then run 'clean' to remove the owned vrappconfig and any on-disk manifest-path residue." -ForegroundColor Green
 }
 
 function Invoke-Status {
@@ -674,7 +830,7 @@ function Invoke-Status {
     Write-Host "Build directory:   $script:BuildDirectory ($(if (Test-Path -LiteralPath $script:BuildDirectory) { 'present' } else { 'absent' }))"
     Write-Host "Package directory: $script:PackageDirectory ($(if (Test-Path -LiteralPath $script:PackageDirectory) { 'present' } else { 'absent' }))"
     Write-Host "Package integrity: $(if ($packageReady) { 'verified' } else { 'not verified' })$(if ($packageProblem) { " ($packageProblem)" })"
-    Write-Host "Package recovery:  $(if ((Test-Path -LiteralPath $script:PackageStagingDirectory) -or (Test-Path -LiteralPath $script:PackagePreviousDirectory)) { 'pending; run package, register, unregister, or clean' } else { 'none' })"
+    Write-Host "Package recovery:  $(if ((Test-Path -LiteralPath $script:PackageStagingDirectory) -or (Test-Path -LiteralPath $script:PackagePreviousDirectory)) { 'pending; run package to recover or clean to remove' } else { 'none' })"
     Write-Host "Manifest:          $script:ManifestPath ($(if (Test-Path -LiteralPath $script:ManifestPath) { 'present' } else { 'absent' }))"
     $steamVrRunning = [bool](Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1)
     $addOnRunning = @(Get-PackagedAddOnProcesses).Count -gt 0
@@ -699,6 +855,21 @@ function Invoke-Status {
     }
     if (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf) {
         Write-Host "Pending registration: $((Get-Content -LiteralPath $script:PendingRegistrationReceiptPath -Raw).Trim())" -ForegroundColor Yellow
+    }
+    try {
+        $configDirectories = @(Get-OpenVrConfigDirectories)
+        if ($configDirectories.Count -eq 0) { throw "No OpenVR config directory was found." }
+        foreach ($configDirectory in $configDirectories) {
+            Write-Host "OpenVR config dir: $configDirectory"
+        }
+        $residuals = @(Get-OpenVrResiduals)
+        Write-Host "OpenVR config residue: $($residuals.Count)"
+        foreach ($residual in $residuals) {
+            $detail = if ($residual.Manifest) { "$($residual.File) -> $($residual.Manifest)" } else { $residual.File }
+            Write-Host "  $($residual.Kind): $detail" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "OpenVR config audit: unavailable ($($_.Exception.Message))" -ForegroundColor Red
     }
     if ($packageReady -and (-not $cliProblem) -and $steamVrRunning) {
         & $script:CliPath "--manifest-status" $script:AppKey
@@ -785,19 +956,12 @@ function Remove-IfPresent([string]$Path, [string]$Label) {
 }
 
 function Invoke-Clean {
-    Repair-PackageSwap
-    $completePackage = $false
-    try { Require-Package; $completePackage = $true } catch { }
-    $hasRegistrationReceipt = (
-        (Test-Path -LiteralPath $script:RegistrationReceiptPath -PathType Leaf) -or
-        (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf)
-    )
-    if ($completePackage -or $hasRegistrationReceipt) {
-        Write-Step "Unregistering before deleting the package"
-        Invoke-Unregister
-    } else {
-        Stop-AddOn
-        Write-Host "No complete package or registration receipt exists; skipping SteamVR unregistration."
+    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "Close SteamVR normally before clean. The helper will not stop or start it."
+    }
+    Invoke-Unregister
+    if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        throw "SteamVR started during clean; package files were not removed. Close it and retry."
     }
     Write-Step "Removing reproducible development artifacts"
     Remove-IfPresent $script:BuildDirectory "CMake build tree"
@@ -837,8 +1001,8 @@ Actions:
   status      Show toolchain, package, registration, and process status.
   logs        Show the last 200 log lines; add -Follow to tail continuously.
   stop-orphans  When SteamVR is stopped, stop leftover add-on processes.
-  unregister  Remove this application's manifest; SteamVR must already be running.
-  clean       Unregister and remove artifacts; SteamVR must run if registered.
+  unregister  Remove this application's registration; offline also removes vrappconfig.
+  clean       With SteamVR stopped, remove owned OpenVR config and artifacts.
 "@ | Write-Host
 }
 

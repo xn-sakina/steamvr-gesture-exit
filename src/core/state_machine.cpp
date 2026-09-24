@@ -7,7 +7,8 @@
 namespace bailout::core {
 
 bool Prerequisites::ready() const noexcept {
-  return current_vr_game && configured_hand_tracked && opposite_pointer_available && exit_target &&
+  return current_vr_game && hardware_available && headset_tracked && configured_hand_tracked &&
+         opposite_pointer_available && exit_target &&
          exit_target->valid();
 }
 
@@ -195,6 +196,8 @@ Effects FlowStateMachine::on_prerequisites(const TimePoint, const Prerequisites&
     effects.push_back({EffectType::HideControl});
     transition(FlowState::NoActiveFlow, effects, "FLOW_PREREQUISITE_LOST");
     reset_flow();
+  } else if (state_ == FlowState::CountingDown && !prerequisites.hardware_available) {
+    return on_cancel();
   } else if (state_ == FlowState::CountingDown &&
              (!prerequisites.current_vr_game || !prerequisites.exit_target ||
               prerequisites.exit_target != locked_target_)) {

@@ -95,6 +95,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - In Idle Visible, repeated Farewell Gestures refresh only the timeout. In Confirming and Counting Down, new Farewell Gestures are ignored.
 - In Idle Visible and Confirming, loss of Configured Hand tracking or Opposite Hand Pointer availability closes the control and returns to no active flow.
 - In Counting Down, temporary hand-tracking loss does not cancel the active countdown. If tracking returns, Cancel Exit returns to the wrist.
+- In Counting Down, disconnection of the HMD or all controllers cancels the flow before a game-close request. Temporary pose loss while devices remain connected does not cancel it.
 - During Counting Down, cancellation remains available only through Exit Control. The HUD Overlay is not clickable.
 - At countdown zero, cancellation ends and the HUD Overlay changes to an exiting state while the graceful close and Exit Grace Period happen.
 - If the target exits or no longer matches the confirmed Exit Target before execution, clear the flow without affecting another application.

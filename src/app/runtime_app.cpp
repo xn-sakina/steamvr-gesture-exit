@@ -193,6 +193,8 @@ core::Prerequisites RuntimeApp::prerequisites(const TrackingFrame& f,
   const auto& opposite = settings_.configured_hand == core::Hand::Left ? f.right : f.left;
   core::Prerequisites p{};
   p.current_vr_game = resolution.game.has_value() && !dashboard_visible;
+  p.hardware_available = f.headset_connected && (f.left.connected || f.right.connected);
+  p.headset_tracked = f.headset_tracked && !dashboard_visible;
   p.configured_hand_tracked = configured.tracked && !dashboard_visible;
   p.opposite_pointer_available = opposite.pointer_available() && !dashboard_visible;
   if (p.current_vr_game && resolution.target)
@@ -565,6 +567,39 @@ int RuntimeApp::run() {
     vr_.shutdown();
     return 0;
   }
+  // SteamVR can launch overlay applications before it finishes discovering devices.
+  // Give that discovery a bounded window, then exit instead of idling with no VR setup.
+  const auto device_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  while (true) {
+    const auto frame = vr_.sample_tracking();
+    if (frame.headset_connected && (frame.left.connected || frame.right.connected))
+      break;
+    vr::VREvent_t startup_event{};
+    while (vr_.system()->PollNextEvent(&startup_event, sizeof(startup_event))) {
+      if (startup_event.eventType == vr::VREvent_Quit) {
+        vr_.system()->AcknowledgeQuit_Exiting();
+        vr_.shutdown();
+        return 0;
+      }
+    }
+    if (!vr_.applications()->IsApplicationInstalled(kAppKey) ||
+        !vr_.applications()->GetApplicationAutoLaunch(kAppKey)) {
+      (void)log_.append({core::DiagnosticEventType::Lifecycle, "AUTO_LAUNCH_DISABLED"});
+      vr_.shutdown();
+      return 0;
+    }
+    if (WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0 || stop_ || !server.alive()) {
+      (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STOPPED"});
+      vr_.shutdown();
+      return 0;
+    }
+    if (std::chrono::steady_clock::now() >= device_deadline) {
+      (void)log_.append({core::DiagnosticEventType::Lifecycle, "VR_DEVICES_UNAVAILABLE"});
+      vr_.shutdown();
+      return 0;
+    }
+    Sleep(250);
+  }
   overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays());
   if (!overlays_->initialize()) {
     core::DiagnosticRecord record{};
@@ -599,6 +634,7 @@ int RuntimeApp::run() {
   auto next_target = std::chrono::steady_clock::now();
   auto next_server_check = next_target;
   auto next_autolaunch_check = next_target;
+  std::optional<std::chrono::steady_clock::time_point> no_devices_since;
   while (true) {
     if (!stop_ && WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0) {
       stop_ = true;
@@ -638,6 +674,17 @@ int RuntimeApp::run() {
       break;
     const auto now = std::chrono::steady_clock::now();
     const auto frame = vr_.sample_tracking();
+    if (!frame.headset_connected || (!frame.left.connected && !frame.right.connected)) {
+      if (!no_devices_since)
+        no_devices_since = now;
+      else if (flow_->state() != core::FlowState::Exiting &&
+               now - *no_devices_since >= std::chrono::seconds(30)) {
+        (void)log_.append({core::DiagnosticEventType::Lifecycle, "VR_DEVICES_UNAVAILABLE"});
+        break;
+      }
+    } else {
+      no_devices_since.reset();
+    }
     const bool dashboard_visible = vr_.overlays()->IsDashboardVisible();
     if (now >= next_target) {
       latest_resolution_ = targets_->resolve_foreground();
@@ -647,6 +694,8 @@ int RuntimeApp::run() {
     std::string availability =
         "game=" + std::string(platform::windows::diagnostic_code(latest_resolution_.game_status)) +
         ";target=" + platform::windows::diagnostic_code(latest_resolution_.target_status) +
+        ";hardware=" + (prereq.hardware_available ? "1" : "0") +
+        ";hmd=" + (prereq.headset_tracked ? "1" : "0") +
         ";hand=" + (prereq.configured_hand_tracked ? "1" : "0") +
         ";pointer=" + (prereq.opposite_pointer_available ? "1" : "0") +
         ";dashboard=" + (dashboard_visible ? "1" : "0");

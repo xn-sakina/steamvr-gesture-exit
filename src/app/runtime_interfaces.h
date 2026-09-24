@@ -34,6 +34,7 @@ struct HandPose {
 };
 struct TrackingFrame {
   std::chrono::steady_clock::time_point sampled_at{};
+  bool headset_connected = false;
   bool headset_tracked = false;
   Vec3 headset_position{}, headset_forward{};
   HandPose left{}, right{};
