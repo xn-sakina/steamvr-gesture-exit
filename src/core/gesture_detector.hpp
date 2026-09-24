@@ -8,23 +8,20 @@
 namespace bailout::core {
 
 struct GestureConfig {
-  std::chrono::milliseconds recognition_window{1200};
-  double minimum_amplitude_metres{0.14};
+  std::chrono::milliseconds recognition_window{2000};
+  double minimum_amplitude_metres{0.10};
   double reversal_deadband_metres{0.025};
   double minimum_head_distance_metres{0.20};
   double maximum_head_distance_metres{1.25};
   double maximum_behind_head_metres{0.10};
   // Head-relative upper-body proxy; the MVP has no anatomical torso tracking.
-  double maximum_hand_below_head_metres{0.55};
-  double minimum_outward_palm_dot{0.35};
-  double minimum_palm_up_component{-0.45};
+  double maximum_hand_below_head_metres{0.70};
 };
 
 struct GestureSample {
   TimePoint time{};
   bool tracked{};
   Vec3 hand_position{};
-  Vec3 palm_normal{};
   Vec3 headset_position{};
   Vec3 headset_forward{};
 };

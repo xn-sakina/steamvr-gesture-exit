@@ -92,7 +92,8 @@ struct D3dOverlayRenderer::Impl {
     }
     auto props = D2D1::RenderTargetProperties(
         D2D1_RENDER_TARGET_TYPE_DEFAULT,
-        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+        96.0f, 96.0f);
     if (FAILED(d2d->CreateDxgiSurfaceRenderTarget(dxgi.Get(), &props, &s.target))) {
       error = "CreateDxgiSurfaceRenderTarget failed";
       return false;

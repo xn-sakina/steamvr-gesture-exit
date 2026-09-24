@@ -85,7 +85,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - Keep Exit Grace Period internal and separate from the user-visible Exit Countdown.
 - Keep the Add-on Session running after Game Exit and clear only Exit Target related state.
 - Model Farewell Gesture as a request for Exit Control only. It must never directly confirm, cancel, or execute Game Exit.
-- Detect Farewell Gesture using Configured Hand, Activation Zone, outward palm relative to headset or user, non-downward hand orientation, at least two direction reversals, and enough amplitude to reject jitter.
+- Detect Farewell Gesture from the Configured Hand controller's tracked position in the Activation Zone, with at least two side-to-side direction reversals and enough amplitude to reject jitter. Do not infer palm direction from a controller axis; that mapping is not shared across controller models.
 - Use a default 1.2-second recognition window for the direction-reversal gesture. Keep gesture thresholds internal for MVP.
 - Require a Supported Controller Setup with both hand poses and Opposite Hand Pointer. Do not support naked hand tracking, data gloves, or single-controller exit flows in MVP.
 - Place Exit Control near the Controller Wrist Zone inferred from the Configured Hand controller pose rather than requiring anatomical wrist or hand-bone tracking.

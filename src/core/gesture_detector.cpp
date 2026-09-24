@@ -31,11 +31,8 @@ bool GestureDetector::pose_is_eligible(const GestureSample& sample) const noexce
   if (dot(from_head, head_forward) < -config_.maximum_behind_head_metres) {
     return false;
   }
-  const Vec3 palm = normalized(sample.palm_normal);
-  if (length(palm) < 0.5 || palm.y < config_.minimum_palm_up_component) {
-    return false;
-  }
-  return dot(palm, normalized(from_head)) >= config_.minimum_outward_palm_dot;
+  // A generic controller pose has no portable anatomical palm direction.
+  return true;
 }
 
 bool GestureDetector::update(const GestureSample& sample) {

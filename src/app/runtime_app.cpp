@@ -504,14 +504,19 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
        target_available ? platform::openvr::DashboardStatusTone::Available
                         : platform::openvr::DashboardStatusTone::Unavailable},
       {text(core::StringId::HandTracking),
-       configured.tracked ? text(core::StringId::Available) : text(core::StringId::Unavailable),
-       L"",
+       configured.tracked ? text(core::StringId::ControllerTracked)
+                          : text(core::StringId::ControllerNotTracked),
+       text(configured.tracked ? core::StringId::WaveHandReady
+            : configured.connected ? core::StringId::WaveHandTrackingLost
+                                   : core::StringId::WaveHandDisconnected),
        configured.tracked ? platform::openvr::DashboardStatusTone::Available
                           : platform::openvr::DashboardStatusTone::Unavailable},
       {text(core::StringId::OppositePointer),
-       opposite.pointer_available() ? text(core::StringId::Available)
-                                    : text(core::StringId::Unavailable),
-       L"",
+       opposite.pointer_available() ? text(core::StringId::ControllerTracked)
+                                    : text(core::StringId::ControllerNotTracked),
+       text(opposite.pointer_available() ? core::StringId::ClickHandReady
+            : opposite.connected ? core::StringId::ClickHandTrackingLost
+                                 : core::StringId::ClickHandDisconnected),
        opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
                                     : platform::openvr::DashboardStatusTone::Unavailable},
       {text(core::StringId::LastExit), last, L"", platform::openvr::DashboardStatusTone::Neutral}};
@@ -705,8 +710,28 @@ int RuntimeApp::run() {
     vr_.shutdown();
     return 0;
   }
-  // Create the Dashboard immediately. SteamVR may start an overlay before
-  // discovering devices, so hardware gating belongs in the normal loop below.
+  // Resolve Auto before the first texture is submitted. Otherwise a visible
+  // Dashboard briefly receives the default English surface.
+  std::array<wchar_t, LOCALE_NAME_MAX_LENGTH> locale{};
+  const LCID ui_locale = MAKELCID(GetUserDefaultUILanguage(), SORT_DEFAULT);
+  if (LCIDToLocaleName(ui_locale, locale.data(), static_cast<int>(locale.size()), 0) ||
+      GetUserDefaultLocaleName(locale.data(), static_cast<int>(locale.size())))
+    os_language_ = narrow(locale.data());
+  std::array<char, 64> steam{};
+  vr::EVRSettingsError language_error{};
+  if (vr::VRSettings()) {
+    vr::VRSettings()->GetString("steamvr", "language", steam.data(),
+                                static_cast<uint32_t>(steam.size()), &language_error);
+    if (language_error != vr::VRSettingsError_None)
+      vr::VRSettings()->GetString("steam", "language", steam.data(),
+                                  static_cast<uint32_t>(steam.size()), &language_error);
+  }
+  if (language_error == vr::VRSettingsError_None)
+    steam_language_ = steam.data();
+  language_ = core::resolve_language(settings_.language, steam_language_, os_language_);
+  // Create the Dashboard immediately after language discovery. SteamVR may
+  // start an overlay before discovering devices, so hardware gating remains
+  // in the normal loop below.
   overlays_ = std::make_unique<platform::openvr::OverlayManager>(vr_.overlays());
   if (!overlays_->initialize()) {
     core::DiagnosticRecord record{};
@@ -720,27 +745,8 @@ int RuntimeApp::run() {
   const auto dashboard_open = [this] {
     return vr_.overlays()->IsDashboardVisible() || overlays_->dashboard_visible();
   };
-  // Give SteamVR a complete texture as soon as the overlay exists, even when
-  // the language and tracked devices have not been discovered yet.
   update_dashboard(latest_resolution_, {}, dashboard_open());
   targets_ = std::make_unique<platform::windows::ExitTargetResolver>(vr_.applications());
-  std::array<char, 64> steam{};
-  vr::EVRSettingsError language_error{};
-  if (vr::VRSettings()) {
-    vr::VRSettings()->GetString("steamvr", "language", steam.data(),
-                                static_cast<uint32_t>(steam.size()), &language_error);
-    if (language_error != vr::VRSettingsError_None)
-      vr::VRSettings()->GetString("steam", "language", steam.data(),
-                                  static_cast<uint32_t>(steam.size()), &language_error);
-  }
-  if (language_error == vr::VRSettingsError_None)
-    steam_language_ = steam.data();
-  std::array<wchar_t, LOCALE_NAME_MAX_LENGTH> locale{};
-  if (GetUserDefaultLocaleName(locale.data(), static_cast<int>(locale.size())))
-    os_language_ = narrow(locale.data());
-  language_ = core::resolve_language(settings_.language, steam_language_, os_language_);
-  // Refresh the initial panel if locale discovery selected another language.
-  update_dashboard(latest_resolution_, {}, dashboard_open());
   if (!overlays_->update_thumbnail(text(core::StringId::ThumbnailTitle),
                                    text(core::StringId::ThumbnailDescription),
                                    std::string(core::localize(core::StringId::AppName, language_))))
@@ -858,9 +864,6 @@ int RuntimeApp::run() {
     const auto& configured =
         settings_.configured_hand == core::Hand::Left ? frame.left : frame.right;
     const auto& opposite = settings_.configured_hand == core::Hand::Left ? frame.right : frame.left;
-    const Vec3 palm = settings_.configured_hand == core::Hand::Left
-                          ? Vec3{-configured.right.x, -configured.right.y, -configured.right.z}
-                          : configured.right;
     bool gesture = false;
     if (dashboard_visible) {
       gesture_.reset();
@@ -868,7 +871,7 @@ int RuntimeApp::run() {
         log_overlay_error(now);
     } else
       gesture = gesture_.update({now, configured.tracked && frame.headset_tracked,
-                                 cv(configured.position), cv(palm), cv(frame.headset_position),
+                                 cv(configured.position), cv(frame.headset_position),
                                  cv(frame.headset_forward)});
     if (gesture && !dashboard_open()) {
       (void)log_.append({core::DiagnosticEventType::GestureRecognized, "GESTURE_RECOGNIZED"});

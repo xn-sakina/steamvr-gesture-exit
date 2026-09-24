@@ -45,7 +45,7 @@ std::optional<DashboardPoint> dashboard_mouse_to_pixels(
       y > mouse_height)
     return std::nullopt;
   return DashboardPoint{x * texture_width / mouse_width,
-                        (mouse_height - y) * texture_height / mouse_height};
+                        y * texture_height / mouse_height};
 }
 
 std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {

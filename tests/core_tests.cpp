@@ -59,21 +59,47 @@ bool completes_exit(const Effects& effects) {
 }
 
 GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1}, bool tracked = true,
-                     std::optional<Vec3> palm = std::nullopt, Vec3 headset = {}) {
-  return {at(milliseconds), tracked, hand, palm.value_or(normalized(hand)), headset, forward};
+                     Vec3 headset = {}) {
+  return {at(milliseconds), tracked, hand, headset, forward};
 }
 
 void gesture_recognizes_valid_wave() {
   GestureDetector detector;
   const Vec3 headset{0.0, 1.65, 0.0};
   const auto upper_body_sample = [&](int milliseconds, double x) {
-    return sample(milliseconds, {x, 1.20, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset);
+    return sample(milliseconds, {x, 1.20, -0.50}, {0, 0, -1}, true, headset);
   };
   CHECK(!detector.update(upper_body_sample(0, 0.10)));
-  CHECK(!detector.update(upper_body_sample(200, 0.30)));
-  CHECK(!detector.update(upper_body_sample(400, 0.10)));
-  CHECK(detector.update(upper_body_sample(600, 0.30)));
-  CHECK(!detector.update(upper_body_sample(800, 0.30)));
+  CHECK(!detector.update(upper_body_sample(400, 0.30)));
+  CHECK(!detector.update(upper_body_sample(800, 0.10)));
+  CHECK(detector.update(upper_body_sample(1200, 0.30)));
+  CHECK(!detector.update(upper_body_sample(1400, 0.30)));
+}
+
+void gesture_recognizes_center_crossing_wave() {
+  GestureDetector detector;
+  const auto waved = [&](int milliseconds, double x) {
+    return sample(milliseconds, {x, 0.10, -0.50});
+  };
+  CHECK(!detector.update(waved(0, -0.07)));
+  CHECK(!detector.update(waved(400, 0.07)));
+  CHECK(!detector.update(waved(800, -0.07)));
+  CHECK(detector.update(waved(1200, 0.07)));
+}
+
+void gesture_recognizes_sampled_controller_wave() {
+  GestureDetector detector;
+  bool recognized = false;
+  for (int frame = 0; frame < 180; ++frame) {
+    const double seconds = static_cast<double>(frame) / 90.0;
+    const double x = 0.15 + 0.12 * std::sin(2.0 * 3.141592653589793 * 1.2 * seconds);
+    if (detector.update(sample(static_cast<int>(seconds * 1000.0), {x, 1.08, -0.55},
+                               {0, 0, -1}, true, {0, 1.65, 0}))) {
+      recognized = true;
+      break;
+    }
+  }
+  CHECK(recognized);
 }
 
 void gesture_uses_head_relative_right_axis() {
@@ -96,22 +122,21 @@ void gesture_rejects_unsafe_or_weak_motion() {
     CHECK(!jitter.update(sample(i * 100, {0.20 + (i % 2 ? 0.01 : 0.0), 0.1, -0.5})));
   }
   GestureDetector behind;
-  CHECK(!behind.update(sample(0, {0.0, 0.1, 0.5})));
-  GestureDetector downward;
-  CHECK(!downward.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, true, Vec3{0, -1, 0})));
+  for (int i = 0; i < 4; ++i)
+    CHECK(!behind.update(sample(i * 400, {i % 2 ? 0.3 : 0.1, 0.1, 0.5})));
   GestureDetector low;
   const Vec3 headset{0.0, 1.65, 0.0};
-  CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
-  CHECK(!low.update(sample(200, {0.30, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
-  CHECK(!low.update(sample(400, {0.10, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
-  CHECK(!low.update(sample(600, {0.30, 0.90, -0.50}, {0, 0, -1}, true, Vec3{0, 0, -1}, headset)));
+  CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true, headset)));
+  CHECK(!low.update(sample(400, {0.30, 0.90, -0.50}, {0, 0, -1}, true, headset)));
+  CHECK(!low.update(sample(800, {0.10, 0.90, -0.50}, {0, 0, -1}, true, headset)));
+  CHECK(!low.update(sample(1200, {0.30, 0.90, -0.50}, {0, 0, -1}, true, headset)));
   GestureDetector untracked;
   CHECK(!untracked.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, false)));
   GestureDetector too_slow;
   CHECK(!too_slow.update(sample(0, {0.10, 0.10, -0.50})));
-  CHECK(!too_slow.update(sample(500, {0.30, 0.10, -0.50})));
-  CHECK(!too_slow.update(sample(1000, {0.10, 0.10, -0.50})));
-  CHECK(!too_slow.update(sample(1600, {0.30, 0.10, -0.50})));
+  CHECK(!too_slow.update(sample(900, {0.30, 0.10, -0.50})));
+  CHECK(!too_slow.update(sample(1800, {0.10, 0.10, -0.50})));
+  CHECK(!too_slow.update(sample(2800, {0.30, 0.10, -0.50})));
 }
 
 void settings_round_trip_and_recovery() {
@@ -198,12 +223,18 @@ void settings_round_trip_and_recovery() {
 }
 
 void localization_resolves_auto_and_manual() {
-  CHECK(resolve_language(Language::Auto, "schinese", "en-US") == Language::ChineseSimplified);
+  CHECK(resolve_language(Language::Auto, "schinese", "en-US") == Language::English);
   CHECK(resolve_language(Language::Auto, "", "zh-SG") == Language::ChineseSimplified);
-  CHECK(resolve_language(Language::Auto, "english", "zh-CN") == Language::English);
+  CHECK(resolve_language(Language::Auto, "english", "zh-CN") == Language::ChineseSimplified);
+  CHECK(resolve_language(Language::Auto, "schinese", "") == Language::ChineseSimplified);
   CHECK(resolve_language(Language::English, "schinese", "zh-CN") == Language::English);
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
+  CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");
+  CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "点击手柄");
+  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "位置正常");
+  CHECK(localize(StringId::ClickHandReady, Language::ChineseSimplified) ==
+        "退出按钮出现后，用这只手柄指向并按扳机。");
   CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
         "无法保存设置，修改未生效。");
@@ -317,14 +348,11 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(!is_current_vr_game_candidate({"steam.app.438100", "unknown", false, false, false, false}));
 }
 
-void pointer_availability_requires_input_capabilities() {
+void pointer_availability_uses_tracked_controller() {
   bailout::app::HandPose hand;
   hand.connected = true;
   hand.tracked = true;
   CHECK(!hand.pointer_available());
-  hand.legacy_input_readable = true;
-  CHECK(!hand.pointer_available());
-  hand.trigger_button_supported = true;
   hand.device_index = 7;
   CHECK(hand.pointer_available());
   CHECK(hand.accepts_pointer_event(7));
@@ -336,8 +364,7 @@ void pointer_availability_requires_input_capabilities() {
   hand.connected = false;
   CHECK(!hand.pointer_available());
   hand.connected = true;
-  hand.legacy_input_readable = false;
-  CHECK(!hand.accepts_pointer_event(7));
+  CHECK(hand.accepts_pointer_event(7));
 }
 
 void wrist_pose_smoothing_follows_and_resets_safely() {
@@ -392,7 +419,7 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
     for (const auto [mouse_width, mouse_height] :
          {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F}}) {
       const auto point = dashboard_mouse_to_pixels(
-          x * mouse_width / 1024.0F, (640.0F - y) * mouse_height / 640.0F,
+          x * mouse_width / 1024.0F, y * mouse_height / 640.0F,
           mouse_width, mouse_height, 1024.0F, 640.0F);
       CHECK(point);
       CHECK(dashboard_hit_test(buttons, point->x, point->y) == button.action);
@@ -719,6 +746,8 @@ void state_machine_marks_every_exit_completion_for_resource_release() {
 int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests{
       {"gesture recognizes valid wave", gesture_recognizes_valid_wave},
+      {"gesture recognizes center crossing wave", gesture_recognizes_center_crossing_wave},
+      {"gesture recognizes sampled controller wave", gesture_recognizes_sampled_controller_wave},
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},
       {"settings round trip and recovery", settings_round_trip_and_recovery},
@@ -726,7 +755,7 @@ int main() {
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"diagnostics bounded rotation", diagnostics_rotate_at_a_fixed_size},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
-      {"pointer requires input capabilities", pointer_availability_requires_input_capabilities},
+      {"pointer uses tracked controller", pointer_availability_uses_tracked_controller},
       {"wrist pose smoothing", wrist_pose_smoothing_follows_and_resets_safely},
       {"dashboard semantic targets", dashboard_controls_are_visible_semantic_targets},
       {"dashboard mouse scale", dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale},

@@ -17,7 +17,7 @@ The reliable main-process target selected from the Current VR Game at the moment
 _Avoid_: current process, latest app, foreground app
 
 **Farewell Gesture**:
-The intentional gesture used only to request the Exit Control. It is made with the Configured Hand inside the Activation Zone, with the palm broadly facing away from the headset or user, while the hand performs a short side-to-side wave motion with at least two direction reversals.
+The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller inside the Activation Zone in a short side-to-side wave with at least two direction reversals. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation.
 _Avoid_: wave, bye-bye, gesture trigger
 
 **Activation Zone**:

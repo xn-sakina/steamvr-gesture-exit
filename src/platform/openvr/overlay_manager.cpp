@@ -99,7 +99,7 @@ bool OverlayManager::initialize() {
     }
     return true;
   };
-  if (!configure(dashboard_, 1.9f, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
+  if (!configure(dashboard_, 3.5f, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
                  kDashboardHeight) ||
       !configure(wrist_, 0.27f, vr::VROverlayInputMethod_Mouse, 768, 384) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {

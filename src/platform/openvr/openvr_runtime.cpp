@@ -40,17 +40,8 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
   if (i == vr::k_unTrackedDeviceIndexInvalid || i >= vr::k_unMaxTrackedDeviceCount)
     return out;
   out.device_index = i;
-  out.connected = s->IsTrackedDeviceConnected(i);
-  vr::ETrackedPropertyError button_error = vr::TrackedProp_Success;
-  const auto supported_buttons =
-      s->GetUint64TrackedDeviceProperty(i, vr::Prop_SupportedButtons_Uint64, &button_error);
-  out.trigger_button_supported =
-      button_error == vr::TrackedProp_Success &&
-      (supported_buttons & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0;
-  vr::VRControllerState_t state{};
-  out.legacy_input_readable = s->GetControllerState(i, &state, sizeof(state));
-  if (out.legacy_input_readable)
-    out.buttons = state.ulButtonPressed;
+  out.connected = s->IsTrackedDeviceConnected(i) &&
+                  s->GetTrackedDeviceClass(i) == vr::TrackedDeviceClass_Controller;
   // ControllerStateWithPose is aligned to an input update, which can be stale
   // throughout a button-free wave. Use the same current tracking frame as the
   // HMD so gesture motion and wrist placement continue to update.

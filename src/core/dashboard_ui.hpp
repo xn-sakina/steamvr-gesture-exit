@@ -26,8 +26,8 @@ struct DashboardPoint {
   float y = 0;
 };
 
-// OpenVR mouse coordinates start at the lower left and use the overlay's
-// mouse scale. Dashboard drawing and hit regions start at the upper left.
+// On Windows, OpenVR Dashboard mouse coordinates use the UI's top-left
+// orientation. Normalize the runtime mouse scale into texture pixels.
 [[nodiscard]] std::optional<DashboardPoint> dashboard_mouse_to_pixels(
     float x, float y, float mouse_width, float mouse_height, float texture_width,
     float texture_height) noexcept;

@@ -14,17 +14,13 @@ struct Vec3 {
 struct HandPose {
   bool connected = false;
   bool tracked = false;
-  // Pointer input is deliberately capability-based. A tracked pose alone is
-  // not enough: the controller must expose a trigger and a readable legacy
-  // state for the OpenVR overlay mouse path used by the MVP.
-  bool legacy_input_readable = false;
-  bool trigger_button_supported = false;
   std::uint32_t device_index = 0xFFFFFFFFU;
   Vec3 position{}, forward{}, up{}, right{};
-  std::uint64_t buttons = 0;
 
   [[nodiscard]] constexpr bool pointer_available() const noexcept {
-    return connected && tracked && legacy_input_readable && trigger_button_supported;
+    // SteamVR sends overlay mouse events itself. Legacy button state and the
+    // supported-buttons property do not determine whether it can do so.
+    return connected && tracked && device_index != 0xFFFFFFFFU;
   }
 
   [[nodiscard]] constexpr bool accepts_pointer_event(
