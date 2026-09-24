@@ -216,7 +216,7 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
 
     $executablePath = Get-PackageFilePath $PackageRoot "bin/win64/steamvr_bail_out.exe"
     $manifestPath = Get-PackageFilePath $PackageRoot "manifest/steamvr_bail_out.vrmanifest"
-    try { $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json }
+    try { $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json }
     catch { throw "Application manifest is not valid JSON: $manifestPath. $($_.Exception.Message)" }
     $application = @($manifest.applications) | Where-Object { $_.app_key -eq $script:AppKey } | Select-Object -First 1
     if (-not $application) { throw "Application manifest does not contain the expected app key '$script:AppKey'." }
