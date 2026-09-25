@@ -595,7 +595,7 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
     switch (e.type) {
       case core::EffectType::ShowIdleControl:
         if (!overlays_->show_wrist(
-                settings_.configured_hand,
+                settings_.configured_hand, f,
                 {text(core::StringId::AppName), text(core::StringId::ExitGame),
                  text(core::StringId::ExitGame), text(core::StringId::Dismiss)})) {
           abort_overlay_flow(now, f);
@@ -606,7 +606,7 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         std::wstring name = latest_resolution_.target ? latest_resolution_.target->display_name
                                                       : text(core::StringId::UnknownGame);
         if (!overlays_->show_wrist(
-                settings_.configured_hand,
+                settings_.configured_hand, f,
                 {text(core::StringId::ConfirmTitle),
                  name + L"\n" + text(core::StringId::ConfirmBody), text(core::StringId::Confirm),
                  text(core::StringId::Dismiss)})) {
@@ -619,22 +619,18 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         if (!overlays_->hide_wrist())
           log_overlay_error(now);
         break;
-      case core::EffectType::ShowCountdownHud:
-      case core::EffectType::UpdateCountdownHud: {
+      case core::EffectType::ShowCountdownControl:
+      case core::EffectType::UpdateCountdownControl: {
         double seconds = std::max(0.0, e.remaining.count() / 1000.0);
         std::wstringstream value;
         value << static_cast<int>(std::ceil(seconds)) << text(core::StringId::SecondsUnit);
         const std::wstring target_name =
             e.target ? widen(e.target->display_name) : text(core::StringId::UnknownGame);
         const std::wstring countdown_body = target_name + L"\n" + value.str();
-        if (!overlays_->show_hud({text(core::StringId::ExitGame), countdown_body, L"", L"", L"",
-                                  static_cast<float>(e.progress)})) {
-          abort_overlay_flow(now, f);
-          return;
-        }
-        if (!overlays_->show_wrist(settings_.configured_hand,
+        if (!overlays_->show_wrist(settings_.configured_hand, f,
                                    {text(core::StringId::ExitGame), countdown_body, L"",
-                                    text(core::StringId::CancelExit)})) {
+                                    text(core::StringId::CancelExit), L"",
+                                    static_cast<float>(e.progress)})) {
           abort_overlay_flow(now, f);
           return;
         }
@@ -1262,8 +1258,6 @@ int RuntimeApp::run() {
     bool gesture = false;
     if (dashboard_visible) {
       gesture_.reset();
-      if (flow_->state() == core::FlowState::CountingDown && !overlays_->hide_wrist())
-        log_overlay_error(now);
     } else
       gesture = gesture_.update({now, configured.tracked && frame.headset_tracked,
                                  cv(configured.position), cv(frame.headset_position),
@@ -1292,6 +1286,8 @@ int RuntimeApp::run() {
           {"lateral_travel_m", std::to_string(gesture_diagnostic.lateral_travel_m)},
           {"maximum_orthogonal_ratio",
            std::to_string(gesture_diagnostic.maximum_orthogonal_ratio)},
+          {"stroke_length_ratio", std::to_string(gesture_diagnostic.stroke_length_ratio)},
+          {"stroke_timing_ratio", std::to_string(gesture_diagnostic.stroke_timing_ratio)},
           {"reversals", std::to_string(gesture_diagnostic.reversals)},
           {"required_reversals", std::to_string(gesture_.config().required_reversals)},
           {"minimum_stroke_m", std::to_string(gesture_.config().minimum_stroke_metres)},
@@ -1299,6 +1295,8 @@ int RuntimeApp::run() {
            std::to_string(gesture_.config().minimum_total_lateral_travel_metres)},
           {"minimum_gesture_duration_ms",
            std::to_string(gesture_.config().minimum_gesture_duration.count())},
+          {"minimum_stroke_duration_ms",
+           std::to_string(gesture_.config().minimum_stroke_duration.count())},
           {"maximum_stroke_duration_ms",
            std::to_string(gesture_.config().maximum_stroke_duration.count())},
           {"minimum_head_distance_m", std::to_string(gesture_.config().minimum_head_distance_metres)},
@@ -1344,12 +1342,19 @@ int RuntimeApp::run() {
     }
     const auto state = flow_->state();
     if (!dashboard_visible) {
-      const auto actions = overlays_->poll_wrist_events(
+      const auto wrist_events = overlays_->poll_wrist_events(
           opposite, state == core::FlowState::Confirming, state == core::FlowState::CountingDown);
       if (!overlays_->error().empty())
         abort_overlay_flow(now, frame);
-      else
-        for (const auto action : actions) {
+      else {
+        if (wrist_events.entered_button &&
+            now - last_ui_hover_sound_at >= std::chrono::milliseconds(150)) {
+          sound_.ui_hover();
+          last_ui_hover_sound_at = now;
+        }
+        if (wrist_events.clicked_button)
+          sound_.ui_select();
+        for (const auto action : wrist_events.actions) {
           if (dashboard_open())
             break;
           core::DiagnosticRecord action_record{};
@@ -1366,8 +1371,7 @@ int RuntimeApp::run() {
           else if (action == platform::openvr::OverlayAction::Dismiss) {
             pending_confirmation.reset();
             apply(flow_->on_dismiss(), now, frame);
-          }
-          else if (action == platform::openvr::OverlayAction::Cancel)
+          } else if (action == platform::openvr::OverlayAction::Cancel)
             apply(flow_->on_cancel(), now, frame);
           else if (action == platform::openvr::OverlayAction::Confirm) {
             if (!pending_confirmation && !dashboard_open() &&
@@ -1390,6 +1394,7 @@ int RuntimeApp::run() {
             }
           }
         }
+      }
     }
     const auto process_status = process_.poll(now);
     if (flow_->state() == core::FlowState::Exiting &&
@@ -1416,10 +1421,6 @@ int RuntimeApp::run() {
               now, frame);
     }
     apply(flow_->tick(now), now, frame);
-    if (dashboard_visible) {
-      if (!overlays_->hide_wrist())
-        log_overlay_error(now);
-    }
     // Preserve the start-of-iteration sample so a visibility change that
     // arrives later in this iteration is handled immediately next time.
     dashboard_was_open = dashboard_at_start;

@@ -81,6 +81,19 @@ void gesture_recognizes_valid_wave() {
   CHECK(!detector.update(upper_body_sample(1200, 0.10)));
 }
 
+void gesture_recognizes_compact_chest_wave() {
+  GestureDetector detector;
+  const Vec3 headset{0.0, 1.65, 0.0};
+  const auto chest_sample = [&](int milliseconds, double x) {
+    return sample(milliseconds, {x, 1.18, -0.48}, {0, 0, -1}, true, headset);
+  };
+  CHECK(!detector.update(chest_sample(0, 0.05)));
+  CHECK(!detector.update(chest_sample(220, 0.19)));
+  CHECK(!detector.update(chest_sample(440, 0.05)));
+  CHECK(!detector.update(chest_sample(660, 0.19)));
+  CHECK(detector.update(chest_sample(880, 0.05)));
+}
+
 void gesture_recognizes_center_crossing_wave() {
   GestureDetector detector;
   const auto waved = [&](int milliseconds, double x) {
@@ -165,7 +178,7 @@ void gesture_requires_deliberate_repeated_lateral_strokes() {
   for (const auto [time, x] : std::array<std::pair<int, double>, 5>{
            {{0, 0.0}, {60, 0.20}, {120, 0.0}, {180, 0.20}, {240, 0.0}}})
     CHECK(!too_fast.update(sample(time, {x, 0.1, -0.5})));
-  CHECK(too_fast.diagnostic().decision == GestureDecision::TooBrief);
+  CHECK(too_fast.diagnostic().decision == GestureDecision::StrokeTooFast);
 
   GestureDetector non_lateral;
   for (const auto [time, point] : std::array<std::pair<int, Vec3>, 5>{{
@@ -183,6 +196,12 @@ void gesture_requires_deliberate_repeated_lateral_strokes() {
            {{0, 0.0}, {200, 0.20}, {1100, 0.0}, {1400, 0.20}, {1700, 0.0}}})
     CHECK(!paused.update(sample(time, {x, 0.1, -0.5})));
   CHECK(paused.diagnostic().decision == GestureDecision::StrokeTooSlow);
+
+  GestureDetector irregular;
+  for (const auto [time, x] : std::array<std::pair<int, double>, 5>{
+           {{0, 0.0}, {200, 0.14}, {350, 0.0}, {850, 0.14}, {1000, 0.0}}})
+    CHECK(!irregular.update(sample(time, {x, 0.1, -0.5})));
+  CHECK(irregular.diagnostic().decision == GestureDecision::IrregularMotion);
 
   GestureDetector stationary_prelude;
   CHECK(!stationary_prelude.update(sample(0, {0.0, 0.1, -0.5})));
@@ -779,7 +798,7 @@ void state_machine_happy_graceful_path() {
   CHECK(machine.state() == FlowState::IdleVisible);
   CHECK(has_effect(machine.on_control_clicked(at(10)), EffectType::ShowConfirmation));
   CHECK(machine.state() == FlowState::Confirming);
-  CHECK(has_effect(machine.on_confirm(at(20), target(), 3s), EffectType::ShowCountdownHud));
+  CHECK(has_effect(machine.on_confirm(at(20), target(), 3s), EffectType::ShowCountdownControl));
   CHECK(machine.snapshot(at(1020)).countdown_remaining == 2000ms);
   CHECK(std::abs(machine.snapshot(at(1020)).countdown_progress - 2.0 / 3.0) < 0.001);
   CHECK(has_effect(machine.tick(at(3020)), EffectType::RequestGracefulClose));
@@ -838,7 +857,7 @@ void state_machine_countdown_rules_and_target_lock() {
   const auto countdown_started = machine.on_confirm(at(2), target(), 5s);
   const auto show_countdown =
       std::find_if(countdown_started.begin(), countdown_started.end(), [](const Effect& effect) {
-        return effect.type == EffectType::ShowCountdownHud;
+        return effect.type == EffectType::ShowCountdownControl;
       });
   CHECK(show_countdown != countdown_started.end());
   CHECK(show_countdown->target == target());
@@ -846,7 +865,7 @@ void state_machine_countdown_rules_and_target_lock() {
   const auto countdown_updated = machine.tick(at(50));
   const auto update_countdown =
       std::find_if(countdown_updated.begin(), countdown_updated.end(), [](const Effect& effect) {
-        return effect.type == EffectType::UpdateCountdownHud;
+        return effect.type == EffectType::UpdateCountdownControl;
       });
   CHECK(update_countdown != countdown_updated.end());
   CHECK(update_countdown->target == target());
@@ -1047,6 +1066,7 @@ void state_machine_marks_every_exit_completion_for_resource_release() {
 int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests{
       {"gesture recognizes valid wave", gesture_recognizes_valid_wave},
+      {"gesture recognizes compact chest wave", gesture_recognizes_compact_chest_wave},
       {"gesture recognizes center crossing wave", gesture_recognizes_center_crossing_wave},
       {"gesture recognizes sampled controller wave", gesture_recognizes_sampled_controller_wave},
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},

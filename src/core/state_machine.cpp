@@ -155,7 +155,7 @@ Effects FlowStateMachine::on_confirm(const TimePoint now, const TargetIdentity& 
   countdown_deadline_ = now + countdown_duration;
   transition(FlowState::CountingDown, effects, "FLOW_EXIT_CONFIRMED");
   effects.insert(effects.begin(),
-                 {EffectType::ShowCountdownHud, locked_target_,
+                 {EffectType::ShowCountdownControl, locked_target_,
                   std::chrono::duration_cast<std::chrono::milliseconds>(countdown_duration), 1.0});
   return effects;
 }
@@ -312,7 +312,7 @@ Effects FlowStateMachine::tick(const TimePoint now) {
   } else if (state_ == FlowState::CountingDown) {
     if (now < countdown_deadline_) {
       const FlowSnapshot current = snapshot(now);
-      effects.push_back({EffectType::UpdateCountdownHud, locked_target_,
+      effects.push_back({EffectType::UpdateCountdownControl, locked_target_,
                          current.countdown_remaining, current.countdown_progress});
     } else {
       transition(FlowState::Exiting, effects, "FLOW_COUNTDOWN_COMPLETE");

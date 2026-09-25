@@ -11,6 +11,11 @@
 #include <vector>
 namespace bailout::platform::openvr {
 enum class OverlayAction { Primary, Confirm, Dismiss, Cancel };
+struct WristEvents {
+  std::vector<OverlayAction> actions;
+  bool entered_button = false;
+  bool clicked_button = false;
+};
 struct DashboardEvents {
   std::vector<core::DashboardAction> actions;
   float max_event_age_seconds = 0;
@@ -24,7 +29,8 @@ class OverlayManager {
       : overlays_(overlays), log_(log) {}
   bool initialize();
   void shutdown();
-  [[nodiscard]] bool show_wrist(core::Hand configured_hand, const SurfaceModel&);
+  [[nodiscard]] bool show_wrist(core::Hand configured_hand, const app::TrackingFrame&,
+                                const SurfaceModel&);
   [[nodiscard]] bool hide_wrist();
   [[nodiscard]] bool show_hud(const SurfaceModel&);
   [[nodiscard]] bool hide_hud();
@@ -35,8 +41,8 @@ class OverlayManager {
   }
   [[nodiscard]] bool update_thumbnail(const std::wstring& title, const std::wstring& description,
                                       const std::string& friendly_name);
-  std::vector<OverlayAction> poll_wrist_events(const app::HandPose& opposite_hand, bool confirming,
-                                               bool counting_down);
+  WristEvents poll_wrist_events(const app::HandPose& opposite_hand, bool confirming,
+                                bool counting_down);
   DashboardEvents poll_dashboard_events();
   bool wrist_visible() const {
     return wrist_visible_;
@@ -75,7 +81,6 @@ class OverlayManager {
   std::wstring thumbnail_title_, thumbnail_description_;
   SurfaceModel hud_model_{};
   std::string error_;
-  std::optional<core::Hand> wrist_side_;
   uint32_t pointer_device_ = vr::k_unTrackedDeviceIndexInvalid;
   bool trigger_state_primed_ = false;
   bool previous_trigger_pressed_ = false;

@@ -19,8 +19,10 @@ std::string_view to_string(GestureDecision decision) noexcept {
     case GestureDecision::InsufficientStroke: return "insufficient_stroke";
     case GestureDecision::InsufficientReversals: return "insufficient_reversals";
     case GestureDecision::TooBrief: return "too_brief";
+    case GestureDecision::StrokeTooFast: return "stroke_too_fast";
     case GestureDecision::StrokeTooSlow: return "stroke_too_slow";
     case GestureDecision::NonLateralMotion: return "non_lateral_motion";
+    case GestureDecision::IrregularMotion: return "irregular_motion";
     case GestureDecision::Recognized: return "recognized";
   }
   return "reset";
@@ -29,10 +31,14 @@ std::string_view to_string(GestureDecision decision) noexcept {
 GestureDetector::GestureDetector(GestureConfig config) : config_(config) {
   if (config_.recognition_window <= std::chrono::milliseconds::zero() ||
       config_.minimum_gesture_duration <= std::chrono::milliseconds::zero() ||
+      config_.minimum_stroke_duration <= std::chrono::milliseconds::zero() ||
       config_.maximum_stroke_duration <= std::chrono::milliseconds::zero() ||
+      config_.maximum_stroke_duration <= config_.minimum_stroke_duration ||
       config_.minimum_stroke_metres <= 0.0 ||
       config_.minimum_total_lateral_travel_metres <= 0.0 ||
-      config_.maximum_orthogonal_stroke_ratio <= 0.0 || config_.required_reversals < 1 ||
+      config_.maximum_orthogonal_stroke_ratio <= 0.0 ||
+      config_.maximum_stroke_length_ratio < 1.0 ||
+      config_.maximum_stroke_timing_ratio < 1.0 || config_.required_reversals < 1 ||
       config_.minimum_head_distance_metres <= 0.0 ||
       config_.maximum_head_distance_metres <= config_.minimum_head_distance_metres ||
       config_.maximum_behind_head_metres < 0.0) {
@@ -176,6 +182,10 @@ bool GestureDetector::motion_matches() noexcept {
   const auto first = turns.end() - static_cast<std::ptrdiff_t>(point_count);
   double lateral_travel = 0.0;
   double maximum_ratio = 0.0;
+  double shortest_full_stroke = std::numeric_limits<double>::infinity();
+  double longest_full_stroke = 0.0;
+  auto shortest_full_duration = config_.maximum_stroke_duration;
+  auto longest_full_duration = std::chrono::milliseconds::zero();
   std::size_t stroke_index = 0;
   for (auto it = first; it + 1 != turns.end(); ++it) {
     const Point& a = points[*it];
@@ -189,16 +199,33 @@ bool GestureDetector::motion_matches() noexcept {
     // The first entry may include an arbitrary stationary prelude before the
     // user begins moving. Timing starts once that arming half-stroke reaches
     // its first extreme; all subsequent full strokes are bounded.
-    if (stroke_index > 0 && b.time - a.time > config_.maximum_stroke_duration) {
+    const auto stroke_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(b.time - a.time);
+    if (stroke_index > 0 && stroke_duration < config_.minimum_stroke_duration) {
+      diagnostic_.lateral_travel_m = lateral_travel;
+      diagnostic_.maximum_orthogonal_ratio = maximum_ratio;
+      diagnostic_.decision = GestureDecision::StrokeTooFast;
+      return false;
+    }
+    if (stroke_index > 0 && stroke_duration > config_.maximum_stroke_duration) {
       diagnostic_.lateral_travel_m = lateral_travel;
       diagnostic_.maximum_orthogonal_ratio = maximum_ratio;
       diagnostic_.decision = GestureDecision::StrokeTooSlow;
       return false;
     }
+    if (stroke_index > 0) {
+      shortest_full_stroke = std::min(shortest_full_stroke, lateral);
+      longest_full_stroke = std::max(longest_full_stroke, lateral);
+      shortest_full_duration = std::min(shortest_full_duration, stroke_duration);
+      longest_full_duration = std::max(longest_full_duration, stroke_duration);
+    }
     ++stroke_index;
   }
   diagnostic_.lateral_travel_m = lateral_travel;
   diagnostic_.maximum_orthogonal_ratio = maximum_ratio;
+  diagnostic_.stroke_length_ratio = longest_full_stroke / shortest_full_stroke;
+  diagnostic_.stroke_timing_ratio =
+      static_cast<double>(longest_full_duration.count()) / shortest_full_duration.count();
   const auto duration = points[turns.back()].time - points[*(first + 1)].time;
   diagnostic_.span_ms = static_cast<int>(
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
@@ -212,6 +239,14 @@ bool GestureDetector::motion_matches() noexcept {
   }
   if (maximum_ratio > config_.maximum_orthogonal_stroke_ratio) {
     diagnostic_.decision = GestureDecision::NonLateralMotion;
+    return false;
+  }
+  // Deliberate goodbye waves have a repeatable beat and extent. Combining
+  // those checks with the per-stroke speed bounds keeps the lower amplitude
+  // needed at chest/armrest height without accepting a few unrelated moves.
+  if (diagnostic_.stroke_length_ratio > config_.maximum_stroke_length_ratio ||
+      diagnostic_.stroke_timing_ratio > config_.maximum_stroke_timing_ratio) {
+    diagnostic_.decision = GestureDecision::IrregularMotion;
     return false;
   }
   diagnostic_.decision = GestureDecision::Recognized;

@@ -17,7 +17,7 @@ The reliable main-process target selected from the Current VR Game at the moment
 _Avoid_: current process, latest app, foreground app
 
 **Farewell Gesture**:
-The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller through four deliberate side-to-side strokes with three direction reversals, enough total lateral travel, and a recognisable human pace. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation or a standing posture.
+The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller through four deliberate side-to-side strokes with three direction reversals, enough total lateral travel, a recognisable human pace, and reasonably consistent stroke extent and rhythm. Compact chest-level motion is valid. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation or a standing posture.
 _Avoid_: wave, bye-bye, gesture trigger
 
 **Activation Zone**:
@@ -37,15 +37,15 @@ A SteamVR controller setup that provides stable poses for both hands and an Oppo
 _Avoid_: hand tracking, single-controller mode, controller brand support
 
 **Exit Control**:
-The compact, low-distraction in-world control that follows the HMD in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. It can be idle, ask the user to confirm or dismiss a Game Exit, or offer cancellation while a Game Exit is counting down.
+The compact, low-distraction in-world control that appears in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. Its position and eye-facing angle are captured in world space when it first appears, so head movement does not make the click target move. The same single control can be idle, ask the user to confirm or dismiss a Game Exit, or display and cancel a Game Exit countdown.
 _Avoid_: exit button, quit button, wrist button
 
 **Opposite-side View Zone**:
-The HMD-relative side of the view corresponding to the Opposite Hand Pointer: right side after a left-hand Farewell Gesture and left side after a right-hand Farewell Gesture. It keeps the Exit Control visible and reachable without attaching it to either moving controller.
+The side of the user's view at the moment the control appears corresponding to the Opposite Hand Pointer: right side after a left-hand Farewell Gesture and left side after a right-hand Farewell Gesture. It selects the initial world-space position without attaching the Exit Control to the HMD or either moving controller.
 _Avoid_: real wrist, hand bone, watch position, controller-attached panel
 
 **Exit Countdown**:
-The short, visible delay between confirming a Game Exit and carrying it out. It communicates remaining time without being directly interactive; cancellation remains part of the Exit Control, and new Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.
+The short, visible delay between confirming a Game Exit and carrying it out. Remaining time and progress replace the confirmation content inside the existing Exit Control, with Cancel Exit as its only action. New Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.
 _Avoid_: delay, timer, grace period
 
 **Exit Grace Period**:
@@ -53,7 +53,7 @@ The short wait after the add-on asks the Exit Target to close gracefully and bef
 _Avoid_: countdown, delay, timeout
 
 **HUD Overlay**:
-A non-interactive status display that stays in the user's view rather than in the game world's space. The Exit Countdown uses a HUD Overlay.
+A non-interactive status display reserved for execution and failure messages after cancellation has closed. The Exit Countdown does not create a separate HUD Overlay.
 _Avoid_: world overlay, clickable HUD, floating world panel
 
 **Countdown Sound**:
