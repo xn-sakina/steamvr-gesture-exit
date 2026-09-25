@@ -4,6 +4,7 @@
 #include "core/wrist_pose_smoother.hpp"
 #include "core/diagnostics.hpp"
 #include "openvr.h"
+#include <chrono>
 #include <optional>
 #include <string>
 #include <utility>
@@ -12,6 +13,7 @@ namespace bailout::platform::openvr {
 enum class OverlayAction { Primary, Confirm, Dismiss, Cancel };
 struct DashboardEvents {
   std::vector<core::DashboardAction> actions;
+  float max_button_event_age_seconds = 0;
   bool entered_button = false;
   bool hover_changed = false;
   bool tab_changed = false;
@@ -62,6 +64,7 @@ class OverlayManager {
   vr::IVROverlay* overlays_ = nullptr;
   core::DiagnosticLog* log_ = nullptr;
   std::chrono::steady_clock::time_point last_pointer_log_at_{};
+  std::chrono::steady_clock::time_point last_dashboard_submit_log_at_{};
   D3dOverlayRenderer renderer_;
   vr::VROverlayHandle_t dashboard_ = vr::k_ulOverlayHandleInvalid,
                         thumbnail_ = vr::k_ulOverlayHandleInvalid,

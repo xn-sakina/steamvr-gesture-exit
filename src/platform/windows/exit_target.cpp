@@ -104,6 +104,7 @@ TargetResolution ExitTargetResolver::resolve_foreground() const {
   if (!applications_)
     return result;
   const auto scene_state = applications_->GetSceneApplicationState();
+  result.scene_state = static_cast<int>(scene_state);
   if (scene_state != vr::EVRSceneApplicationState_Running &&
       scene_state != vr::EVRSceneApplicationState_Waiting) {
     result.game_status = CurrentVrGameStatus::SceneNotRunning;

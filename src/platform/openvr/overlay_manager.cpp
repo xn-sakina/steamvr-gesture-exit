@@ -19,6 +19,7 @@ constexpr float kLeftButtonLeft = 42.0f;
 constexpr float kLeftButtonRight = 372.0f;
 constexpr float kRightButtonLeft = 396.0f;
 constexpr float kRightButtonRight = 726.0f;
+constexpr size_t kMaxOverlayEventsPerPoll = 256;
 enum class WristHit { None, Left, Right };
 #ifndef NDEBUG
 const char* tab_name(core::DashboardTab tab) {
@@ -350,10 +351,25 @@ bool OverlayManager::hide_hud() {
 bool OverlayManager::submit_dashboard() {
   if (dashboard_ == vr::k_ulOverlayHandleInvalid)
     return fail("dashboard overlay unavailable");
+  const auto render_started = std::chrono::steady_clock::now();
   if (!renderer_.render_dashboard("dashboard", dashboard_model_))
     return fail("render dashboard failed");
+  const auto render_finished = std::chrono::steady_clock::now();
   vr::Texture_t t{renderer_.texture("dashboard"), vr::TextureType_DirectX, vr::ColorSpace_Auto};
   auto result = overlays_->SetOverlayTexture(dashboard_, &t);
+  const auto submit_finished = std::chrono::steady_clock::now();
+  if (log_ && submit_finished - render_started >= std::chrono::milliseconds(16) &&
+      submit_finished - last_dashboard_submit_log_at_ >= std::chrono::seconds(5)) {
+    core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                  "DASHBOARD_TEXTURE_SLOW"};
+    record.details = {
+        {"render_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          render_finished - render_started).count())},
+        {"submit_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          submit_finished - render_finished).count())}};
+    (void)log_->append(record);
+    last_dashboard_submit_log_at_ = submit_finished;
+  }
   if (result != vr::VROverlayError_None)
     return fail("SetOverlayTexture(dashboard)", result);
   dashboard_texture_initialized_ = true;
@@ -414,7 +430,9 @@ std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose
     return out;
   bool left = wrist_model_.left_hover, right = wrist_model_.right_hover;
   vr::VREvent_t event{};
-  while (overlays_->PollNextOverlayEvent(wrist_, &event, sizeof(event))) {
+  for (size_t count = 0;
+       count < kMaxOverlayEventsPerPoll &&
+       overlays_->PollNextOverlayEvent(wrist_, &event, sizeof(event)); ++count) {
     if (event.eventType == vr::VREvent_FocusLeave) {
       left = false;
       right = false;
@@ -485,7 +503,9 @@ DashboardEvents OverlayManager::poll_dashboard_events(const app::TrackingFrame& 
   bool mouse_scale_loaded = false;
   auto mouse_scale_error = vr::VROverlayError_None;
   vr::VREvent_t e{};
-  while (overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e))) {
+  for (size_t count = 0;
+       count < kMaxOverlayEventsPerPoll &&
+       overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e)); ++count) {
     if (e.eventType == vr::VREvent_FocusLeave ||
         e.eventType == vr::VREvent_OverlayShown ||
         e.eventType == vr::VREvent_OverlayHidden) {
@@ -609,6 +629,8 @@ DashboardEvents OverlayManager::poll_dashboard_events(const app::TrackingFrame& 
       hovered = hit;
       hovered_tab = tab_hit;
     } else if (e.data.mouse.button == vr::VRMouseButton_Left) {
+      if (e.eventAgeSeconds > out.max_button_event_age_seconds)
+        out.max_button_event_age_seconds = e.eventAgeSeconds;
       hovered = hit;
       hovered_tab = tab_hit;
       if (tab_hit && *tab_hit != dashboard_tab_) {

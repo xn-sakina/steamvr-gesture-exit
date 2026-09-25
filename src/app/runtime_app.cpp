@@ -177,6 +177,23 @@ class ForegroundResolutionWorker {
                 next_autolaunch_check = started + std::chrono::seconds(1);
               }
               auto resolution = resolver.resolve_foreground();
+              // A scene switch during process inspection invalidates the
+              // result even if the old process is still running.
+              const auto verified_state = applications->GetSceneApplicationState();
+              const bool scene_active = verified_state == vr::EVRSceneApplicationState_Running ||
+                                        verified_state == vr::EVRSceneApplicationState_Waiting;
+              const auto verified_pid =
+                  scene_active ? applications->GetCurrentSceneProcessId() : 0;
+              if (resolution.scene_state != static_cast<int>(verified_state) ||
+                  resolution.scene_pid != verified_pid) {
+                resolution = {};
+                resolution.scene_state = static_cast<int>(verified_state);
+                resolution.scene_pid = verified_pid;
+                resolution.game_status =
+                    verified_pid ? platform::windows::CurrentVrGameStatus::Resolving
+                    : scene_active ? platform::windows::CurrentVrGameStatus::SceneProcessUnavailable
+                                   : platform::windows::CurrentVrGameStatus::SceneNotRunning;
+              }
               const auto finished = std::chrono::steady_clock::now();
               const auto duration =
                   std::chrono::duration_cast<std::chrono::milliseconds>(finished - started);
@@ -538,8 +555,8 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   const auto submit_finished = std::chrono::steady_clock::now();
   const auto submit_duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(submit_finished - submit_started);
-  if (submit_duration >= std::chrono::milliseconds(250) &&
-      submit_finished - last_slow_dashboard_at_ >= std::chrono::seconds(30)) {
+  if (submit_duration >= std::chrono::milliseconds(32) &&
+      submit_finished - last_slow_dashboard_at_ >= std::chrono::seconds(5)) {
     core::DiagnosticRecord record{};
     record.event = core::DiagnosticEventType::Error;
     record.code = "DASHBOARD_SUBMIT_SLOW";
@@ -753,8 +770,26 @@ int RuntimeApp::run() {
     (void)log_.append(record);
     return 1;
   }
-  const auto dashboard_open = [this] {
-    return vr_.overlays()->IsDashboardVisible() || overlays_->dashboard_visible();
+  std::chrono::steady_clock::time_point last_slow_visibility_at{};
+  const auto dashboard_open = [this, &last_slow_visibility_at] {
+    const auto started = std::chrono::steady_clock::now();
+    const bool global_visible = vr_.overlays()->IsDashboardVisible();
+    const auto global_finished = std::chrono::steady_clock::now();
+    const bool visible = global_visible || overlays_->dashboard_visible();
+    const auto finished = std::chrono::steady_clock::now();
+    if (finished - started >= std::chrono::milliseconds(32) &&
+        finished - last_slow_visibility_at >= std::chrono::seconds(5)) {
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                    "DASHBOARD_VISIBILITY_QUERY_SLOW"};
+      record.details = {
+          {"global_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                            global_finished - started).count())},
+          {"overlay_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             finished - global_finished).count())}};
+      (void)log_.append(record);
+      last_slow_visibility_at = finished;
+    }
+    return visible;
   };
   update_dashboard(latest_resolution_, {});
   targets_ = std::make_unique<platform::windows::ExitTargetResolver>(vr_.applications());
@@ -780,9 +815,10 @@ int RuntimeApp::run() {
   // only settings that the writer has confirmed on disk.
   core::Settings requested_settings = settings_;
   size_t outstanding_saves = 0;
-  const auto consume_saved_settings = [&](std::chrono::steady_clock::time_point now) {
-    bool changed = false;
+  const auto consume_saved_settings = [&] {
     auto results = settings_writer.take_results();
+    const bool changed = !results.empty();
+    const auto confirmed_at = std::chrono::steady_clock::now();
     outstanding_saves -= results.size();
     for (auto& result : results) {
       core::DiagnosticRecord record{};
@@ -794,9 +830,19 @@ int RuntimeApp::run() {
         record.setting_name = std::move(result.change.name);
         record.setting_value = std::move(result.change.value);
         apply_saved_settings(result.change.settings);
-        changed = true;
       } else {
-        save_failure_notice_until_ = now + std::chrono::seconds(8);
+        save_failure_notice_until_ = confirmed_at + std::chrono::seconds(8);
+      }
+      if (result.change.requested_at != std::chrono::steady_clock::time_point{}) {
+        record.details["queue_wait_ms"] = std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                result.started_at - result.change.requested_at).count());
+        record.details["write_ms"] = std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                result.completed_at - result.started_at).count());
+        record.details["confirmation_ms"] = std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                confirmed_at - result.change.requested_at).count());
       }
       (void)log_.append(record);
     }
@@ -806,6 +852,7 @@ int RuntimeApp::run() {
   };
   const auto started_at = std::chrono::steady_clock::now();
   auto next_server_check = started_at;
+  auto last_dashboard_refresh_at = started_at;
   std::optional<std::chrono::steady_clock::time_point> no_devices_since;
   TrackingFrame last_frame{};
   bool dashboard_was_open = dashboard_open();
@@ -813,9 +860,14 @@ int RuntimeApp::run() {
   std::chrono::steady_clock::time_point latest_resolution_at{};
   std::optional<RuntimeTarget> pending_confirmation;
   std::chrono::steady_clock::time_point confirmation_requested_at{};
-  auto observed_scene_state = vr::EVRSceneApplicationState_None;
+  int observed_scene_state = static_cast<int>(vr::EVRSceneApplicationState_None);
+  std::chrono::steady_clock::time_point scene_event_at{};
   auto last_ui_hover_sound_at = std::chrono::steady_clock::time_point{};
   auto last_slow_loop_at = std::chrono::steady_clock::time_point{};
+  auto last_slow_system_events_at = std::chrono::steady_clock::time_point{};
+  auto last_slow_input_at = std::chrono::steady_clock::time_point{};
+  auto last_input_backlog_at = std::chrono::steady_clock::time_point{};
+  auto last_slow_tracking_at = std::chrono::steady_clock::time_point{};
   auto last_target_log_at = std::chrono::steady_clock::time_point{};
   std::string last_target_signature;
   TimerResolution timer_resolution;
@@ -843,6 +895,7 @@ int RuntimeApp::run() {
       (void)log_.append(record);
       target_worker.request_refresh();
       update_dashboard(latest_resolution_, last_frame);
+      last_dashboard_refresh_at = std::chrono::steady_clock::now();
     }
     if (loop_start >= next_server_check) {
       if (!server.alive()) {
@@ -861,7 +914,11 @@ int RuntimeApp::run() {
     vr::VREvent_t system_event{};
     bool vr_quit = false;
     bool scene_event = false;
-    while (vr_.system()->PollNextEvent(&system_event, sizeof(system_event))) {
+    bool scene_may_have_changed = false;
+    const auto system_events_started = std::chrono::steady_clock::now();
+    for (size_t count = 0;
+         count < 256 && vr_.system()->PollNextEvent(&system_event, sizeof(system_event));
+         ++count) {
       if (system_event.eventType == vr::VREvent_Quit) {
         vr_.system()->AcknowledgeQuit_Exiting();
         vr_quit = true;
@@ -872,6 +929,9 @@ int RuntimeApp::run() {
         case vr::VREvent_SceneApplicationStateChanged:
         case vr::VREvent_ProcessConnected:
         case vr::VREvent_ProcessQuit:
+          scene_may_have_changed = true;
+          scene_event = true;
+          break;
         case vr::VREvent_ApplicationListUpdated:
           scene_event = true;
           break;
@@ -879,45 +939,58 @@ int RuntimeApp::run() {
           break;
       }
     }
+    const auto system_events_finished = std::chrono::steady_clock::now();
+    if (system_events_finished - system_events_started >= std::chrono::milliseconds(32) &&
+        system_events_finished - last_slow_system_events_at >= std::chrono::seconds(5)) {
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                    "SYSTEM_EVENT_POLL_SLOW"};
+      record.status = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         system_events_finished - system_events_started).count()) +
+                      "ms";
+      (void)log_.append(record);
+      last_slow_system_events_at = system_events_finished;
+    }
     if (vr_quit)
       break;
     const auto now = std::chrono::steady_clock::now();
-    const auto scene_state = vr_.applications()->GetSceneApplicationState();
-    const bool scene_active = scene_state == vr::EVRSceneApplicationState_Running ||
-                              scene_state == vr::EVRSceneApplicationState_Waiting;
-    const auto scene_pid =
-        scene_active ? vr_.applications()->GetCurrentSceneProcessId() : 0;
-    if (scene_state != observed_scene_state || scene_pid != observed_scene_pid) {
-      core::DiagnosticRecord scene_record{};
-      scene_record.event = core::DiagnosticEventType::AvailabilityChanged;
-      scene_record.code = "SCENE_CHANGED";
-      scene_record.debug_only = true;
-      scene_record.details = {{"previous_scene_pid", std::to_string(observed_scene_pid)},
-                              {"scene_pid", std::to_string(scene_pid)},
-                              {"scene_state", std::to_string(static_cast<int>(scene_state))}};
-      (void)log_.append(scene_record);
-      observed_scene_state = scene_state;
-      observed_scene_pid = scene_pid;
-      if (latest_resolution_.scene_pid != scene_pid) {
-        latest_resolution_ = {};
-        latest_resolution_at = {};
-        latest_resolution_.game_status = scene_pid
-                                             ? platform::windows::CurrentVrGameStatus::Resolving
-                                             : platform::windows::CurrentVrGameStatus::SceneNotRunning;
-      }
-      target_worker.request_refresh();
-    } else if (scene_event) {
-      target_worker.request_refresh();
+    if (scene_may_have_changed) {
+      // An in-flight resolver result predating this event must not reinstate
+      // a target from the previous scene.
+      scene_event_at = now;
+      latest_resolution_ = {};
+      latest_resolution_at = {};
+      latest_resolution_.game_status = platform::windows::CurrentVrGameStatus::Resolving;
     }
+    if (scene_event)
+      target_worker.request_refresh();
     platform::windows::TargetResolution resolved{};
     std::optional<platform::windows::TargetResolution> confirmation_resolution;
     std::chrono::steady_clock::time_point resolved_started_at{};
     std::chrono::steady_clock::time_point resolved_at{};
     if (target_worker.take(resolved, resolved_started_at, resolved_at)) {
+      const bool current_scene = resolved_started_at >= scene_event_at;
+      if (current_scene && (resolved.scene_state != observed_scene_state ||
+                            resolved.scene_pid != observed_scene_pid)) {
+        core::DiagnosticRecord scene_record{};
+        scene_record.event = core::DiagnosticEventType::AvailabilityChanged;
+        scene_record.code = "SCENE_CHANGED";
+        scene_record.debug_only = true;
+        scene_record.details = {{"previous_scene_pid", std::to_string(observed_scene_pid)},
+                                {"scene_pid", std::to_string(resolved.scene_pid)},
+                                {"scene_state", std::to_string(resolved.scene_state)}};
+        (void)log_.append(scene_record);
+        observed_scene_state = resolved.scene_state;
+        observed_scene_pid = resolved.scene_pid;
+        latest_resolution_ = {};
+        latest_resolution_at = {};
+        latest_resolution_.game_status =
+            observed_scene_pid ? platform::windows::CurrentVrGameStatus::Resolving
+                               : platform::windows::CurrentVrGameStatus::SceneNotRunning;
+      }
       // A result from a query begun before the click is not confirmation evidence.
-      if (pending_confirmation && resolved_started_at >= confirmation_requested_at)
+      if (current_scene && pending_confirmation &&
+          resolved_started_at >= confirmation_requested_at)
         confirmation_resolution = resolved;
-      const bool current_scene = resolved.scene_pid == observed_scene_pid;
       const std::string signature = std::to_string(resolved.scene_pid) + ":" +
           platform::windows::diagnostic_code(resolved.game_status) + ":" +
           platform::windows::diagnostic_code(resolved.target_status) + ":" +
@@ -957,8 +1030,29 @@ int RuntimeApp::run() {
       (void)log_.append({core::DiagnosticEventType::Error, "TARGET_RESOLUTION_STALE"});
       target_worker.request_refresh();
     }
-    bool saved_settings_changed = consume_saved_settings(now);
+    bool save_result_ready = consume_saved_settings();
+    const auto input_started = std::chrono::steady_clock::now();
     const auto dashboard_events = overlays_->poll_dashboard_events(last_frame);
+    const auto input_finished = std::chrono::steady_clock::now();
+    if (input_finished - input_started >= std::chrono::milliseconds(32) &&
+        input_finished - last_slow_input_at >= std::chrono::seconds(5)) {
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                    "DASHBOARD_INPUT_POLL_SLOW"};
+      record.status = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         input_finished - input_started).count()) + "ms";
+      (void)log_.append(record);
+      last_slow_input_at = input_finished;
+    }
+    if (dashboard_events.max_button_event_age_seconds >= 0.05F &&
+        input_finished - last_input_backlog_at >= std::chrono::seconds(5)) {
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                    "DASHBOARD_EVENT_BACKLOG"};
+      record.status = std::to_string(static_cast<int>(
+                          dashboard_events.max_button_event_age_seconds * 1000.0F)) + "ms";
+      (void)log_.append(record);
+      last_input_backlog_at = input_finished;
+    }
+    bool save_notice_changed = false;
     if (!overlays_->error().empty())
       log_overlay_error(now);
     else {
@@ -971,6 +1065,7 @@ int RuntimeApp::run() {
         auto change = dashboard_input(action, requested_settings);
         if (!change)
           continue;
+        change->requested_at = std::chrono::steady_clock::now();
         const auto requested = change->settings;
         if (settings_writer.enqueue(std::move(*change))) {
           requested_settings = requested;
@@ -978,13 +1073,16 @@ int RuntimeApp::run() {
           sound_.ui_select();
         } else {
           save_failure_notice_until_ = now + std::chrono::seconds(8);
+          save_notice_changed = true;
         }
       }
     }
-    saved_settings_changed |= consume_saved_settings(now);
+    save_result_ready |= consume_saved_settings();
     if (dashboard_events.hover_changed || dashboard_events.tab_changed ||
-        saved_settings_changed || !dashboard_events.actions.empty())
+        save_result_ready || save_notice_changed) {
       update_dashboard(latest_resolution_, last_frame);
+      last_dashboard_refresh_at = std::chrono::steady_clock::now();
+    }
     if (thumbnail_dirty_) {
       thumbnail_dirty_ = false;
       if (!overlays_->update_thumbnail(
@@ -992,7 +1090,18 @@ int RuntimeApp::run() {
               std::string(core::localize(core::StringId::AppName, language_))))
         log_overlay_error(std::chrono::steady_clock::now());
     }
+    const auto tracking_started = std::chrono::steady_clock::now();
     const auto frame = vr_.sample_tracking();
+    const auto tracking_finished = std::chrono::steady_clock::now();
+    if (tracking_finished - tracking_started >= std::chrono::milliseconds(32) &&
+        tracking_finished - last_slow_tracking_at >= std::chrono::seconds(5)) {
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                    "TRACKING_SAMPLE_SLOW"};
+      record.status = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         tracking_finished - tracking_started).count()) + "ms";
+      (void)log_.append(record);
+      last_slow_tracking_at = tracking_finished;
+    }
     if (now - last_tracking_log_at_ >= std::chrono::seconds(1)) {
       core::DiagnosticRecord record{};
       record.event = core::DiagnosticEventType::AvailabilityChanged;
@@ -1259,8 +1368,16 @@ int RuntimeApp::run() {
       } else if (!overlays_->update_wrist_pose(configured, frame.sampled_at))
         abort_overlay_flow(now, frame);
     }
-    dashboard_was_open = dashboard_open();
-    update_dashboard(latest_resolution_, frame);
+    // Preserve the start-of-iteration sample so a visibility change that
+    // arrives later in this iteration is handled immediately next time.
+    dashboard_was_open = dashboard_at_start;
+    const auto dashboard_refresh_interval =
+        dashboard_visible ? std::chrono::milliseconds(50) : std::chrono::milliseconds(250);
+    if (std::chrono::steady_clock::now() - last_dashboard_refresh_at >=
+        dashboard_refresh_interval) {
+      update_dashboard(latest_resolution_, frame);
+      last_dashboard_refresh_at = std::chrono::steady_clock::now();
+    }
     const auto loop_finished = std::chrono::steady_clock::now();
     const auto loop_duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(loop_finished - loop_start);
@@ -1278,7 +1395,7 @@ int RuntimeApp::run() {
   }
   target_worker.request_stop();
   settings_writer.stop();
-  (void)consume_saved_settings(std::chrono::steady_clock::now());
+  (void)consume_saved_settings();
   target_worker.stop();
   log_.stop_async();
   process_.clear();

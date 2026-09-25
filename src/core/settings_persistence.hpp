@@ -3,6 +3,7 @@
 #include "core/settings.hpp"
 
 #include <cstddef>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
@@ -17,12 +18,15 @@ struct SettingsChange {
   Settings settings;
   std::string name;
   std::string value;
+  std::chrono::steady_clock::time_point requested_at{};
 };
 
 struct SettingsSaveResult {
   SettingsChange change;
   bool saved = false;
   std::string error;
+  std::chrono::steady_clock::time_point started_at{};
+  std::chrono::steady_clock::time_point completed_at{};
 };
 
 // Writes snapshots in click order. The caller applies only successful results.

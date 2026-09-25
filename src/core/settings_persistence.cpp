@@ -53,6 +53,7 @@ void SettingsPersistenceWorker::run() {
     pending_.pop_front();
     lock.unlock();
 
+    const auto started_at = std::chrono::steady_clock::now();
     std::string error;
     bool saved = false;
     try {
@@ -60,8 +61,9 @@ void SettingsPersistenceWorker::run() {
     } catch (...) {
       error = "SETTINGS_WRITE_FAILED";
     }
+    const auto completed_at = std::chrono::steady_clock::now();
     lock.lock();
-    completed_.push_back({std::move(change), saved, std::move(error)});
+    completed_.push_back({std::move(change), saved, std::move(error), started_at, completed_at});
   }
 }
 

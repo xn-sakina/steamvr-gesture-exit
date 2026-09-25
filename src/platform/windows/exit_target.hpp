@@ -36,6 +36,7 @@ struct CurrentVrGame {
 
 struct TargetResolution {
   std::uint32_t scene_pid = 0;
+  int scene_state = 0;
   CurrentVrGameStatus game_status = CurrentVrGameStatus::ApplicationsUnavailable;
   ExitTargetStatus target_status = ExitTargetStatus::CurrentGameUnavailable;
   std::optional<CurrentVrGame> game;
