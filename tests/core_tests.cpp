@@ -728,11 +728,11 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
     for (const auto [mouse_width, mouse_height] :
-         {std::pair{1024.0F, 448.0F}, std::pair{1920.0F, 840.0F},
-          std::pair{512.0F, 224.0F}, std::pair{1024.0F, 1024.0F}}) {
+         {std::pair{1024.0F, 456.0F}, std::pair{1920.0F, 855.0F},
+          std::pair{512.0F, 228.0F}, std::pair{1024.0F, 1024.0F}}) {
       const auto point = dashboard_mouse_to_pixels(
-          x * mouse_width / 1024.0F, (448.0F - y) * mouse_height / 448.0F,
-          mouse_width, mouse_height, 1024.0F, 448.0F);
+          x * mouse_width / 1024.0F, (456.0F - y) * mouse_height / 456.0F,
+          mouse_width, mouse_height, 1024.0F, 456.0F);
       CHECK(point);
       CHECK(dashboard_hit_test(buttons, point->x, point->y) == button.action);
     }
@@ -740,15 +740,15 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
   // A pointer below the first row must not hit it at either mouse scale. This
   // catches the previous top-left/bottom-left regression.
   for (const auto [mouse_width, mouse_height] :
-       {std::pair{1024.0F, 448.0F}, std::pair{1920.0F, 840.0F}}) {
+       {std::pair{1024.0F, 456.0F}, std::pair{1920.0F, 855.0F}}) {
     const auto point = dashboard_mouse_to_pixels(
-        300.0F * mouse_width / 1024.0F, (448.0F - 440.0F) * mouse_height / 448.0F,
-        mouse_width, mouse_height, 1024.0F, 448.0F);
+        300.0F * mouse_width / 1024.0F, (456.0F - 448.0F) * mouse_height / 456.0F,
+        mouse_width, mouse_height, 1024.0F, 456.0F);
     CHECK(point);
     CHECK(!dashboard_hit_test(buttons, point->x, point->y));
   }
-  CHECK(!dashboard_mouse_to_pixels(1, 1, 0, 448, 1024, 448));
-  CHECK(!dashboard_mouse_to_pixels(-1, 1, 1024, 448, 1024, 448));
+  CHECK(!dashboard_mouse_to_pixels(1, 1, 0, 456, 1024, 456));
+  CHECK(!dashboard_mouse_to_pixels(-1, 1, 1024, 456, 1024, 456));
 }
 
 void dashboard_actions_change_only_the_intended_setting() {

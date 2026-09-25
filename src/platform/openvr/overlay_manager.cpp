@@ -10,7 +10,9 @@ constexpr char kDashboardKey[] = "dev.kanamio.steamvrbailout.dashboard";
 constexpr char kWristKey[] = "dev.kanamio.steamvrbailout.wrist";
 constexpr char kHudKey[] = "dev.kanamio.steamvrbailout.hud";
 constexpr float kDashboardWidth = 1024.0f;
-constexpr float kDashboardHeight = 448.0f;
+// The visible dashboard content starts 24 px from the top and ends at y=432.
+// Keep the same 24 px of canvas space below the final settings row.
+constexpr float kDashboardHeight = 456.0f;
 constexpr float kDashboardWidthMeters = 2.52f;  // 90% of the previous 2.8-metre panel.
 constexpr float kWristWidth = 768.0f;
 constexpr float kWristHeight = 384.0f;
