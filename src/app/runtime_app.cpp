@@ -8,6 +8,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <ctime>
 #include <filesystem>
 #include <mutex>
 #include <sstream>
@@ -94,6 +95,17 @@ std::wstring widen(std::string_view s) {
   std::wstring w(static_cast<size_t>(n), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
   return w;
+}
+
+std::wstring local_timestamp(const std::chrono::system_clock::time_point time) {
+  const std::time_t raw = std::chrono::system_clock::to_time_t(time);
+  std::tm local{};
+  if (localtime_s(&local, &raw) != 0)
+    return {};
+  std::array<wchar_t, 20> value{};
+  if (std::wcsftime(value.data(), value.size(), L"%Y-%m-%d %H:%M:%S", &local) == 0)
+    return {};
+  return value.data();
 }
 
 class SteamVrServerMonitor {
@@ -522,6 +534,10 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   const std::wstring target_detail =
       target_available ? text(core::StringId::Ready) : text(target_reason(resolution.target_status));
   const std::wstring last = widen(core::localize_last_exit(snapshot.last_exit, language_));
+  const std::wstring last_detail =
+      snapshot.last_exit == core::LastExitStatus::Succeeded && last_successful_exit_at_
+          ? local_timestamp(*last_successful_exit_at_)
+          : L"";
   model.statuses = {
       {text(core::StringId::CurrentVrGame), game_value, game_detail,
        game_available ? platform::openvr::DashboardStatusTone::Available
@@ -545,7 +561,10 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
                                  : core::StringId::ClickHandDisconnected),
        opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
                                     : platform::openvr::DashboardStatusTone::Unavailable},
-      {text(core::StringId::LastExit), last, L"", platform::openvr::DashboardStatusTone::Neutral}};
+      {text(core::StringId::LastExit), last, last_detail,
+       snapshot.last_exit == core::LastExitStatus::Succeeded
+           ? platform::openvr::DashboardStatusTone::Available
+           : platform::openvr::DashboardStatusTone::Neutral}};
   model.help_lines = {text(core::StringId::HelpGesture), text(core::StringId::HelpOppositeHand),
                       text(core::StringId::HelpForceClose)};
   const auto submit_started = std::chrono::steady_clock::now();
@@ -708,6 +727,8 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           record.target_name = e.target->display_name;
         (void)log_.append(record);
         if (core::completes_exit_flow(e)) {
+          if (flow_->snapshot(now).last_exit == core::LastExitStatus::Succeeded)
+            last_successful_exit_at_ = std::chrono::system_clock::now();
           process_.clear();
           locked_native_.reset();
         }

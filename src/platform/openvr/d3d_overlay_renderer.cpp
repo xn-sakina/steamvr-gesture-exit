@@ -10,6 +10,7 @@
 #include <wrl/client.h>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <map>
 namespace bailout::platform::openvr {
 using Microsoft::WRL::ComPtr;
@@ -20,7 +21,7 @@ struct D3dOverlayRenderer::Impl {
     ComPtr<ID2D1RenderTarget> target;
     ComPtr<ID2D1Bitmap> dashboard_logo;
     bool dashboard_logo_attempted = false;
-    std::array<ComPtr<ID2D1SolidColorBrush>, 11> dashboard_brushes;
+    std::array<ComPtr<ID2D1SolidColorBrush>, 14> dashboard_brushes;
     std::unique_ptr<Surface> dashboard_background;
     core::DashboardTab dashboard_background_tab = core::DashboardTab::Settings;
     bool dashboard_background_ready = false;
@@ -29,7 +30,8 @@ struct D3dOverlayRenderer::Impl {
   ComPtr<ID3D11DeviceContext> context;
   ComPtr<ID2D1Factory> d2d;
   ComPtr<IDWriteFactory> write;
-  ComPtr<IDWriteTextFormat> title, body, button, label, help_text, step_number, small_text_format;
+  ComPtr<IDWriteTextFormat> title, body, button, dashboard_title, dashboard_tab,
+      dashboard_button, label, help_text, step_number, small_text_format;
   std::map<std::string, Surface> surfaces;
   std::string error;
   HRESULT resource_status = S_OK;
@@ -123,14 +125,16 @@ struct D3dOverlayRenderer::Impl {
     return b;
   }
   bool ensure_dashboard_brushes(Surface& s) {
-    const std::array<D2D1_COLOR_F, 11> colors = {
+    const std::array<D2D1_COLOR_F, 14> colors = {
         D2D1::ColorF(0.96f, 0.98f, 1, 1), D2D1::ColorF(0.66f, 0.72f, 0.81f, 1),
         D2D1::ColorF(0.38f, 0.44f, 0.52f, 1), D2D1::ColorF(0.10f, 0.58f, 0.82f, 1),
         D2D1::ColorF(0.20f, 0.74f, 0.94f, 1), D2D1::ColorF(0.075f, 0.12f, 0.18f, 1),
-        D2D1::ColorF(0.055f, 0.085f, 0.13f, 0.92f),
+        D2D1::ColorF(0.055f, 0.085f, 0.13f, 0.80f),
         D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.97f),
         D2D1::ColorF(0.10f, 0.24f, 0.34f, 1), D2D1::ColorF(0.35f, 0.86f, 0.62f, 1),
-        D2D1::ColorF(0.98f, 0.55f, 0.38f, 1)};
+        D2D1::ColorF(0.98f, 0.55f, 0.38f, 1), D2D1::ColorF(0.10f, 0.58f, 0.82f, 0.10f),
+        D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.42f),
+        D2D1::ColorF(0.10f, 0.58f, 0.82f, 0.18f)};
     for (size_t i = 0; i < colors.size(); ++i) {
       if (!s.dashboard_brushes[i])
         s.dashboard_brushes[i] = brush(s.target.Get(), colors[i]);
@@ -205,25 +209,39 @@ bool D3dOverlayRenderer::initialize() {
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30, L"",
                                  &impl_->button);
-  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30, L"",
+                                 &impl_->dashboard_title);
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 19, L"",
+                                 &impl_->dashboard_tab);
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 20, L"",
+                                 &impl_->dashboard_button);
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18, L"",
                                  &impl_->label);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 22, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18, L"",
                                  &impl_->help_text);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 22, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18, L"",
                                  &impl_->step_number);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14, L"",
                                  &impl_->small_text_format);
-  if (!impl_->title || !impl_->body || !impl_->button || !impl_->label || !impl_->help_text ||
-      !impl_->step_number || !impl_->small_text_format) {
+  if (!impl_->title || !impl_->body || !impl_->button || !impl_->dashboard_title ||
+      !impl_->dashboard_tab || !impl_->dashboard_button || !impl_->label ||
+      !impl_->help_text || !impl_->step_number || !impl_->small_text_format) {
     impl_->error = "CreateTextFormat failed";
     return false;
   }
   impl_->button->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   impl_->button->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+  impl_->dashboard_tab->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  impl_->dashboard_tab->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+  impl_->dashboard_button->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  impl_->dashboard_button->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->help_text->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->step_number->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   impl_->step_number->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -512,52 +530,70 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     base->FillRoundedRectangle(
         D2D1::RoundedRect(D2D1::RectF(8, 8, float(s.w - 8), float(s.h - 8)), 24, 24),
         base_panel.Get());
+    auto* tech_line = background.dashboard_brushes[11].Get();
+    auto* tab_border = background.dashboard_brushes[12].Get();
+    auto* tech_glow = background.dashboard_brushes[13].Get();
+    const auto tech_center = D2D1::Point2F(744.0f, 390.0f);
+    for (const float radius : {190.0f, 228.0f, 270.0f})
+      base->DrawEllipse(D2D1::Ellipse(tech_center, radius, radius), tech_line, 1.5f);
+    base->DrawLine(D2D1::Point2F(474, tech_center.y), D2D1::Point2F(1000, tech_center.y),
+                   tech_line, 1.0f);
+    base->DrawLine(D2D1::Point2F(tech_center.x, 120), D2D1::Point2F(tech_center.x, 624),
+                   tech_line, 1.0f);
+    for (int i = 0; i < 7; ++i) {
+      const float x = 514.0f + 72.0f * static_cast<float>(i);
+      base->DrawLine(D2D1::Point2F(x, 150), D2D1::Point2F(x + 180, 610), tech_line, 1.0f);
+    }
+    for (const auto point : {D2D1::Point2F(553, 284), D2D1::Point2F(914, 306),
+                             D2D1::Point2F(614, 548), D2D1::Point2F(894, 522)})
+      base->FillEllipse(D2D1::Ellipse(point, 3.5f, 3.5f), tech_glow);
     if (background.dashboard_logo) {
-      // Scale the square artwork to the panel width without stretching it, align
-      // its bottom edge, and fade it upward underneath the opaque content cards.
+      // Keep the complete square mark visible. A gentle edge fade integrates it
+      // with the surrounding radar/circuit lines without making it disappear.
       const auto logo_size = background.dashboard_logo->GetSize();
-      const float panel_left = 8.0f;
-      const float panel_top = 8.0f;
-      const float panel_right = static_cast<float>(s.w) - 8.0f;
-      const float panel_bottom = static_cast<float>(s.h) - 8.0f;
-      const float logo_width = panel_right - panel_left;
-      const float logo_top = panel_bottom - logo_width;
-      constexpr int kFadeSlices = 40;
+      constexpr float logo_left = 520.0f;
+      constexpr float logo_top = 166.0f;
+      constexpr float logo_size_pixels = 448.0f;
+      constexpr int kFadeSlices = 48;
       for (int slice = 0; slice < kFadeSlices; ++slice) {
         const float start = static_cast<float>(slice) / kFadeSlices;
         const float end = static_cast<float>(slice + 1) / kFadeSlices;
-        const float top = panel_top + (panel_bottom - panel_top) * start;
-        const float bottom = panel_top + (panel_bottom - panel_top) * end;
-        const float source_top = (top - logo_top) / logo_width * logo_size.height;
-        const float source_bottom = (bottom - logo_top) / logo_width * logo_size.height;
-        const float fade = (start + end) * 0.5f;
+        const float left = logo_left + logo_size_pixels * start;
+        const float right = logo_left + logo_size_pixels * end;
+        const float source_left = logo_size.width * start;
+        const float source_right = logo_size.width * end;
+        const float position = (start + end) * 0.5f;
+        const float edge_fade = 0.52f + 0.48f * std::sin(position * 3.14159265f);
         base->DrawBitmap(
-            background.dashboard_logo.Get(), D2D1::RectF(panel_left, top, panel_right, bottom),
-            0.14f * fade * fade, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-            D2D1::RectF(0, source_top, logo_size.width, source_bottom));
+            background.dashboard_logo.Get(),
+            D2D1::RectF(left, logo_top, right, logo_top + logo_size_pixels),
+            0.26f * edge_fade, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+            D2D1::RectF(source_left, 0, source_right, logo_size.height));
       }
     }
+    const auto tab_shell = D2D1::RoundedRect(D2D1::RectF(44, 88, 980, 148), 16, 16);
+    base->FillRoundedRectangle(tab_shell, background.dashboard_brushes[5].Get());
+    base->DrawRoundedRectangle(tab_shell, tab_border, 1.0f);
     const size_t row_count = m.active_tab == core::DashboardTab::Settings ? m.settings.size()
                              : m.active_tab == core::DashboardTab::Status ? m.statuses.size()
                                                                            : m.help_lines.size();
     if (m.active_tab == core::DashboardTab::Help && row_count > 1) {
-      const float first_center = 192.0f + 50.0f;
-      const float last_center = first_center + 116.0f * static_cast<float>(row_count - 1);
-      base->DrawLine(D2D1::Point2F(92, first_center + 25),
-                     D2D1::Point2F(92, last_center - 25),
+      const float first_center = 182.0f + 48.0f;
+      const float last_center = first_center + 120.0f * static_cast<float>(row_count - 1);
+      base->DrawLine(D2D1::Point2F(88, first_center + 22),
+                     D2D1::Point2F(88, last_center - 22),
                      background.dashboard_brushes[8].Get(), 3.0f);
     }
     for (size_t i = 0; i < row_count; ++i) {
       const bool help = m.active_tab == core::DashboardTab::Help;
-      const float top = (help ? 192.0f : 190.0f) + (help ? 116.0f : 78.0f) * i;
+      const float top = (help ? 182.0f : 174.0f) + (help ? 120.0f : 72.0f) * i;
       base->FillRoundedRectangle(
-          D2D1::RoundedRect(D2D1::RectF(44, top, 980, top + (help ? 100.0f : 74.0f)),
-                            help ? 16.0f : 10.0f, help ? 16.0f : 10.0f),
+          D2D1::RoundedRect(D2D1::RectF(44, top, 980, top + (help ? 96.0f : 64.0f)), 14.0f,
+                            14.0f),
           base_card.Get());
-      if (help)
-        base->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(44, top + 16, 50, top + 84), 3, 3),
-            background.dashboard_brushes[3].Get());
+      base->FillRoundedRectangle(
+          D2D1::RoundedRect(D2D1::RectF(44, top + 13, 48, top + (help ? 83.0f : 51.0f)), 2, 2),
+          background.dashboard_brushes[3].Get());
     }
     const auto background_result = base->EndDraw();
     if (FAILED(background_result)) {
@@ -570,51 +606,54 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   }
   impl_->context->CopyResource(s.texture.Get(), background.texture.Get());
   t->BeginDraw();
-  t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
-               D2D1::RectF(44, 18, 620, 76), white.Get());
+  t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()),
+               impl_->dashboard_title.Get(), D2D1::RectF(44, 26, 620, 66), white.Get());
   if (!m.notice.empty())
     t->DrawTextW(m.notice.c_str(), static_cast<UINT32>(m.notice.size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(630, 26, 980, 76), bad.Get());
+                 impl_->small_text_format.Get(), D2D1::RectF(630, 34, 980, 64), bad.Get());
   for (const auto& tab : core::dashboard_tabs()) {
     const std::wstring* label = &m.settings_title;
     if (tab.tab == core::DashboardTab::Status)
       label = &m.diagnostics_title;
     else if (tab.tab == core::DashboardTab::Help)
       label = &m.help_title;
-    const auto rect = D2D1::RectF(tab.bounds.left, tab.bounds.top, tab.bounds.right,
-                                 tab.bounds.bottom);
-    const auto rounded = D2D1::RoundedRect(rect, 10, 10);
+    const auto rect = D2D1::RectF(tab.bounds.left, tab.bounds.top + 4, tab.bounds.right,
+                                 tab.bounds.bottom - 4);
+    const auto rounded = D2D1::RoundedRect(rect, 12, 12);
     const bool selected = m.active_tab == tab.tab;
     const bool hovered = m.hovered_tab && *m.hovered_tab == tab.tab;
     t->FillRoundedRectangle(rounded, selected ? active_tab.Get() : normal.Get());
     if (selected)
-      t->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(rect.left + 16, rect.bottom - 6,
-                                                               rect.right - 16, rect.bottom - 2),
-                                               2, 2),
+      t->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(rect.left + 24, rect.bottom - 4,
+                                                               rect.right - 24, rect.bottom - 1),
+                                               1.5f, 1.5f),
                               hover.Get());
     if (hovered)
-      t->DrawRoundedRectangle(rounded, hover.Get(), 2.5f);
-    t->DrawTextW(label->c_str(), static_cast<UINT32>(label->size()), impl_->button.Get(), rect,
-                 white.Get());
+      t->DrawRoundedRectangle(rounded, hover.Get(), 1.5f);
+    else if (selected)
+      t->DrawRoundedRectangle(rounded, accent.Get(), 1.0f);
+    t->DrawTextW(label->c_str(), static_cast<UINT32>(label->size()),
+                 impl_->dashboard_tab.Get(), rect, selected ? white.Get() : muted.Get());
   }
   if (m.active_tab == core::DashboardTab::Settings) {
     for (size_t i = 0; i < m.settings.size(); ++i) {
-      const float top = 190.0f + 78.0f * static_cast<float>(i);
+      const float top = 174.0f + 72.0f * static_cast<float>(i);
       const auto& row = m.settings[i];
       t->DrawTextW(row.label.c_str(), static_cast<UINT32>(row.label.size()), impl_->label.Get(),
-                   D2D1::RectF(64, top + 19, 344, top + 58), white.Get());
+                   D2D1::RectF(64, top + 17, 372, top + 49), white.Get());
       if (!row.value.empty()) {
         const auto value = core::dashboard_timeout_value_rect();
-        const auto rect = D2D1::RectF(value.left, value.top, value.right, value.bottom);
+        const auto rect =
+            D2D1::RectF(value.left, value.top + 6, value.right, value.bottom - 6);
         t->FillRoundedRectangle(D2D1::RoundedRect(rect, 9, 9), normal.Get());
         t->DrawTextW(row.value.c_str(), static_cast<UINT32>(row.value.size()),
-                     impl_->button.Get(), rect, white.Get());
+                     impl_->dashboard_button.Get(), rect, white.Get());
       }
     }
     for (const auto& button : m.buttons) {
-      const auto rect = D2D1::RectF(button.bounds.left, button.bounds.top,
-                                    button.bounds.right, button.bounds.bottom);
-      const auto rounded = D2D1::RoundedRect(rect, 9, 9);
+      const auto rect = D2D1::RectF(button.bounds.left, button.bounds.top + 6,
+                                    button.bounds.right, button.bounds.bottom - 6);
+      const auto rounded = D2D1::RoundedRect(rect, 11, 11);
       const bool hovered = m.hovered_action && *m.hovered_action == button.action;
       t->FillRoundedRectangle(rounded, button.selected ? accent.Get() : normal.Get());
       if (hovered)
@@ -622,34 +661,36 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
       else if (button.selected)
         t->DrawRoundedRectangle(rounded, white.Get(), 1.5f);
       t->DrawTextW(button.label.c_str(), static_cast<UINT32>(button.label.size()),
-                   impl_->button.Get(), rect, button.enabled ? white.Get() : faint.Get());
+                   impl_->dashboard_button.Get(), rect,
+                   button.enabled ? white.Get() : faint.Get());
     }
   } else if (m.active_tab == core::DashboardTab::Status) {
     for (size_t i = 0; i < m.statuses.size(); ++i) {
-      const float top = 190.0f + 78.0f * static_cast<float>(i);
+      const float top = 174.0f + 72.0f * static_cast<float>(i);
       const auto& status = m.statuses[i];
       t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()),
-                   impl_->label.Get(), D2D1::RectF(64, top + 15, 340, top + 58), white.Get());
+                   impl_->label.Get(), D2D1::RectF(64, top + 16, 332, top + 49), white.Get());
       auto* tone = status.tone == DashboardStatusTone::Available     ? good.Get()
                    : status.tone == DashboardStatusTone::Unavailable ? bad.Get()
                                                                      : white.Get();
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(356, top + 25), 4.5f, 4.5f), tone);
       t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()),
-                   impl_->label.Get(), D2D1::RectF(365, top + 9, 960, top + 40), tone);
+                   impl_->label.Get(), D2D1::RectF(374, top + 8, 956, top + 36), tone);
       t->DrawTextW(status.detail.c_str(), static_cast<UINT32>(status.detail.size()),
-                   impl_->small_text_format.Get(), D2D1::RectF(365, top + 40, 960, top + 69),
+                   impl_->small_text_format.Get(), D2D1::RectF(374, top + 36, 956, top + 59),
                    muted.Get());
     }
   } else {
     for (size_t i = 0; i < m.help_lines.size(); ++i) {
-      const float top = 192.0f + 116.0f * static_cast<float>(i);
+      const float top = 182.0f + 120.0f * static_cast<float>(i);
       const auto number = std::to_wstring(i + 1);
-      const auto center = D2D1::Point2F(92, top + 50);
-      t->FillEllipse(D2D1::Ellipse(center, 28, 28), active_tab.Get());
-      t->FillEllipse(D2D1::Ellipse(center, 22, 22), accent.Get());
+      const auto center = D2D1::Point2F(88, top + 48);
+      t->FillEllipse(D2D1::Ellipse(center, 25, 25), active_tab.Get());
+      t->FillEllipse(D2D1::Ellipse(center, 20, 20), accent.Get());
       t->DrawTextW(number.c_str(), static_cast<UINT32>(number.size()), impl_->step_number.Get(),
-                   D2D1::RectF(70, top + 28, 114, top + 72), white.Get());
+                   D2D1::RectF(68, top + 28, 108, top + 68), white.Get());
       t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
-                   impl_->help_text.Get(), D2D1::RectF(140, top + 12, 948, top + 88), white.Get());
+                   impl_->help_text.Get(), D2D1::RectF(132, top + 10, 948, top + 86), white.Get());
     }
   }
   const auto result = t->EndDraw();

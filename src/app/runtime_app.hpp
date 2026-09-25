@@ -12,6 +12,7 @@
 #include "platform/windows/exit_target.hpp"
 #include "platform/windows/process_controller.hpp"
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -65,5 +66,6 @@ class RuntimeApp {
   std::string last_overlay_error_;
   std::chrono::steady_clock::time_point last_overlay_error_at_{};
   std::chrono::steady_clock::time_point last_slow_dashboard_at_{};
+  std::optional<std::chrono::system_clock::time_point> last_successful_exit_at_;
 };
 }  // namespace bailout::app

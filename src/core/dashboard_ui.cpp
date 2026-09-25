@@ -7,13 +7,13 @@
 namespace bailout::core {
 namespace {
 
-constexpr float kButtonLeft = 365.0F;
-constexpr float kButtonRight = 966.0F;
-constexpr float kRowTop = 190.0F;
-constexpr float kRowHeight = 78.0F;
-constexpr float kButtonInsetY = 7.0F;
+constexpr float kButtonLeft = 396.0F;
+constexpr float kButtonRight = 956.0F;
+constexpr float kRowTop = 174.0F;
+constexpr float kRowHeight = 72.0F;
+constexpr float kButtonInsetY = 6.0F;
 constexpr float kButtonHeight = 60.0F;
-constexpr float kButtonGap = 12.0F;
+constexpr float kButtonGap = 10.0F;
 
 DashboardRect button_rect(const int row, const int column, const int count) {
   const float available = kButtonRight - kButtonLeft - kButtonGap * (count - 1);
@@ -38,9 +38,9 @@ void add_segment(std::vector<DashboardButton>& result, const DashboardSettingRow
 }  // namespace
 
 std::array<DashboardTabTarget, 3> dashboard_tabs() noexcept {
-  return {{{DashboardTab::Settings, {44.0F, 94.0F, 348.0F, 158.0F}},
-           {DashboardTab::Status, {360.0F, 94.0F, 664.0F, 158.0F}},
-           {DashboardTab::Help, {676.0F, 94.0F, 980.0F, 158.0F}}}};
+  return {{{DashboardTab::Settings, {48.0F, 88.0F, 346.0F, 148.0F}},
+           {DashboardTab::Status, {363.0F, 88.0F, 661.0F, 148.0F}},
+           {DashboardTab::Help, {678.0F, 88.0F, 976.0F, 148.0F}}}};
 }
 
 std::optional<DashboardTab> dashboard_tab_hit_test(const float x, const float y) noexcept {
