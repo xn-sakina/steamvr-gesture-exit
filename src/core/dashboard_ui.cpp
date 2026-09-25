@@ -9,9 +9,9 @@ namespace {
 
 constexpr float kButtonLeft = 396.0F;
 constexpr float kButtonRight = 956.0F;
-constexpr float kRowTop = 174.0F;
-constexpr float kRowHeight = 72.0F;
-constexpr float kButtonInsetY = 6.0F;
+constexpr float kRowTop = 96.0F;
+constexpr float kRowHeight = 68.0F;
+constexpr float kButtonInsetY = 4.0F;
 constexpr float kButtonHeight = 60.0F;
 constexpr float kButtonGap = 10.0F;
 
@@ -38,9 +38,9 @@ void add_segment(std::vector<DashboardButton>& result, const DashboardSettingRow
 }  // namespace
 
 std::array<DashboardTabTarget, 3> dashboard_tabs() noexcept {
-  return {{{DashboardTab::Settings, {48.0F, 88.0F, 346.0F, 148.0F}},
-           {DashboardTab::Status, {363.0F, 88.0F, 661.0F, 148.0F}},
-           {DashboardTab::Help, {678.0F, 88.0F, 976.0F, 148.0F}}}};
+  return {{{DashboardTab::Settings, {44.0F, 20.0F, 356.0F, 80.0F}},
+           {DashboardTab::Status, {356.0F, 20.0F, 668.0F, 80.0F}},
+           {DashboardTab::Help, {668.0F, 20.0F, 980.0F, 80.0F}}}};
 }
 
 std::optional<DashboardTab> dashboard_tab_hit_test(const float x, const float y) noexcept {

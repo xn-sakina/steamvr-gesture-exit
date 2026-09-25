@@ -34,12 +34,12 @@ struct DashboardSettingDisplay {
 };
 enum class DashboardStatusTone { Available, Unavailable, Neutral };
 struct DashboardStatusDisplay {
-  std::wstring label, value, detail;
+  std::wstring label, value;
   DashboardStatusTone tone = DashboardStatusTone::Neutral;
   bool operator==(const DashboardStatusDisplay&) const = default;
 };
 struct DashboardSurfaceModel {
-  std::wstring title, settings_title, diagnostics_title, help_title, notice;
+  std::wstring settings_title, diagnostics_title, help_title, notice;
   core::DashboardTab active_tab = core::DashboardTab::Settings;
   std::optional<core::DashboardTab> hovered_tab;
   std::vector<DashboardSettingDisplay> settings;

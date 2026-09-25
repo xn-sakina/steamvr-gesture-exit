@@ -399,7 +399,8 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
   CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");
   CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "另一只手柄");
-  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "可用");
+  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) ==
+        "已识别到手柄");
   CHECK(localize(StringId::ClickHandReady, Language::ChineseSimplified) ==
         "退出按钮出现后，指向按钮并扣动扳机。");
   CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
@@ -688,7 +689,7 @@ void dashboard_controls_are_visible_semantic_targets() {
       CHECK(hit && *hit == button.action);
   }
   CHECK(!dashboard_hit_test(buttons, 80.0F, 130.0F));
-  CHECK(!dashboard_hit_test(buttons, 610.0F, 130.0F));
+  CHECK(!dashboard_hit_test(buttons, 610.0F, 88.0F));
   CHECK(!dashboard_hit_test(buttons, 228.0F, 173.0F));
 
   int selected = 0;
@@ -726,11 +727,11 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
     for (const auto [mouse_width, mouse_height] :
-         {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F},
-          std::pair{512.0F, 320.0F}, std::pair{1024.0F, 1024.0F}}) {
+         {std::pair{1024.0F, 448.0F}, std::pair{1920.0F, 840.0F},
+          std::pair{512.0F, 224.0F}, std::pair{1024.0F, 1024.0F}}) {
       const auto point = dashboard_mouse_to_pixels(
-          x * mouse_width / 1024.0F, (640.0F - y) * mouse_height / 640.0F,
-          mouse_width, mouse_height, 1024.0F, 640.0F);
+          x * mouse_width / 1024.0F, (448.0F - y) * mouse_height / 448.0F,
+          mouse_width, mouse_height, 1024.0F, 448.0F);
       CHECK(point);
       CHECK(dashboard_hit_test(buttons, point->x, point->y) == button.action);
     }
@@ -738,15 +739,15 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
   // A pointer below the first row must not hit it at either mouse scale. This
   // catches the previous top-left/bottom-left regression.
   for (const auto [mouse_width, mouse_height] :
-       {std::pair{1024.0F, 640.0F}, std::pair{1920.0F, 1200.0F}}) {
+       {std::pair{1024.0F, 448.0F}, std::pair{1920.0F, 840.0F}}) {
     const auto point = dashboard_mouse_to_pixels(
-        300.0F * mouse_width / 1024.0F, (640.0F - 500.0F) * mouse_height / 640.0F,
-        mouse_width, mouse_height, 1024.0F, 640.0F);
+        300.0F * mouse_width / 1024.0F, (448.0F - 440.0F) * mouse_height / 448.0F,
+        mouse_width, mouse_height, 1024.0F, 448.0F);
     CHECK(point);
     CHECK(!dashboard_hit_test(buttons, point->x, point->y));
   }
-  CHECK(!dashboard_mouse_to_pixels(1, 1, 0, 640, 1024, 640));
-  CHECK(!dashboard_mouse_to_pixels(-1, 1, 1024, 640, 1024, 640));
+  CHECK(!dashboard_mouse_to_pixels(1, 1, 0, 448, 1024, 448));
+  CHECK(!dashboard_mouse_to_pixels(-1, 1, 1024, 448, 1024, 448));
 }
 
 void dashboard_actions_change_only_the_intended_setting() {

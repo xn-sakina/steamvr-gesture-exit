@@ -461,7 +461,6 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   }
   const auto snapshot = flow_->snapshot(now);
   platform::openvr::DashboardSurfaceModel model{};
-  model.title = text(core::StringId::AppName);
   model.settings_title = text(core::StringId::SettingsTitle);
   model.diagnostics_title = text(core::StringId::DiagnosticsTitle);
   model.help_title = text(core::StringId::QuickGuide);
@@ -525,43 +524,33 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   }
   const bool game_available = resolution.game.has_value();
   const bool target_available = resolution.target.has_value();
-  const std::wstring game_value =
-      game_available ? resolution.game->display_name : text(core::StringId::Unavailable);
-  const std::wstring game_detail =
-      game_available ? text(core::StringId::Ready) : text(game_reason(resolution.game_status));
-  const std::wstring target_value =
-      target_available ? resolution.target->display_name : text(core::StringId::Unavailable);
-  const std::wstring target_detail =
-      target_available ? text(core::StringId::Ready) : text(target_reason(resolution.target_status));
-  const std::wstring last = widen(core::localize_last_exit(snapshot.last_exit, language_));
-  const std::wstring last_detail =
-      snapshot.last_exit == core::LastExitStatus::Succeeded && last_successful_exit_at_
-          ? local_timestamp(*last_successful_exit_at_)
-          : L"";
+  const std::wstring game_value = game_available
+                                      ? resolution.game->display_name
+                                      : text(game_reason(resolution.game_status));
+  const std::wstring target_value = target_available
+                                        ? resolution.target->display_name
+                                        : text(target_reason(resolution.target_status));
+  std::wstring last = widen(core::localize_last_exit(snapshot.last_exit, language_));
+  if (snapshot.last_exit == core::LastExitStatus::Succeeded && last_successful_exit_at_)
+    last += L"  ·  " + local_timestamp(*last_successful_exit_at_);
   model.statuses = {
-      {text(core::StringId::CurrentVrGame), game_value, game_detail,
+      {text(core::StringId::CurrentVrGame), game_value,
        game_available ? platform::openvr::DashboardStatusTone::Available
-                      : platform::openvr::DashboardStatusTone::Unavailable},
-      {text(core::StringId::ExitTarget), target_value, target_detail,
+                      : platform::openvr::DashboardStatusTone::Neutral},
+      {text(core::StringId::ExitTarget), target_value,
        target_available ? platform::openvr::DashboardStatusTone::Available
-                        : platform::openvr::DashboardStatusTone::Unavailable},
+                        : platform::openvr::DashboardStatusTone::Neutral},
       {text(core::StringId::HandTracking),
        configured.tracked ? text(core::StringId::ControllerTracked)
                           : text(core::StringId::ControllerNotTracked),
-       text(configured.tracked ? core::StringId::WaveHandReady
-            : configured.connected ? core::StringId::WaveHandTrackingLost
-                                   : core::StringId::WaveHandDisconnected),
        configured.tracked ? platform::openvr::DashboardStatusTone::Available
-                          : platform::openvr::DashboardStatusTone::Unavailable},
+                          : platform::openvr::DashboardStatusTone::Neutral},
       {text(core::StringId::OppositePointer),
        opposite.pointer_available() ? text(core::StringId::ControllerTracked)
                                     : text(core::StringId::ControllerNotTracked),
-       text(opposite.pointer_available() ? core::StringId::ClickHandReady
-            : opposite.connected ? core::StringId::ClickHandTrackingLost
-                                 : core::StringId::ClickHandDisconnected),
        opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
-                                    : platform::openvr::DashboardStatusTone::Unavailable},
-      {text(core::StringId::LastExit), last, last_detail,
+                                    : platform::openvr::DashboardStatusTone::Neutral},
+      {text(core::StringId::LastExit), last,
        snapshot.last_exit == core::LastExitStatus::Succeeded
            ? platform::openvr::DashboardStatusTone::Available
            : platform::openvr::DashboardStatusTone::Neutral}};
