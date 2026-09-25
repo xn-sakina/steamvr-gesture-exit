@@ -74,6 +74,14 @@ std::optional<Language> parse_language(const std::string& value) {
   return std::nullopt;
 }
 
+void discard_temporary_file(const std::filesystem::path& path) {
+  auto temporary = path;
+  temporary += ".tmp";
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(temporary, ec))
+    std::filesystem::remove(temporary, ec);
+}
+
 }  // namespace
 
 Settings Settings::defaults() noexcept {
@@ -114,6 +122,9 @@ std::string to_string(const Language value) {
 SettingsStore::SettingsStore(std::filesystem::path path) : path_(std::move(path)) {}
 
 SettingsLoadResult SettingsStore::load() const {
+  // A terminated writer can leave only the staging file behind. The committed
+  // settings file remains authoritative after an interrupted atomic replace.
+  discard_temporary_file(path_);
   std::error_code ec;
   if (!std::filesystem::exists(path_, ec)) {
     return {Settings::defaults(), SettingsLoadStatus::DefaultsMissing, "SETTINGS_MISSING"};
@@ -189,6 +200,7 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
   }
   auto temporary = path_;
   temporary += ".tmp";
+  bool written = false;
   {
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
     output << "{\n"
@@ -200,11 +212,15 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
            << "  \"language\": \"" << to_string(settings.language) << "\"\n"
            << "}\n";
     output.flush();
-    if (!output) {
-      if (error)
-        *error = "SETTINGS_WRITE_FAILED";
-      return false;
-    }
+    written = static_cast<bool>(output);
+    output.close();
+    written = written && static_cast<bool>(output);
+  }
+  if (!written) {
+    discard_temporary_file(path_);
+    if (error)
+      *error = "SETTINGS_WRITE_FAILED";
+    return false;
   }
   // Keep the existing settings file intact if replacing it fails.
 #ifdef _WIN32
@@ -216,6 +232,7 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
   std::filesystem::rename(temporary, path_, ec);
 #endif
   if (ec) {
+    discard_temporary_file(path_);
     if (error)
       *error = "SETTINGS_REPLACE_FAILED";
     return false;

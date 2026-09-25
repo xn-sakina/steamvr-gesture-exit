@@ -1,6 +1,7 @@
 #include "core/diagnostics.hpp"
 #include "json/json.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
@@ -10,6 +11,7 @@ namespace bailout::core {
 namespace {
 
 constexpr std::uintmax_t kMaxLogBytes = 4 * 1024 * 1024;
+constexpr size_t kMaxPendingRecords = 1024;
 
 std::string now_utc() {
   const auto now = std::chrono::system_clock::now();
@@ -23,6 +25,39 @@ std::string now_utc() {
   std::ostringstream output;
   output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
   return output.str();
+}
+
+bool discard_incomplete_tail(const std::filesystem::path& path, std::error_code& ec) {
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec || size == 0 || size > kMaxLogBytes)
+    return !ec;
+  std::ifstream input(path, std::ios::binary);
+  if (!input)
+    return false;
+  constexpr size_t kBlockBytes = 4096;
+  std::array<char, kBlockBytes> block{};
+  std::uintmax_t end = size;
+  while (end != 0) {
+    const auto begin = end > kBlockBytes ? end - kBlockBytes : 0;
+    const auto length = static_cast<std::streamsize>(end - begin);
+    input.seekg(static_cast<std::streamoff>(begin));
+    input.read(block.data(), length);
+    if (!input)
+      return false;
+    if (end == size && block[static_cast<size_t>(length) - 1] == '\n')
+      return true;
+    for (auto index = static_cast<size_t>(length); index != 0; --index) {
+      if (block[index - 1] == '\n') {
+        input.close();
+        std::filesystem::resize_file(path, begin + index, ec);
+        return !ec;
+      }
+    }
+    end = begin;
+  }
+  input.close();
+  std::filesystem::resize_file(path, 0, ec);
+  return !ec;
 }
 
 }  // namespace
@@ -86,25 +121,31 @@ DiagnosticLog::DiagnosticLog(std::filesystem::path path) : path_(std::move(path)
 DiagnosticLog::~DiagnosticLog() { stop_async(); }
 
 void DiagnosticLog::start_async() {
-  std::scoped_lock lock(queue_mutex_);
+  std::unique_lock lock(queue_mutex_);
+  queue_wake_.wait(lock, [this] { return !stopping_; });
   if (async_enabled_)
     return;
-  stopping_ = false;
   worker_ = std::thread([this] { run_async(); });
   async_enabled_ = true;
 }
 
 void DiagnosticLog::stop_async() {
   {
-    std::scoped_lock lock(queue_mutex_);
+    std::unique_lock lock(queue_mutex_);
+    queue_wake_.wait(lock, [this] { return !stopping_; });
     if (!async_enabled_)
       return;
-    async_enabled_ = false;
     stopping_ = true;
   }
   queue_wake_.notify_one();
   if (worker_.joinable())
     worker_.join();
+  {
+    std::scoped_lock lock(queue_mutex_);
+    async_enabled_ = false;
+    stopping_ = false;
+  }
+  queue_wake_.notify_all();
 }
 
 void DiagnosticLog::run_async() {
@@ -113,10 +154,23 @@ void DiagnosticLog::run_async() {
     queue_wake_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
     if (queue_.empty())
       return;
-    auto record = std::move(queue_.front());
+    auto queued = std::move(queue_.front());
     queue_.pop_front();
     lock.unlock();
-    (void)append_sync(record, nullptr);
+    std::string error;
+    bool saved = false;
+    try {
+      saved = append_sync(queued.record, &error);
+    } catch (...) {
+      error = "LOG_WRITE_FAILED";
+    }
+    if (queued.completion) {
+      try {
+        queued.completion->set_value({saved, std::move(error)});
+      } catch (...) {
+        // Destroying the promise wakes the waiter with a broken-promise error.
+      }
+    }
   }
 }
 
@@ -125,11 +179,35 @@ bool DiagnosticLog::append(const DiagnosticRecord& record, std::string* error) {
   if (record.debug_only)
     return true;
 #endif
-  if (!error) {
-    std::scoped_lock lock(queue_mutex_);
+  std::future<AppendResult> result;
+  {
+    std::unique_lock lock(queue_mutex_);
+    queue_wake_.wait(lock, [this] { return !stopping_; });
     if (async_enabled_) {
-      queue_.push_back(record);
+      if (queue_.size() == kMaxPendingRecords) {
+        if (error)
+          *error = "LOG_QUEUE_FULL";
+        return false;
+      }
+      std::shared_ptr<std::promise<AppendResult>> completion;
+      if (error) {
+        completion = std::make_shared<std::promise<AppendResult>>();
+        result = completion->get_future();
+      }
+      queue_.push_back({record, std::move(completion)});
+      lock.unlock();
       queue_wake_.notify_one();
+      if (error) {
+        try {
+          auto [saved, message] = result.get();
+          if (!saved)
+            *error = std::move(message);
+          return saved;
+        } catch (...) {
+          *error = "LOG_WORKER_FAILED";
+          return false;
+        }
+      }
       return true;
     }
   }
@@ -145,6 +223,19 @@ bool DiagnosticLog::append_sync(const DiagnosticRecord& record, std::string* err
     if (error)
       *error = "LOG_CREATE_DIRECTORY_FAILED";
     return false;
+  }
+  if (!tail_checked_) {
+    if (std::filesystem::exists(path_, ec) && !discard_incomplete_tail(path_, ec)) {
+      if (error)
+        *error = "LOG_RECOVER_FAILED";
+      return false;
+    }
+    if (ec) {
+      if (error)
+        *error = "LOG_STAT_FAILED";
+      return false;
+    }
+    tail_checked_ = true;
   }
   const std::string line = serialize_diagnostic_record(record, now_utc()) + '\n';
   if (line.size() > kMaxLogBytes) {

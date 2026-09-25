@@ -4,7 +4,9 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -63,16 +65,22 @@ class DiagnosticLog {
   }
 
  private:
+  using AppendResult = std::pair<bool, std::string>;
+  struct QueuedRecord {
+    DiagnosticRecord record;
+    std::shared_ptr<std::promise<AppendResult>> completion;
+  };
   bool append_sync(const DiagnosticRecord& record, std::string* error);
   void run_async();
   std::filesystem::path path_;
   std::mutex mutex_;
   std::mutex queue_mutex_;
   std::condition_variable queue_wake_;
-  std::deque<DiagnosticRecord> queue_;
+  std::deque<QueuedRecord> queue_;
   std::thread worker_;
   bool async_enabled_ = false;
   bool stopping_ = false;
+  bool tail_checked_ = false;
 };
 
 [[nodiscard]] std::string_view to_string(DiagnosticEventType value) noexcept;

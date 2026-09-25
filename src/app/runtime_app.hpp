@@ -23,6 +23,7 @@ struct SettingsChange {
 class RuntimeApp {
  public:
   RuntimeApp();
+  ~RuntimeApp();
   int run();
   void request_stop() {
     stop_ = true;

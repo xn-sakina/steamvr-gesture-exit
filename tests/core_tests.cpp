@@ -9,6 +9,7 @@
 #include "app/runtime_interfaces.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -17,6 +18,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -166,6 +168,15 @@ void settings_round_trip_and_recovery() {
   CHECK(loaded.status == SettingsLoadStatus::Loaded);
   CHECK(loaded.settings == settings);
 
+  auto stale_temporary = store.path();
+  stale_temporary += ".tmp";
+  {
+    std::ofstream output(stale_temporary);
+    output << "{interrupted";
+  }
+  CHECK(store.load().settings == settings);
+  CHECK(!std::filesystem::exists(stale_temporary));
+
   // A failed write must leave the last committed settings readable.
   auto blocked_temporary = store.path();
   blocked_temporary += ".tmp";
@@ -314,16 +325,84 @@ void diagnostics_async_queue_drains_in_order() {
   std::filesystem::remove(path, ec);
   DiagnosticLog log(path);
   log.start_async();
+  log.start_async();
   for (int i = 0; i < 100; ++i)
     CHECK(log.append({DiagnosticEventType::Lifecycle, "ASYNC_" + std::to_string(i)}));
+  std::string error;
+  CHECK(log.append({DiagnosticEventType::Lifecycle, "BARRIER"}, &error));
   log.stop_async();
+  log.stop_async();
+  CHECK(log.append({DiagnosticEventType::Lifecycle, "AFTER_STOP"}));
+
+  log.start_async();
+  std::atomic_bool producer_ok = true;
+  std::thread producer([&] {
+    for (int i = 0; i < 200; ++i) {
+      if (!log.append({DiagnosticEventType::Lifecycle, "RACE_" + std::to_string(i)}))
+        producer_ok = false;
+    }
+  });
+  log.stop_async();
+  producer.join();
+  CHECK(producer_ok);
+
   std::ifstream input(path);
   std::string line;
   for (int i = 0; i < 100; ++i) {
     CHECK(static_cast<bool>(std::getline(input, line)));
     CHECK(line.find("\"code\":\"ASYNC_" + std::to_string(i) + "\"") != std::string::npos);
   }
+  CHECK(static_cast<bool>(std::getline(input, line)));
+  CHECK(line.find("\"code\":\"BARRIER\"") != std::string::npos);
+  CHECK(static_cast<bool>(std::getline(input, line)));
+  CHECK(line.find("\"code\":\"AFTER_STOP\"") != std::string::npos);
+  for (int i = 0; i < 200; ++i) {
+    CHECK(static_cast<bool>(std::getline(input, line)));
+    CHECK(line.find("\"code\":\"RACE_" + std::to_string(i) + "\"") != std::string::npos);
+  }
   CHECK(!static_cast<bool>(std::getline(input, line)));
+  input.close();
+  std::filesystem::remove(path, ec);
+}
+
+void diagnostics_recover_interrupted_jsonl_tail() {
+  const auto path = std::filesystem::temp_directory_path() / "bailout-interrupted-log.jsonl";
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+  {
+    std::ofstream output(path, std::ios::binary);
+    output << "{\"code\":\"COMPLETE\"}\n{\"code\":\"PARTIAL";
+  }
+  DiagnosticLog log(path);
+  CHECK(log.append({DiagnosticEventType::Lifecycle, "AFTER_RESTART"}));
+  std::ifstream input(path);
+  std::string first, second;
+  CHECK(static_cast<bool>(std::getline(input, first)));
+  CHECK(first == "{\"code\":\"COMPLETE\"}");
+  CHECK(static_cast<bool>(std::getline(input, second)));
+  CHECK(second.find("AFTER_RESTART") != std::string::npos);
+  CHECK(!static_cast<bool>(std::getline(input, second)));
+  input.close();
+  std::filesystem::remove(path, ec);
+}
+
+void diagnostics_destructor_joins_writer() {
+  const auto path = std::filesystem::temp_directory_path() / "bailout-log-destructor.jsonl";
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+  {
+    DiagnosticLog log(path);
+    log.start_async();
+    for (int i = 0; i < 100; ++i)
+      CHECK(log.append({DiagnosticEventType::Lifecycle, "DRAIN_" + std::to_string(i)}));
+  }
+  std::ifstream input(path);
+  std::string line;
+  int count = 0;
+  while (std::getline(input, line))
+    ++count;
+  CHECK(count == 100);
+  input.close();
   std::filesystem::remove(path, ec);
 }
 
@@ -846,6 +925,8 @@ int main() {
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"diagnostics debug filtering", diagnostics_debug_records_follow_build_type},
       {"diagnostics async drain", diagnostics_async_queue_drains_in_order},
+      {"diagnostics interrupted tail", diagnostics_recover_interrupted_jsonl_tail},
+      {"diagnostics destructor joins", diagnostics_destructor_joins_writer},
       {"diagnostics bounded rotation", diagnostics_rotate_at_a_fixed_size},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer uses tracked controller", pointer_availability_uses_tracked_controller},

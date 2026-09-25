@@ -169,30 +169,38 @@ class ForegroundResolutionWorker {
           auto last_slow_log = std::chrono::steady_clock::time_point{};
           auto next_autolaunch_check = std::chrono::steady_clock::time_point{};
           while (!stop_) {
-            const auto started = std::chrono::steady_clock::now();
-            if (started >= next_autolaunch_check) {
-              autolaunch_disabled_ = !applications->IsApplicationInstalled(kAppKey) ||
-                                     !applications->GetApplicationAutoLaunch(kAppKey);
-              next_autolaunch_check = started + std::chrono::seconds(1);
-            }
-            auto resolution = resolver.resolve_foreground();
-            const auto finished = std::chrono::steady_clock::now();
-            const auto duration =
-                std::chrono::duration_cast<std::chrono::milliseconds>(finished - started);
-            {
+            try {
+              const auto started = std::chrono::steady_clock::now();
+              if (started >= next_autolaunch_check) {
+                autolaunch_disabled_ = !applications->IsApplicationInstalled(kAppKey) ||
+                                       !applications->GetApplicationAutoLaunch(kAppKey);
+                next_autolaunch_check = started + std::chrono::seconds(1);
+              }
+              auto resolution = resolver.resolve_foreground();
+              const auto finished = std::chrono::steady_clock::now();
+              const auto duration =
+                  std::chrono::duration_cast<std::chrono::milliseconds>(finished - started);
+              {
+                std::scoped_lock lock(mutex_);
+                latest_ = std::move(resolution);
+                latest_at_ = finished;
+                pending_ = true;
+              }
+              if (duration >= std::chrono::milliseconds(250) &&
+                  finished - last_slow_log >= std::chrono::seconds(30)) {
+                core::DiagnosticRecord record{};
+                record.event = core::DiagnosticEventType::Error;
+                record.code = "TARGET_RESOLVE_SLOW";
+                record.status = std::to_string(duration.count()) + "ms";
+                (void)log.append(record);
+                last_slow_log = finished;
+              }
+            } catch (...) {
+              // Never keep a stale exit target after a failed resolution.
               std::scoped_lock lock(mutex_);
-              latest_ = std::move(resolution);
-              latest_at_ = finished;
+              latest_ = {};
+              latest_at_ = std::chrono::steady_clock::now();
               pending_ = true;
-            }
-            if (duration >= std::chrono::milliseconds(250) &&
-                finished - last_slow_log >= std::chrono::seconds(30)) {
-              core::DiagnosticRecord record{};
-              record.event = core::DiagnosticEventType::Error;
-              record.code = "TARGET_RESOLVE_SLOW";
-              record.status = std::to_string(duration.count()) + "ms";
-              (void)log.append(record);
-              last_slow_log = finished;
             }
             std::unique_lock lock(mutex_);
             wake_.wait_for(lock, std::chrono::milliseconds(250),
@@ -203,9 +211,12 @@ class ForegroundResolutionWorker {
   ~ForegroundResolutionWorker() { stop(); }
   ForegroundResolutionWorker(const ForegroundResolutionWorker&) = delete;
   ForegroundResolutionWorker& operator=(const ForegroundResolutionWorker&) = delete;
-  void stop() {
+  void request_stop() {
     stop_ = true;
     wake_.notify_all();
+  }
+  void stop() {
+    request_stop();
     if (thread_.joinable())
       thread_.join();
   }
@@ -223,6 +234,8 @@ class ForegroundResolutionWorker {
   void request_refresh() {
     {
       std::scoped_lock lock(mutex_);
+      if (stop_)
+        return;
       refresh_requested_ = true;
     }
     wake_.notify_one();
@@ -247,12 +260,15 @@ class SettingsPersistenceWorker {
   ~SettingsPersistenceWorker() { stop(); }
   SettingsPersistenceWorker(const SettingsPersistenceWorker&) = delete;
   SettingsPersistenceWorker& operator=(const SettingsPersistenceWorker&) = delete;
-  void enqueue(SettingsChange change) {
+  bool enqueue(SettingsChange change) {
     {
       std::scoped_lock lock(mutex_);
+      if (stop_)
+        return false;
       pending_.push_back(std::move(change));
     }
     wake_.notify_one();
+    return true;
   }
   bool take_failure() { return failures_.exchange(0) != 0; }
   void stop() {
@@ -275,19 +291,33 @@ class SettingsPersistenceWorker {
       auto change = std::move(pending_.front());
       pending_.pop_front();
       lock.unlock();
-      std::string error;
-      const bool saved = store_.save(change.settings, &error);
-      core::DiagnosticRecord record{};
-      record.event = saved ? core::DiagnosticEventType::SettingsChanged
-                           : core::DiagnosticEventType::Error;
-      record.code = saved ? "SETTINGS_SAVED" : error;
-      if (saved) {
-        record.setting_name = std::move(change.name);
-        record.setting_value = std::move(change.value);
-      } else {
+      try {
+        std::string error;
+        bool saved = false;
+        try {
+          saved = store_.save(change.settings, &error);
+        } catch (...) {
+          error = "SETTINGS_WRITE_FAILED";
+        }
+        core::DiagnosticRecord record{};
+        record.event = saved ? core::DiagnosticEventType::SettingsChanged
+                             : core::DiagnosticEventType::Error;
+        record.code = saved ? "SETTINGS_SAVED" : error;
+        if (saved) {
+          record.setting_name = std::move(change.name);
+          record.setting_value = std::move(change.value);
+        } else {
+          failures_.fetch_add(1);
+        }
+        try {
+          (void)log_.append(record);
+        } catch (...) {
+          // Settings persistence must continue even if diagnostics fail.
+        }
+      } catch (...) {
+        // Do not terminate the process or strand later settings changes.
         failures_.fetch_add(1);
       }
-      (void)log_.append(record);
     }
   }
   core::SettingsStore store_;
@@ -372,6 +402,13 @@ RuntimeApp::RuntimeApp()
   }
   flow_ = std::make_unique<core::FlowStateMachine>(
       std::chrono::seconds(settings_.control_timeout_seconds));
+}
+RuntimeApp::~RuntimeApp() {
+  process_.clear();
+  if (overlays_)
+    overlays_->shutdown();
+  vr_.shutdown();
+  log_.stop_async();
 }
 core::TargetIdentity RuntimeApp::core_target(const RuntimeTarget& t) const {
   return {t.pid, t.creation_token, narrow(t.executable_path), narrow(t.display_name)};
@@ -814,8 +851,8 @@ int RuntimeApp::run() {
   started.details["configured_hand"] = std::string(core::to_string(settings_.configured_hand));
   (void)log_.append(started);
   log_.start_async();
-  SettingsPersistenceWorker settings_writer(settings_store_.path(), log_);
   ForegroundResolutionWorker target_worker(*targets_, vr_.applications(), log_);
+  SettingsPersistenceWorker settings_writer(settings_store_.path(), log_);
   const auto started_at = std::chrono::steady_clock::now();
   auto next_server_check = started_at;
   std::optional<std::chrono::steady_clock::time_point> no_devices_since;
@@ -954,8 +991,10 @@ int RuntimeApp::run() {
         sound_.ui_hover();
         last_ui_hover_sound_at = now;
       }
-      for (auto& change : dashboard_input(dashboard_events.actions))
-        settings_writer.enqueue(std::move(change));
+      for (auto& change : dashboard_input(dashboard_events.actions)) {
+        if (!settings_writer.enqueue(std::move(change)))
+          save_failure_notice_until_ = now + std::chrono::seconds(8);
+      }
     }
     if (settings_writer.take_failure())
       save_failure_notice_until_ = now + std::chrono::seconds(8);
@@ -1226,8 +1265,9 @@ int RuntimeApp::run() {
     timer_resolution.set_active(dashboard_visible);
     (void)WaitForSingleObject(stop_event.get(), dashboard_visible ? 4 : 11);
   }
-  target_worker.stop();
+  target_worker.request_stop();
   settings_writer.stop();
+  target_worker.stop();
   log_.stop_async();
   process_.clear();
   overlays_->shutdown();

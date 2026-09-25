@@ -71,6 +71,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   RuntimeInstance instance;
   if (!instance.acquired())
     return 0;
-  bailout::app::RuntimeApp app;
-  return app.run();
+  try {
+    bailout::app::RuntimeApp app;
+    return app.run();
+  } catch (...) {
+    return 1;
+  }
 }
