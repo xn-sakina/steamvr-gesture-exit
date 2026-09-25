@@ -34,6 +34,8 @@ std::vector<SettingsSaveResult> SettingsPersistenceWorker::take_results() {
 }
 
 void SettingsPersistenceWorker::stop() {
+  // join() is not safe when two shutdown paths call stop concurrently.
+  std::scoped_lock stop_lock(stop_mutex_);
   {
     std::scoped_lock lock(mutex_);
     stop_ = true;

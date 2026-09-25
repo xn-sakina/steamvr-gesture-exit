@@ -222,6 +222,21 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
       *error = "SETTINGS_WRITE_FAILED";
     return false;
   }
+  // Flush the staging file before publishing it as the committed settings.
+#ifdef _WIN32
+  HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  const bool flushed = file != INVALID_HANDLE_VALUE && FlushFileBuffers(file) != 0;
+  if (file != INVALID_HANDLE_VALUE)
+    CloseHandle(file);
+  if (!flushed) {
+    discard_temporary_file(path_);
+    if (error)
+      *error = "SETTINGS_FLUSH_FAILED";
+    return false;
+  }
+#endif
   // Keep the existing settings file intact if replacing it fails.
 #ifdef _WIN32
   if (!MoveFileExW(temporary.c_str(), path_.c_str(),

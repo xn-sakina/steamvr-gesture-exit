@@ -164,30 +164,28 @@ class SteamVrServerMonitor {
 class ForegroundResolutionWorker {
  public:
   ForegroundResolutionWorker(const platform::windows::ExitTargetResolver& resolver,
-                             vr::IVRApplications* applications, core::DiagnosticLog& log)
-      : thread_([this, &resolver, applications, &log] {
+                             core::DiagnosticLog& log)
+      : thread_([this, &resolver, &log] {
           auto last_slow_log = std::chrono::steady_clock::time_point{};
           auto next_autolaunch_check = std::chrono::steady_clock::time_point{};
           while (!stop_) {
             const auto started = std::chrono::steady_clock::now();
             try {
               if (started >= next_autolaunch_check) {
-                autolaunch_disabled_ = !applications->IsApplicationInstalled(kAppKey) ||
-                                       !applications->GetApplicationAutoLaunch(kAppKey);
+                autolaunch_disabled_ = !resolver.auto_launch_enabled(kAppKey);
                 next_autolaunch_check = started + std::chrono::seconds(1);
               }
               auto resolution = resolver.resolve_foreground();
               // A scene switch during process inspection invalidates the
               // result even if the old process is still running.
-              const auto verified_state = applications->GetSceneApplicationState();
-              const bool scene_active = verified_state == vr::EVRSceneApplicationState_Running ||
-                                        verified_state == vr::EVRSceneApplicationState_Waiting;
-              const auto verified_pid =
-                  scene_active ? applications->GetCurrentSceneProcessId() : 0;
-              if (resolution.scene_state != static_cast<int>(verified_state) ||
+              const auto [verified_state, verified_pid] = resolver.scene_identity();
+              const bool scene_active =
+                  verified_state == static_cast<int>(vr::EVRSceneApplicationState_Running) ||
+                  verified_state == static_cast<int>(vr::EVRSceneApplicationState_Waiting);
+              if (resolution.scene_state != verified_state ||
                   resolution.scene_pid != verified_pid) {
                 resolution = {};
-                resolution.scene_state = static_cast<int>(verified_state);
+                resolution.scene_state = verified_state;
                 resolution.scene_pid = verified_pid;
                 resolution.game_status =
                     verified_pid ? platform::windows::CurrentVrGameStatus::Resolving
@@ -651,7 +649,14 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         last_beep_second_ = -1;
         break;
       case core::EffectType::RequestGracefulClose: {
-        if (!locked_native_ || !targets_->revalidate(*locked_native_)) {
+        const auto validation = locked_native_ ? targets_->revalidate(*locked_native_)
+                                               : platform::windows::TargetValidation::Mismatch;
+        if (validation == platform::windows::TargetValidation::Busy) {
+          append(flow_->on_graceful_result(now, core::CloseRequestResult::Failed,
+                                           "EXIT_REVALIDATION_BUSY"));
+          break;
+        }
+        if (validation != platform::windows::TargetValidation::Matching) {
           append(flow_->on_target_status(now, core::TargetStatus::IdentityMismatch));
           break;
         }
@@ -666,7 +671,14 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         break;
       }
       case core::EffectType::RequestForceClose: {
-        if (!locked_native_ || !targets_->revalidate(*locked_native_)) {
+        const auto validation = locked_native_ ? targets_->revalidate(*locked_native_)
+                                               : platform::windows::TargetValidation::Mismatch;
+        if (validation == platform::windows::TargetValidation::Busy) {
+          append(flow_->on_force_result(now, core::CloseRequestResult::Failed,
+                                        "EXIT_REVALIDATION_BUSY"));
+          break;
+        }
+        if (validation != platform::windows::TargetValidation::Matching) {
           append(flow_->on_target_status(now, core::TargetStatus::IdentityMismatch));
           break;
         }
@@ -809,7 +821,7 @@ int RuntimeApp::run() {
   started.details["configured_hand"] = std::string(core::to_string(settings_.configured_hand));
   (void)log_.append(started);
   log_.start_async();
-  ForegroundResolutionWorker target_worker(*targets_, vr_.applications(), log_);
+  ForegroundResolutionWorker target_worker(*targets_, log_);
   core::SettingsPersistenceWorker settings_writer(settings_store_.path());
   // Queue later clicks against the latest accepted request, but render and use
   // only settings that the writer has confirmed on disk.

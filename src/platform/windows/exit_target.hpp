@@ -1,6 +1,8 @@
 #pragma once
 #include "app/runtime_interfaces.h"
+#include <mutex>
 #include <optional>
+#include <utility>
 namespace vr {
 class IVRApplications;
 }
@@ -43,6 +45,8 @@ struct TargetResolution {
   std::optional<app::RuntimeTarget> target;
 };
 
+enum class TargetValidation { Matching, Mismatch, Busy };
+
 [[nodiscard]] const char* diagnostic_code(CurrentVrGameStatus status) noexcept;
 [[nodiscard]] const char* diagnostic_code(ExitTargetStatus status) noexcept;
 
@@ -50,11 +54,14 @@ class ExitTargetResolver {
  public:
   explicit ExitTargetResolver(vr::IVRApplications* applications);
   TargetResolution resolve_foreground() const;
-  bool revalidate(const app::RuntimeTarget& target) const;
+  TargetValidation revalidate(const app::RuntimeTarget& target) const;
+  bool auto_launch_enabled(const char* app_key) const;
+  std::pair<int, std::uint32_t> scene_identity() const;
 
  private:
   bool app_key_matches_target(const std::string& app_key, std::uint32_t expected_pid) const;
   bool process_is_safe(const std::wstring& executable_path) const;
   vr::IVRApplications* applications_ = nullptr;
+  mutable std::timed_mutex applications_mutex_;
 };
 }  // namespace bailout::platform::windows

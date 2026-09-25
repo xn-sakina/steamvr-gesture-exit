@@ -306,6 +306,23 @@ void settings_worker_failure_preserves_last_commit_and_bounds_queue() {
   std::filesystem::remove_all(root, ec);
 }
 
+void settings_worker_concurrent_stop_joins_once() {
+  const auto root = std::filesystem::temp_directory_path() / "bailout-settings-stop-test";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto path = root / "settings.json";
+  SettingsPersistenceWorker worker(path);
+  CHECK(worker.enqueue({Settings::defaults(), "language", "auto"}));
+  std::thread first([&] { worker.stop(); });
+  std::thread second([&] { worker.stop(); });
+  first.join();
+  second.join();
+  const auto results = worker.take_results();
+  CHECK(results.size() == 1 && results.front().saved);
+  CHECK(SettingsStore(path).load().settings == Settings::defaults());
+  std::filesystem::remove_all(root, ec);
+}
+
 void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::Auto, "schinese", "en-US") == Language::English);
   CHECK(resolve_language(Language::Auto, "", "zh-SG") == Language::ChineseSimplified);
@@ -992,6 +1009,7 @@ int main() {
       {"settings durable results", settings_worker_reports_durable_results_in_order},
       {"settings failure and queue bound",
        settings_worker_failure_preserves_last_commit_and_bounds_queue},
+      {"settings concurrent stop", settings_worker_concurrent_stop_joins_once},
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"diagnostics debug filtering", diagnostics_debug_records_follow_build_type},

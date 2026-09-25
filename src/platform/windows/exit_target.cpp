@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cwctype>
 #include <filesystem>
 #include <string_view>
@@ -100,6 +101,7 @@ std::optional<bool> property_bool(vr::IVRApplications* applications, const std::
 }  // namespace
 ExitTargetResolver::ExitTargetResolver(vr::IVRApplications* a) : applications_(a) {}
 TargetResolution ExitTargetResolver::resolve_foreground() const {
+  std::scoped_lock lock(applications_mutex_);
   TargetResolution result{};
   if (!applications_)
     return result;
@@ -181,14 +183,34 @@ TargetResolution ExitTargetResolver::resolve_foreground() const {
   result.target_status = ExitTargetStatus::Available;
   return result;
 }
-bool ExitTargetResolver::revalidate(const app::RuntimeTarget& t) const {
+TargetValidation ExitTargetResolver::revalidate(const app::RuntimeTarget& t) const {
   if (!applications_ || !t.pid || t.app_key.empty())
-    return false;
+    return TargetValidation::Mismatch;
+  // Bound lock contention with the resolver thread. If it is still querying
+  // SteamVR, fail closed and leave the locked game process untouched.
+  std::unique_lock lock(applications_mutex_, std::defer_lock);
+  if (!lock.try_lock_for(std::chrono::milliseconds(50)))
+    return TargetValidation::Busy;
   auto p = inspect(t.pid);
   if (p.status != ProcessInspectionStatus::Available || p.creation_token != t.creation_token ||
       lower(p.path) != lower(t.executable_path))
-    return false;
-  return app_key_matches_target(t.app_key, t.pid);
+    return TargetValidation::Mismatch;
+  return app_key_matches_target(t.app_key, t.pid) ? TargetValidation::Matching
+                                                   : TargetValidation::Mismatch;
+}
+bool ExitTargetResolver::auto_launch_enabled(const char* app_key) const {
+  std::scoped_lock lock(applications_mutex_);
+  return applications_ && applications_->IsApplicationInstalled(app_key) &&
+         applications_->GetApplicationAutoLaunch(app_key);
+}
+std::pair<int, std::uint32_t> ExitTargetResolver::scene_identity() const {
+  std::scoped_lock lock(applications_mutex_);
+  if (!applications_)
+    return {static_cast<int>(vr::EVRSceneApplicationState_None), 0};
+  const auto state = applications_->GetSceneApplicationState();
+  const bool active = state == vr::EVRSceneApplicationState_Running ||
+                      state == vr::EVRSceneApplicationState_Waiting;
+  return {static_cast<int>(state), active ? applications_->GetCurrentSceneProcessId() : 0};
 }
 bool ExitTargetResolver::app_key_matches_target(const std::string& raw,
                                                 std::uint32_t expected_pid) const {

@@ -45,6 +45,7 @@ class SettingsPersistenceWorker {
   void run();
   static constexpr size_t kMaxOutstanding = 64;
   SettingsStore store_;
+  std::mutex stop_mutex_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::deque<SettingsChange> pending_;
