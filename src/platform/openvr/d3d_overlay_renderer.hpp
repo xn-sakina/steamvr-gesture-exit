@@ -45,6 +45,10 @@ class D3dOverlayRenderer {
   bool render_thumbnail(const std::string& id, const std::wstring& title,
                         const std::wstring& description);
   bool render_dashboard(const std::string& id, const DashboardSurfaceModel& model);
+  // OpenVR copies Direct3D overlay textures when SetOverlayTexture is called.
+  // Flush only after that call so the copy observes the commands that produced
+  // the submitted frame instead of the previous frame.
+  void flush();
   void* texture(const std::string& id) const;
   uint64_t generation() const;
   bool retry_pending_recovery();

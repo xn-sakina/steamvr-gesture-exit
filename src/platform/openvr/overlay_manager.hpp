@@ -13,7 +13,7 @@ namespace bailout::platform::openvr {
 enum class OverlayAction { Primary, Confirm, Dismiss, Cancel };
 struct DashboardEvents {
   std::vector<core::DashboardAction> actions;
-  float max_button_event_age_seconds = 0;
+  float max_event_age_seconds = 0;
   bool entered_button = false;
   bool hover_changed = false;
   bool tab_changed = false;
@@ -39,7 +39,7 @@ class OverlayManager {
                                       const std::string& friendly_name);
   std::vector<OverlayAction> poll_wrist_events(const app::HandPose& opposite_hand, bool confirming,
                                                bool counting_down);
-  DashboardEvents poll_dashboard_events(const app::TrackingFrame& frame);
+  DashboardEvents poll_dashboard_events();
   bool wrist_visible() const {
     return wrist_visible_;
   }

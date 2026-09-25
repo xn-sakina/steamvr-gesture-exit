@@ -35,7 +35,7 @@ class RuntimeApp {
   void update_dashboard(const platform::windows::TargetResolution&, const TrackingFrame&);
   std::optional<core::SettingsChange> dashboard_input(core::DashboardAction,
                                                        const core::Settings&);
-  void apply_saved_settings(const core::Settings&);
+  void apply_settings(const core::Settings&);
   void log_overlay_error(std::chrono::steady_clock::time_point);
   void abort_overlay_flow(std::chrono::steady_clock::time_point, const TrackingFrame&);
   std::wstring text(core::StringId) const;

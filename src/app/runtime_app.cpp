@@ -421,12 +421,12 @@ std::optional<core::SettingsChange> RuntimeApp::dashboard_input(
     return std::nullopt;
   return core::SettingsChange{candidate, name, std::move(value)};
 }
-void RuntimeApp::apply_saved_settings(const core::Settings& saved) {
-  const bool hand_changed = saved.configured_hand != settings_.configured_hand;
+void RuntimeApp::apply_settings(const core::Settings& next) {
+  const bool hand_changed = next.configured_hand != settings_.configured_hand;
   const bool timeout_changed =
-      saved.control_timeout_seconds != settings_.control_timeout_seconds;
-  const bool language_changed = saved.language != settings_.language;
-  settings_ = saved;
+      next.control_timeout_seconds != settings_.control_timeout_seconds;
+  const bool language_changed = next.language != settings_.language;
+  settings_ = next;
   if (hand_changed)
     gesture_.reset();
   if (timeout_changed)
@@ -823,15 +823,13 @@ int RuntimeApp::run() {
   log_.start_async();
   ForegroundResolutionWorker target_worker(*targets_, log_);
   core::SettingsPersistenceWorker settings_writer(settings_store_.path());
-  // Queue later clicks against the latest accepted request, but render and use
-  // only settings that the writer has confirmed on disk.
-  core::Settings requested_settings = settings_;
-  size_t outstanding_saves = 0;
-  const auto consume_saved_settings = [&] {
+  // The runtime configuration is the authoritative interactive state. Durable
+  // persistence stays off the input/render critical path and reports failures
+  // without rolling a newer in-memory setting back to an older disk snapshot.
+  const auto consume_save_results = [&] {
     auto results = settings_writer.take_results();
-    const bool changed = !results.empty();
+    bool failure_notice_changed = false;
     const auto confirmed_at = std::chrono::steady_clock::now();
-    outstanding_saves -= results.size();
     for (auto& result : results) {
       core::DiagnosticRecord record{};
       record.event = result.saved ? core::DiagnosticEventType::SettingsChanged
@@ -841,9 +839,9 @@ int RuntimeApp::run() {
       if (result.saved) {
         record.setting_name = std::move(result.change.name);
         record.setting_value = std::move(result.change.value);
-        apply_saved_settings(result.change.settings);
       } else {
         save_failure_notice_until_ = confirmed_at + std::chrono::seconds(8);
+        failure_notice_changed = true;
       }
       if (result.change.requested_at != std::chrono::steady_clock::time_point{}) {
         record.details["queue_wait_ms"] = std::to_string(
@@ -852,15 +850,13 @@ int RuntimeApp::run() {
         record.details["write_ms"] = std::to_string(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 result.completed_at - result.started_at).count());
-        record.details["confirmation_ms"] = std::to_string(
+        record.details["persistence_ms"] = std::to_string(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 confirmed_at - result.change.requested_at).count());
       }
       (void)log_.append(record);
     }
-    if (outstanding_saves == 0)
-      requested_settings = settings_;
-    return changed;
+    return failure_notice_changed;
   };
   const auto started_at = std::chrono::steady_clock::now();
   auto next_server_check = started_at;
@@ -879,6 +875,7 @@ int RuntimeApp::run() {
   auto last_slow_system_events_at = std::chrono::steady_clock::time_point{};
   auto last_slow_input_at = std::chrono::steady_clock::time_point{};
   auto last_input_backlog_at = std::chrono::steady_clock::time_point{};
+  auto last_slow_interaction_at = std::chrono::steady_clock::time_point{};
   auto last_slow_tracking_at = std::chrono::steady_clock::time_point{};
   auto last_target_log_at = std::chrono::steady_clock::time_point{};
   std::string last_target_signature;
@@ -1042,9 +1039,9 @@ int RuntimeApp::run() {
       (void)log_.append({core::DiagnosticEventType::Error, "TARGET_RESOLUTION_STALE"});
       target_worker.request_refresh();
     }
-    bool save_result_ready = consume_saved_settings();
+    bool save_notice_changed = consume_save_results();
     const auto input_started = std::chrono::steady_clock::now();
-    const auto dashboard_events = overlays_->poll_dashboard_events(last_frame);
+    const auto dashboard_events = overlays_->poll_dashboard_events();
     const auto input_finished = std::chrono::steady_clock::now();
     if (input_finished - input_started >= std::chrono::milliseconds(32) &&
         input_finished - last_slow_input_at >= std::chrono::seconds(5)) {
@@ -1055,16 +1052,16 @@ int RuntimeApp::run() {
       (void)log_.append(record);
       last_slow_input_at = input_finished;
     }
-    if (dashboard_events.max_button_event_age_seconds >= 0.05F &&
+    if (dashboard_events.max_event_age_seconds >= 0.05F &&
         input_finished - last_input_backlog_at >= std::chrono::seconds(5)) {
       core::DiagnosticRecord record{core::DiagnosticEventType::Error,
                                     "DASHBOARD_EVENT_BACKLOG"};
       record.status = std::to_string(static_cast<int>(
-                          dashboard_events.max_button_event_age_seconds * 1000.0F)) + "ms";
+                          dashboard_events.max_event_age_seconds * 1000.0F)) + "ms";
       (void)log_.append(record);
       last_input_backlog_at = input_finished;
     }
-    bool save_notice_changed = false;
+    bool settings_changed = false;
     if (!overlays_->error().empty())
       log_overlay_error(now);
     else {
@@ -1074,14 +1071,17 @@ int RuntimeApp::run() {
         last_ui_hover_sound_at = now;
       }
       for (const auto action : dashboard_events.actions) {
-        auto change = dashboard_input(action, requested_settings);
+        auto change = dashboard_input(action, settings_);
         if (!change)
           continue;
         change->requested_at = std::chrono::steady_clock::now();
-        const auto requested = change->settings;
+        const auto next = change->settings;
         if (settings_writer.enqueue(std::move(*change))) {
-          requested_settings = requested;
-          ++outstanding_saves;
+          // This is the actual configuration commit, not a speculative visual
+          // state. Disk durability is an asynchronous side effect and cannot
+          // stall input, runtime behavior, or the frame submitted below.
+          apply_settings(next);
+          settings_changed = true;
           sound_.ui_select();
         } else {
           save_failure_notice_until_ = now + std::chrono::seconds(8);
@@ -1089,11 +1089,30 @@ int RuntimeApp::run() {
         }
       }
     }
-    save_result_ready |= consume_saved_settings();
+    save_notice_changed |= consume_save_results();
     if (dashboard_events.hover_changed || dashboard_events.tab_changed ||
-        save_result_ready || save_notice_changed) {
+        settings_changed || save_notice_changed) {
       update_dashboard(latest_resolution_, last_frame);
       last_dashboard_refresh_at = std::chrono::steady_clock::now();
+    }
+    if ((dashboard_events.hover_changed || dashboard_events.tab_changed || settings_changed) &&
+        dashboard_events.max_event_age_seconds > 0.0F) {
+      const auto interaction_finished = std::chrono::steady_clock::now();
+      const auto local_ms =
+          std::chrono::duration<double, std::milli>(interaction_finished - input_finished).count();
+      const auto end_to_end_ms =
+          dashboard_events.max_event_age_seconds * 1000.0 + local_ms;
+      if (end_to_end_ms >= 16.0 &&
+          interaction_finished - last_slow_interaction_at >= std::chrono::seconds(5)) {
+        core::DiagnosticRecord record{core::DiagnosticEventType::Error,
+                                      "DASHBOARD_INTERACTION_SLOW"};
+        record.details = {
+            {"event_queue_ms", std::to_string(dashboard_events.max_event_age_seconds * 1000.0F)},
+            {"logic_and_submit_ms", std::to_string(local_ms)},
+            {"end_to_end_ms", std::to_string(end_to_end_ms)}};
+        (void)log_.append(record);
+        last_slow_interaction_at = interaction_finished;
+      }
     }
     if (thumbnail_dirty_) {
       thumbnail_dirty_ = false;
@@ -1407,7 +1426,7 @@ int RuntimeApp::run() {
   }
   target_worker.request_stop();
   settings_writer.stop();
-  (void)consume_saved_settings();
+  (void)consume_save_results();
   target_worker.stop();
   log_.stop_async();
   process_.clear();

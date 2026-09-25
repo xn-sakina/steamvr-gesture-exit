@@ -29,7 +29,8 @@ struct SettingsSaveResult {
   std::chrono::steady_clock::time_point completed_at{};
 };
 
-// Writes snapshots in click order. The caller applies only successful results.
+// Writes runtime snapshots in click order without putting disk durability on
+// the caller's input/render critical path.
 class SettingsPersistenceWorker {
  public:
   explicit SettingsPersistenceWorker(std::filesystem::path path);

@@ -449,9 +449,6 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
   }
   if (FAILED(result) && impl_->error.empty())
     impl_->error = "EndDraw(thumbnail) failed";
-  // SteamVR may copy the thumbnail immediately after SetOverlayTexture.
-  if (SUCCEEDED(result))
-    impl_->context->Flush();
   return SUCCEEDED(result);
 }
 bool D3dOverlayRenderer::render_dashboard(const std::string& id, const DashboardSurfaceModel& m) {
@@ -627,9 +624,11 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   }
   if (FAILED(result) && impl_->error.empty())
     impl_->error = "EndDraw(dashboard) failed";
-  if (SUCCEEDED(result))
-    impl_->context->Flush();
   return SUCCEEDED(result);
+}
+void D3dOverlayRenderer::flush() {
+  if (impl_->context)
+    impl_->context->Flush();
 }
 void* D3dOverlayRenderer::texture(const std::string& id) const {
   auto it = impl_->surfaces.find(id);
