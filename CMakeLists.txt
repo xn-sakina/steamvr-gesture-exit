@@ -44,6 +44,7 @@ add_library(bailout_core STATIC
     src/core/types.cpp
     src/core/gesture_detector.cpp
     src/core/settings.cpp
+    src/core/settings_persistence.cpp
     src/core/state_machine.cpp
     src/core/diagnostics.cpp
     src/core/localization.cpp

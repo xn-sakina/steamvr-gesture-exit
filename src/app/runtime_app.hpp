@@ -4,6 +4,7 @@
 #include "core/gesture_detector.hpp"
 #include "core/localization.hpp"
 #include "core/settings.hpp"
+#include "core/settings_persistence.hpp"
 #include "core/state_machine.hpp"
 #include "platform/openvr/openvr_runtime.hpp"
 #include "platform/openvr/overlay_manager.hpp"
@@ -16,10 +17,6 @@
 #include <string>
 #include <vector>
 namespace bailout::app {
-struct SettingsChange {
-  core::Settings settings;
-  std::string name, value;
-};
 class RuntimeApp {
  public:
   RuntimeApp();
@@ -36,7 +33,9 @@ class RuntimeApp {
                                     bool dashboard_visible = false) const;
   void apply(core::Effects, std::chrono::steady_clock::time_point, const TrackingFrame&);
   void update_dashboard(const platform::windows::TargetResolution&, const TrackingFrame&);
-  std::vector<SettingsChange> dashboard_input(const std::vector<core::DashboardAction>&);
+  std::optional<core::SettingsChange> dashboard_input(core::DashboardAction,
+                                                       const core::Settings&);
+  void apply_saved_settings(const core::Settings&);
   void log_overlay_error(std::chrono::steady_clock::time_point);
   void abort_overlay_flow(std::chrono::steady_clock::time_point, const TrackingFrame&);
   std::wstring text(core::StringId) const;

@@ -1,0 +1,68 @@
+#include "core/settings_persistence.hpp"
+
+#include <utility>
+
+namespace bailout::core {
+
+SettingsPersistenceWorker::SettingsPersistenceWorker(std::filesystem::path path)
+    : store_(std::move(path)), thread_([this] { run(); }) {}
+
+SettingsPersistenceWorker::~SettingsPersistenceWorker() { stop(); }
+
+bool SettingsPersistenceWorker::enqueue(SettingsChange change) {
+  {
+    std::scoped_lock lock(mutex_);
+    if (stop_ || outstanding_ == kMaxOutstanding)
+      return false;
+    pending_.push_back(std::move(change));
+    ++outstanding_;
+  }
+  wake_.notify_one();
+  return true;
+}
+
+std::vector<SettingsSaveResult> SettingsPersistenceWorker::take_results() {
+  std::vector<SettingsSaveResult> results;
+  std::scoped_lock lock(mutex_);
+  results.reserve(completed_.size());
+  while (!completed_.empty()) {
+    results.push_back(std::move(completed_.front()));
+    completed_.pop_front();
+  }
+  outstanding_ -= results.size();
+  return results;
+}
+
+void SettingsPersistenceWorker::stop() {
+  {
+    std::scoped_lock lock(mutex_);
+    stop_ = true;
+  }
+  wake_.notify_all();
+  if (thread_.joinable())
+    thread_.join();
+}
+
+void SettingsPersistenceWorker::run() {
+  while (true) {
+    std::unique_lock lock(mutex_);
+    wake_.wait(lock, [this] { return stop_ || !pending_.empty(); });
+    if (pending_.empty())
+      return;
+    auto change = std::move(pending_.front());
+    pending_.pop_front();
+    lock.unlock();
+
+    std::string error;
+    bool saved = false;
+    try {
+      saved = store_.save(change.settings, &error);
+    } catch (...) {
+      error = "SETTINGS_WRITE_FAILED";
+    }
+    lock.lock();
+    completed_.push_back({std::move(change), saved, std::move(error)});
+  }
+}
+
+}  // namespace bailout::core

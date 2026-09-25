@@ -3,6 +3,7 @@
 #include "core/gesture_detector.hpp"
 #include "core/localization.hpp"
 #include "core/settings.hpp"
+#include "core/settings_persistence.hpp"
 #include "core/state_machine.hpp"
 #include "core/vr_game_classifier.hpp"
 #include "core/wrist_pose_smoother.hpp"
@@ -238,6 +239,73 @@ void settings_round_trip_and_recovery() {
   std::filesystem::remove_all(root, ec);
 }
 
+void settings_worker_reports_durable_results_in_order() {
+  const auto root = std::filesystem::temp_directory_path() / "bailout-settings-commits-test";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto path = root / "settings.json";
+  Settings first = Settings::defaults();
+  first.countdown_seconds = 10;
+  Settings second = first;
+  second.language = Language::ChineseSimplified;
+  Settings third = second;
+  third.control_timeout_seconds = 12;
+  SettingsPersistenceWorker worker(path);
+  CHECK(worker.enqueue({first, "countdown_seconds", "10"}));
+  CHECK(worker.enqueue({second, "language", "zh-CN"}));
+  CHECK(worker.enqueue({third, "control_timeout_seconds", "12"}));
+  worker.stop();
+  auto results = worker.take_results();
+  CHECK(results.size() == 3);
+  CHECK(results[0].saved && results[0].change.settings == first);
+  CHECK(results[1].saved && results[1].change.settings == second);
+  CHECK(results[2].saved && results[2].change.settings == third);
+  CHECK(SettingsStore(path).load().settings == third);
+  CHECK(worker.take_results().empty());
+  CHECK(!worker.enqueue({first, "countdown_seconds", "10"}));
+  worker.stop();
+  std::filesystem::remove_all(root, ec);
+}
+
+void settings_worker_failure_preserves_last_commit_and_bounds_queue() {
+  const auto root = std::filesystem::temp_directory_path() / "bailout-settings-failure-test";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  const auto path = root / "settings.json";
+  SettingsStore store(path);
+  const Settings committed = Settings::defaults();
+  CHECK(store.save(committed));
+  auto temporary = path;
+  temporary += ".tmp";
+  std::filesystem::create_directory(temporary);
+  Settings changed = committed;
+  changed.countdown_seconds = 15;
+  {
+    SettingsPersistenceWorker worker(path);
+    for (int i = 0; i < 64; ++i)
+      CHECK(worker.enqueue({changed, "countdown_seconds", "15"}));
+    CHECK(!worker.enqueue({changed, "countdown_seconds", "15"}));
+    worker.stop();
+    auto results = worker.take_results();
+    CHECK(results.size() == 64);
+    for (const auto& result : results) {
+      CHECK(!result.saved);
+      CHECK(result.error == "SETTINGS_WRITE_FAILED");
+    }
+  }
+  CHECK(store.load().settings == committed);
+  std::filesystem::remove(temporary, ec);
+  {
+    SettingsPersistenceWorker worker(path);
+    CHECK(worker.enqueue({changed, "countdown_seconds", "15"}));
+    worker.stop();
+    auto results = worker.take_results();
+    CHECK(results.size() == 1 && results.front().saved);
+  }
+  CHECK(store.load().settings == changed);
+  std::filesystem::remove_all(root, ec);
+}
+
 void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::Auto, "schinese", "en-US") == Language::English);
   CHECK(resolve_language(Language::Auto, "", "zh-SG") == Language::ChineseSimplified);
@@ -253,7 +321,7 @@ void localization_resolves_auto_and_manual() {
         "退出按钮出现后，指向按钮并扣动扳机。");
   CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
-        "设置未保存，重启后可能丢失。");
+        "设置保存失败，请重试。");
   CHECK(localize(StringId::AppName, Language::ChineseSimplified) == "SteamVR手势退出");
   CHECK(localize(StringId::AppName, Language::English) == "SteamVR Gesture Exit");
   CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "SteamVR手势退出");
@@ -921,6 +989,9 @@ int main() {
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},
       {"settings round trip and recovery", settings_round_trip_and_recovery},
+      {"settings durable results", settings_worker_reports_durable_results_in_order},
+      {"settings failure and queue bound",
+       settings_worker_failure_preserves_last_commit_and_bounds_queue},
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"diagnostics debug filtering", diagnostics_debug_records_follow_build_type},
