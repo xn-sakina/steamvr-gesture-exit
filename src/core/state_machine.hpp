@@ -85,7 +85,7 @@ struct FlowSnapshot {
 
 class FlowStateMachine {
  public:
-  explicit FlowStateMachine(std::chrono::seconds control_timeout = std::chrono::seconds{8},
+  explicit FlowStateMachine(std::chrono::seconds control_timeout = std::chrono::seconds{3},
                             std::chrono::seconds exit_grace_period = std::chrono::seconds{5});
 
   [[nodiscard]] FlowState state() const noexcept {

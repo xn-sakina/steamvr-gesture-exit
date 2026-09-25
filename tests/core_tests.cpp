@@ -412,6 +412,7 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::ThumbnailDescription, Language::ChineseSimplified) ==
         "挥手唤出退出按钮");
   CHECK(localize(StringId::SecondsUnit, Language::ChineseSimplified) == "秒");
+  CHECK(localize(StringId::EnglishLanguage, Language::ChineseSimplified) == "English");
   CHECK(localize_last_exit(LastExitStatus::Never, Language::ChineseSimplified) == "从未");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::ChineseSimplified) == "成功");
   CHECK(localize_last_exit(LastExitStatus::Cancelled, Language::ChineseSimplified) == "已取消");
@@ -752,13 +753,15 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
 
 void dashboard_actions_change_only_the_intended_setting() {
   Settings settings;
+  CHECK(settings.countdown_seconds == 3);
+  CHECK(settings.control_timeout_seconds == 3);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetRightHand));
   CHECK(settings.configured_hand == Hand::Right);
-  CHECK(settings.countdown_seconds == 5);
+  CHECK(settings.countdown_seconds == 3);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetCountdown15));
   CHECK(settings.countdown_seconds == 15);
-  CHECK(apply_dashboard_action(settings, DashboardAction::DecreaseControlTimeout));
-  CHECK(settings.control_timeout_seconds == 7);
+  CHECK(apply_dashboard_action(settings, DashboardAction::IncreaseControlTimeout));
+  CHECK(settings.control_timeout_seconds == 4);
   CHECK(apply_dashboard_action(settings, DashboardAction::DisableCountdownSound));
   CHECK(!settings.countdown_sound);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetLanguageChinese));
@@ -776,6 +779,29 @@ void dashboard_actions_change_only_the_intended_setting() {
   CHECK(!dashboard_hit_test(buttons,
                             (disabled_minus->bounds.left + disabled_minus->bounds.right) * 0.5F,
                             (disabled_minus->bounds.top + disabled_minus->bounds.bottom) * 0.5F));
+}
+
+void dashboard_timeout_buttons_repeat_while_held() {
+  DashboardHoldRepeater repeater;
+  const auto start = DashboardHoldRepeater::TimePoint{};
+
+  repeater.press(DashboardAction::IncreaseControlTimeout, start);
+  CHECK(!repeater.update(DashboardAction::IncreaseControlTimeout, start + 399ms));
+  CHECK(repeater.update(DashboardAction::IncreaseControlTimeout, start + 400ms) ==
+        DashboardAction::IncreaseControlTimeout);
+  CHECK(!repeater.update(DashboardAction::IncreaseControlTimeout, start + 499ms));
+  CHECK(repeater.update(DashboardAction::IncreaseControlTimeout, start + 500ms) ==
+        DashboardAction::IncreaseControlTimeout);
+
+  CHECK(!repeater.update(DashboardAction::DecreaseControlTimeout, start + 600ms));
+  CHECK(!repeater.update(DashboardAction::IncreaseControlTimeout, start + 700ms));
+
+  repeater.press(DashboardAction::DecreaseControlTimeout, start + 800ms);
+  repeater.release();
+  CHECK(!repeater.update(DashboardAction::DecreaseControlTimeout, start + 1200ms));
+
+  repeater.press(DashboardAction::SetCountdown3, start + 1300ms);
+  CHECK(!repeater.update(DashboardAction::SetCountdown3, start + 1800ms));
 }
 
 void state_machine_requires_all_prerequisites() {
@@ -812,6 +838,11 @@ void state_machine_happy_graceful_path() {
 }
 
 void state_machine_timeout_refresh_and_prerequisite_loss() {
+  FlowStateMachine defaults;
+  (void)defaults.on_gesture(at(0), ready());
+  CHECK(defaults.tick(at(2999)).empty());
+  CHECK(has_effect(defaults.tick(at(3000)), EffectType::HideControl));
+
   FlowStateMachine machine(2s);
   (void)machine.on_gesture(at(0), ready());
   CHECK(machine.tick(at(1500)).empty());
@@ -1094,6 +1125,7 @@ int main() {
       {"dashboard tabs", dashboard_tabs_have_distinct_large_targets},
       {"dashboard mouse scale", dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale},
       {"dashboard actions", dashboard_actions_change_only_the_intended_setting},
+      {"dashboard timeout hold repeat", dashboard_timeout_buttons_repeat_while_held},
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},
       {"state timeout and loss", state_machine_timeout_refresh_and_prerequisite_loss},

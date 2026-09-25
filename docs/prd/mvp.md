@@ -20,7 +20,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 
 1. As a VR player, I want to wave goodbye to reveal an exit control, so that leaving a VR game feels intentional instead of abrupt.
 2. As a VR player, I want a short countdown before the game exits, so that I can perform a farewell or exit pose.
-3. As a VR player, I want the default countdown to be 5 seconds, so that I have enough time for a quick performance without waiting too long.
+3. As a VR player, I want the default countdown and Exit Control display time to be 3 seconds, so that the exit flow stays quick by default.
 4. As a VR player, I want optional countdown durations of 1, 3, 5, 10, and 15 seconds, so that I can choose a pace that fits how I play.
 5. As a VR player, I want the Exit Control to initially appear on the side of the hand that will click it, so that standing, seated, armrest, and lap postures all work.
 6. As a VR player, I want the Exit Control to stay fixed after it appears and angle toward my eyes, so that natural head movement does not make the click target wobble.

@@ -76,7 +76,7 @@ int application_command(int argc, wchar_t** argv) {
           if (!wait_for_manifest(apps))
             error = vr::VRApplicationError_UnknownApplication;
           else if (!was_installed)
-            error = apps->SetApplicationAutoLaunch(kAppKey, false);
+            error = apps->SetApplicationAutoLaunch(kAppKey, true);
           if (error != vr::VRApplicationError_None && !was_installed)
             apps->RemoveApplicationManifest(native.c_str());
         }

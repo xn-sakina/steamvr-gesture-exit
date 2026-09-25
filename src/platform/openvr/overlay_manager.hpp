@@ -75,6 +75,7 @@ class OverlayManager {
   bool dashboard_texture_dirty_ = true;
   bool dashboard_was_visible_ = false;
   bool dashboard_pointer_primed_ = false;
+  core::DashboardHoldRepeater dashboard_hold_repeater_;
   core::DashboardTab dashboard_tab_ = core::DashboardTab::Settings;
   bool thumbnail_requested_ = false;
   uint64_t renderer_generation_seen_ = 0;

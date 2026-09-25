@@ -489,6 +489,7 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
     hovered.reset();
     hovered_tab.reset();
     dashboard_pointer_primed_ = false;
+    dashboard_hold_repeater_.release();
   }
   if (!visible && dashboard_was_visible_ && dashboard_tab_ != core::DashboardTab::Settings) {
     dashboard_tab_ = core::DashboardTab::Settings;
@@ -507,11 +508,13 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
       hovered.reset();
       hovered_tab.reset();
       dashboard_pointer_primed_ = false;
+      dashboard_hold_repeater_.release();
       allow_hover_sound = false;
       continue;
     }
     if (!visible ||
-        (e.eventType != vr::VREvent_MouseMove && e.eventType != vr::VREvent_MouseButtonDown))
+        (e.eventType != vr::VREvent_MouseMove && e.eventType != vr::VREvent_MouseButtonDown &&
+         e.eventType != vr::VREvent_MouseButtonUp))
       continue;
     const auto point = core::dashboard_mouse_to_pixels(
         e.data.mouse.x, e.data.mouse.y, kDashboardWidth, kDashboardHeight, kDashboardWidth,
@@ -532,7 +535,9 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
       record.event = core::DiagnosticEventType::StateTransition;
       record.code = "DASHBOARD_POINTER_EVENT";
       record.debug_only = true;
-      record.status = e.eventType == vr::VREvent_MouseMove ? "move" : "button_down";
+      record.status = e.eventType == vr::VREvent_MouseMove       ? "move"
+                      : e.eventType == vr::VREvent_MouseButtonUp ? "button_up"
+                                                                 : "button_down";
       record.details = {
           {"device_index", std::to_string(e.trackedDeviceIndex)},
           {"raw_x", std::to_string(e.data.mouse.x)},
@@ -577,17 +582,25 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
       pointer_seen = true;
       hovered = hit;
       hovered_tab = tab_hit;
+    } else if (e.eventType == vr::VREvent_MouseButtonUp) {
+      if (e.data.mouse.button == vr::VRMouseButton_Left)
+        dashboard_hold_repeater_.release();
     } else if (e.data.mouse.button == vr::VRMouseButton_Left) {
       hovered = hit;
       hovered_tab = tab_hit;
       if (tab_hit && *tab_hit != dashboard_tab_) {
+        dashboard_hold_repeater_.release();
         dashboard_tab_ = *tab_hit;
         out.tab_changed = true;
       } else if (hit) {
         out.actions.push_back(*hit);
+        dashboard_hold_repeater_.press(*hit, std::chrono::steady_clock::now());
       }
     }
   }
+  if (const auto repeated =
+          dashboard_hold_repeater_.update(hovered, std::chrono::steady_clock::now()))
+    out.actions.push_back(*repeated);
   out.entered_button = allow_hover_sound &&
                        ((hovered && hovered != dashboard_model_.hovered_action) ||
                         (hovered_tab && hovered_tab != dashboard_model_.hovered_tab));

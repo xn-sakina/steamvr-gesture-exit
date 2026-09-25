@@ -175,4 +175,33 @@ bool apply_dashboard_action(Settings& settings, const DashboardAction action) no
   return settings != before;
 }
 
+void DashboardHoldRepeater::press(const DashboardAction action, const TimePoint now) noexcept {
+  if (action != DashboardAction::DecreaseControlTimeout &&
+      action != DashboardAction::IncreaseControlTimeout) {
+    release();
+    return;
+  }
+  held_action_ = action;
+  next_repeat_ = now + std::chrono::milliseconds(400);
+}
+
+void DashboardHoldRepeater::release() noexcept {
+  held_action_.reset();
+  next_repeat_ = {};
+}
+
+std::optional<DashboardAction> DashboardHoldRepeater::update(
+    const std::optional<DashboardAction> hovered, const TimePoint now) noexcept {
+  if (!held_action_)
+    return std::nullopt;
+  if (hovered != held_action_) {
+    release();
+    return std::nullopt;
+  }
+  if (now < next_repeat_)
+    return std::nullopt;
+  next_repeat_ = now + std::chrono::milliseconds(100);
+  return held_action_;
+}
+
 }  // namespace bailout::core

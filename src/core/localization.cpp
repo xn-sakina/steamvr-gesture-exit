@@ -62,7 +62,7 @@ constexpr std::array<TextPair, 71> strings{{
     {"Left", "左手"},
     {"Right", "右手"},
     {"Auto", "自动"},
-    {"English", "英文"},
+    {"English", "English"},
     {"Chinese", "中文"},
     {"Found", "已找到"},
     {"Identifying the current game…", "正在识别当前游戏…"},

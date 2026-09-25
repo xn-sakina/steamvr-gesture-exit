@@ -3,6 +3,7 @@
 #include "core/settings.hpp"
 
 #include <array>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -84,5 +85,20 @@ struct DashboardButton {
 [[nodiscard]] std::optional<DashboardAction> dashboard_hit_test(
     const std::vector<DashboardButton>& buttons, float x, float y) noexcept;
 [[nodiscard]] bool apply_dashboard_action(Settings& settings, DashboardAction action) noexcept;
+
+class DashboardHoldRepeater {
+ public:
+  using Clock = std::chrono::steady_clock;
+  using TimePoint = Clock::time_point;
+
+  void press(DashboardAction action, TimePoint now) noexcept;
+  void release() noexcept;
+  [[nodiscard]] std::optional<DashboardAction> update(std::optional<DashboardAction> hovered,
+                                                      TimePoint now) noexcept;
+
+ private:
+  std::optional<DashboardAction> held_action_;
+  TimePoint next_repeat_{};
+};
 
 }  // namespace bailout::core

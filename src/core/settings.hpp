@@ -13,8 +13,8 @@ struct Settings {
 
   int version{current_version};
   Hand configured_hand{Hand::Left};
-  int countdown_seconds{5};
-  int control_timeout_seconds{8};
+  int countdown_seconds{3};
+  int control_timeout_seconds{3};
   bool countdown_sound{true};
   Language language{Language::Auto};
 
