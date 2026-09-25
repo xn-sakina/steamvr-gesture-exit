@@ -30,7 +30,7 @@ $script:RuntimePackageFiles = @(
     "assets/brand/bailout.png"
 )
 $script:DebugOnlyPackageFiles = @("bin/win64/steamvr_bail_out_cli.exe")
-$script:AppKey = "com.steamvr-bail-out.overlay"
+$script:AppKey = "dev.kanamio.steamvrbailout"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
 $script:RegistrationReceiptPath = Join-Path $script:UserDataDirectory "registered-manifest.txt"

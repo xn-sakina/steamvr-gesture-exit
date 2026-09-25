@@ -5,9 +5,9 @@
 #include <utility>
 namespace bailout::platform::openvr {
 namespace {
-constexpr char kDashboardKey[] = "com.steamvr-bail-out.dashboard";
-constexpr char kWristKey[] = "com.steamvr-bail-out.wrist";
-constexpr char kHudKey[] = "com.steamvr-bail-out.hud";
+constexpr char kDashboardKey[] = "dev.kanamio.steamvrbailout.dashboard";
+constexpr char kWristKey[] = "dev.kanamio.steamvrbailout.wrist";
+constexpr char kHudKey[] = "dev.kanamio.steamvrbailout.hud";
 constexpr float kDashboardWidth = 1024.0f;
 constexpr float kDashboardHeight = 640.0f;
 constexpr float kDashboardWidthMeters = 3.5f * (2.0f / 3.0f);

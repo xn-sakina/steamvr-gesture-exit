@@ -2,7 +2,7 @@
   "source": "builtin",
   "applications": [
     {
-      "app_key": "com.steamvr-bail-out.overlay",
+      "app_key": "dev.kanamio.steamvrbailout",
       "launch_type": "binary",
       "binary_path_windows": "..\\bin\\win64\\steamvr_bail_out.exe",
       "image_path": "..\\assets\\brand\\bailout.png",

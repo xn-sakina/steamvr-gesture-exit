@@ -9,7 +9,7 @@
 #include <thread>
 
 namespace {
-constexpr char kAppKey[] = "com.steamvr-bail-out.overlay";
+constexpr char kAppKey[] = "dev.kanamio.steamvrbailout";
 constexpr auto kManifestReadyTimeout = std::chrono::seconds(15);
 
 bool wait_for_manifest(vr::IVRApplications* applications) {

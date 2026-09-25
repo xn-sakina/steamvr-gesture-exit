@@ -15,7 +15,7 @@
 
 namespace bailout::app {
 namespace {
-constexpr char kAppKey[] = "com.steamvr-bail-out.overlay";
+constexpr char kAppKey[] = "dev.kanamio.steamvrbailout";
 constexpr auto kMaxTargetResolutionAge = std::chrono::seconds(2);
 const char* wrist_action_name(platform::openvr::OverlayAction action) {
   switch (action) {
