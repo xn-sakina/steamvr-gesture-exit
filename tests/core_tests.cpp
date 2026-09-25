@@ -10,6 +10,7 @@
 #include "app/runtime_interfaces.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -73,10 +74,11 @@ void gesture_recognizes_valid_wave() {
     return sample(milliseconds, {x, 1.20, -0.50}, {0, 0, -1}, true, headset);
   };
   CHECK(!detector.update(upper_body_sample(0, 0.10)));
-  CHECK(!detector.update(upper_body_sample(400, 0.30)));
-  CHECK(!detector.update(upper_body_sample(800, 0.10)));
-  CHECK(detector.update(upper_body_sample(1200, 0.30)));
-  CHECK(!detector.update(upper_body_sample(1400, 0.30)));
+  CHECK(!detector.update(upper_body_sample(250, 0.30)));
+  CHECK(!detector.update(upper_body_sample(500, 0.10)));
+  CHECK(!detector.update(upper_body_sample(750, 0.30)));
+  CHECK(detector.update(upper_body_sample(1000, 0.10)));
+  CHECK(!detector.update(upper_body_sample(1200, 0.10)));
 }
 
 void gesture_recognizes_center_crossing_wave() {
@@ -84,10 +86,11 @@ void gesture_recognizes_center_crossing_wave() {
   const auto waved = [&](int milliseconds, double x) {
     return sample(milliseconds, {x, 0.10, -0.50});
   };
-  CHECK(!detector.update(waved(0, -0.07)));
-  CHECK(!detector.update(waved(400, 0.07)));
-  CHECK(!detector.update(waved(800, -0.07)));
-  CHECK(detector.update(waved(1200, 0.07)));
+  CHECK(!detector.update(waved(0, -0.10)));
+  CHECK(!detector.update(waved(250, 0.10)));
+  CHECK(!detector.update(waved(500, -0.10)));
+  CHECK(!detector.update(waved(750, 0.10)));
+  CHECK(detector.update(waved(1000, -0.10)));
 }
 
 void gesture_recognizes_sampled_controller_wave() {
@@ -114,9 +117,10 @@ void gesture_uses_head_relative_right_axis() {
     return Vec3{centre.x + right.x * offset, centre.y, centre.z + right.z * offset};
   };
   CHECK(!detector.update(sample(0, moved(-0.08), forward)));
-  CHECK(!detector.update(sample(200, moved(0.08), forward)));
-  CHECK(!detector.update(sample(400, moved(-0.08), forward)));
-  CHECK(detector.update(sample(600, moved(0.08), forward)));
+  CHECK(!detector.update(sample(250, moved(0.12), forward)));
+  CHECK(!detector.update(sample(500, moved(-0.08), forward)));
+  CHECK(!detector.update(sample(750, moved(0.12), forward)));
+  CHECK(detector.update(sample(1000, moved(-0.08), forward)));
 }
 
 void gesture_rejects_unsafe_or_weak_motion() {
@@ -124,27 +128,70 @@ void gesture_rejects_unsafe_or_weak_motion() {
   for (int i = 0; i < 8; ++i) {
     CHECK(!jitter.update(sample(i * 100, {0.20 + (i % 2 ? 0.01 : 0.0), 0.1, -0.5})));
   }
-  CHECK(jitter.diagnostic().decision == GestureDecision::InsufficientAmplitude);
-  CHECK(jitter.diagnostic().amplitude_m < jitter.config().minimum_amplitude_metres);
+  CHECK(jitter.diagnostic().decision == GestureDecision::InsufficientStroke);
+  CHECK(jitter.diagnostic().amplitude_m < jitter.config().minimum_stroke_metres);
   GestureDetector behind;
   for (int i = 0; i < 4; ++i)
     CHECK(!behind.update(sample(i * 400, {i % 2 ? 0.3 : 0.1, 0.1, 0.5})));
   CHECK(behind.diagnostic().decision == GestureDecision::BehindHead);
-  GestureDetector low;
-  const Vec3 headset{0.0, 1.65, 0.0};
-  CHECK(!low.update(sample(0, {0.10, 0.90, -0.50}, {0, 0, -1}, true, headset)));
-  CHECK(!low.update(sample(400, {0.30, 0.90, -0.50}, {0, 0, -1}, true, headset)));
-  CHECK(!low.update(sample(800, {0.10, 0.90, -0.50}, {0, 0, -1}, true, headset)));
-  CHECK(!low.update(sample(1200, {0.30, 0.90, -0.50}, {0, 0, -1}, true, headset)));
-  CHECK(low.diagnostic().decision == GestureDecision::TooLow);
   GestureDetector untracked;
   CHECK(!untracked.update(sample(0, {0.1, 0.1, -0.5}, {0, 0, -1}, false)));
   CHECK(untracked.diagnostic().decision == GestureDecision::HandUntracked);
-  GestureDetector too_slow;
-  CHECK(!too_slow.update(sample(0, {0.10, 0.10, -0.50})));
-  CHECK(!too_slow.update(sample(900, {0.30, 0.10, -0.50})));
-  CHECK(!too_slow.update(sample(1800, {0.10, 0.10, -0.50})));
-  CHECK(!too_slow.update(sample(2800, {0.30, 0.10, -0.50})));
+}
+
+void gesture_accepts_real_seated_postures() {
+  const Vec3 headset{0.0, 1.55, 0.0};
+  for (const double height : {0.72, 1.02}) {
+    GestureDetector detector;
+    const std::array<double, 5> x{0.04, 0.24, 0.04, 0.24, 0.04};
+    for (std::size_t i = 0; i + 1 < x.size(); ++i) {
+      CHECK(!detector.update(sample(static_cast<int>(i) * 250, {x[i], height, -0.48},
+                                    {0, 0, -1}, true, headset)));
+    }
+    CHECK(detector.update(sample(1000, {x.back(), height, -0.48}, {0, 0, -1}, true,
+                                 headset)));
+  }
+}
+
+void gesture_requires_deliberate_repeated_lateral_strokes() {
+  GestureDetector two_reversals;
+  for (const auto [time, x] :
+       std::array<std::pair<int, double>, 4>{{{0, 0.0}, {300, 0.20}, {600, 0.0}, {900, 0.20}}})
+    CHECK(!two_reversals.update(sample(time, {x, 0.1, -0.5})));
+  CHECK(!two_reversals.update(sample(1000, {0.20, 0.1, -0.5})));
+  CHECK(two_reversals.diagnostic().decision == GestureDecision::InsufficientReversals);
+
+  GestureDetector too_fast;
+  for (const auto [time, x] : std::array<std::pair<int, double>, 5>{
+           {{0, 0.0}, {60, 0.20}, {120, 0.0}, {180, 0.20}, {240, 0.0}}})
+    CHECK(!too_fast.update(sample(time, {x, 0.1, -0.5})));
+  CHECK(too_fast.diagnostic().decision == GestureDecision::TooBrief);
+
+  GestureDetector non_lateral;
+  for (const auto [time, point] : std::array<std::pair<int, Vec3>, 5>{{
+           {0, {0.0, 0.0, -0.5}},
+           {250, {0.20, 0.22, -0.5}},
+           {500, {0.0, 0.0, -0.5}},
+           {750, {0.20, 0.22, -0.5}},
+           {1000, {0.0, 0.0, -0.5}},
+       }})
+    CHECK(!non_lateral.update(sample(time, point)));
+  CHECK(non_lateral.diagnostic().decision == GestureDecision::NonLateralMotion);
+
+  GestureDetector paused;
+  for (const auto [time, x] : std::array<std::pair<int, double>, 5>{
+           {{0, 0.0}, {200, 0.20}, {1100, 0.0}, {1400, 0.20}, {1700, 0.0}}})
+    CHECK(!paused.update(sample(time, {x, 0.1, -0.5})));
+  CHECK(paused.diagnostic().decision == GestureDecision::StrokeTooSlow);
+
+  GestureDetector stationary_prelude;
+  CHECK(!stationary_prelude.update(sample(0, {0.0, 0.1, -0.5})));
+  CHECK(!stationary_prelude.update(sample(500, {0.0, 0.1, -0.5})));
+  CHECK(!stationary_prelude.update(sample(1000, {0.0, 0.1, -0.5})));
+  CHECK(!stationary_prelude.update(sample(1200, {0.20, 0.1, -0.5})));
+  CHECK(!stationary_prelude.update(sample(1450, {0.0, 0.1, -0.5})));
+  CHECK(!stationary_prelude.update(sample(1700, {0.20, 0.1, -0.5})));
+  CHECK(stationary_prelude.update(sample(1950, {0.0, 0.1, -0.5})));
 }
 
 void settings_round_trip_and_recovery() {
@@ -577,16 +624,15 @@ void pointer_availability_uses_tracked_controller() {
   CHECK(!hand.pointer_available());
   hand.device_index = 7;
   CHECK(hand.pointer_available());
-  CHECK(hand.accepts_pointer_event(7));
-  CHECK(!hand.accepts_pointer_event(8));
-  CHECK(!hand.accepts_pointer_event(0xFFFFFFFFU));
+  CHECK(!hand.trigger_available);
+  hand.trigger_available = true;
   hand.tracked = false;
   CHECK(!hand.pointer_available());
   hand.tracked = true;
   hand.connected = false;
   CHECK(!hand.pointer_available());
   hand.connected = true;
-  CHECK(hand.accepts_pointer_event(7));
+  CHECK(hand.pointer_available());
 }
 
 void wrist_pose_smoothing_follows_and_resets_safely() {
@@ -1005,6 +1051,9 @@ int main() {
       {"gesture recognizes sampled controller wave", gesture_recognizes_sampled_controller_wave},
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},
+      {"gesture accepts seated postures", gesture_accepts_real_seated_postures},
+      {"gesture requires deliberate strokes",
+       gesture_requires_deliberate_repeated_lateral_strokes},
       {"settings round trip and recovery", settings_round_trip_and_recovery},
       {"settings durable results", settings_worker_reports_durable_results_in_order},
       {"settings failure and queue bound",

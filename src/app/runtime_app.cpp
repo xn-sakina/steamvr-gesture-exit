@@ -573,11 +573,10 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
       effects.insert(effects.end(), std::make_move_iterator(more.begin()),
                      std::make_move_iterator(more.end()));
     };
-    const auto& hand = settings_.configured_hand == core::Hand::Left ? f.left : f.right;
     switch (e.type) {
       case core::EffectType::ShowIdleControl:
         if (!overlays_->show_wrist(
-                hand, f.sampled_at,
+                settings_.configured_hand,
                 {text(core::StringId::AppName), text(core::StringId::ExitGame),
                  text(core::StringId::ExitGame), text(core::StringId::Dismiss)})) {
           abort_overlay_flow(now, f);
@@ -588,7 +587,7 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         std::wstring name = latest_resolution_.target ? latest_resolution_.target->display_name
                                                       : text(core::StringId::UnknownGame);
         if (!overlays_->show_wrist(
-                hand, f.sampled_at,
+                settings_.configured_hand,
                 {text(core::StringId::ConfirmTitle),
                  name + L"\n" + text(core::StringId::ConfirmBody), text(core::StringId::Confirm),
                  text(core::StringId::Dismiss)})) {
@@ -614,9 +613,9 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           abort_overlay_flow(now, f);
           return;
         }
-        if (hand.tracked && !overlays_->show_wrist(hand, f.sampled_at,
-                                                   {text(core::StringId::ExitGame), countdown_body,
-                                                    L"", text(core::StringId::CancelExit)})) {
+        if (!overlays_->show_wrist(settings_.configured_hand,
+                                   {text(core::StringId::ExitGame), countdown_body, L"",
+                                    text(core::StringId::CancelExit)})) {
           abort_overlay_flow(now, f);
           return;
         }
@@ -1267,15 +1266,22 @@ int RuntimeApp::run() {
           {"sample_count", std::to_string(gesture_diagnostic.sample_count)},
           {"window_span_ms", std::to_string(gesture_diagnostic.span_ms)},
           {"head_distance_m", std::to_string(gesture_diagnostic.head_distance_m)},
-          {"below_head_m", std::to_string(gesture_diagnostic.below_head_m)},
           {"behind_head_m", std::to_string(gesture_diagnostic.behind_head_m)},
           {"amplitude_m", std::to_string(gesture_diagnostic.amplitude_m)},
+          {"lateral_travel_m", std::to_string(gesture_diagnostic.lateral_travel_m)},
+          {"maximum_orthogonal_ratio",
+           std::to_string(gesture_diagnostic.maximum_orthogonal_ratio)},
           {"reversals", std::to_string(gesture_diagnostic.reversals)},
-          {"minimum_amplitude_m", std::to_string(gesture_.config().minimum_amplitude_metres)},
-          {"reversal_deadband_m", std::to_string(gesture_.config().reversal_deadband_metres)},
+          {"required_reversals", std::to_string(gesture_.config().required_reversals)},
+          {"minimum_stroke_m", std::to_string(gesture_.config().minimum_stroke_metres)},
+          {"minimum_total_lateral_travel_m",
+           std::to_string(gesture_.config().minimum_total_lateral_travel_metres)},
+          {"minimum_gesture_duration_ms",
+           std::to_string(gesture_.config().minimum_gesture_duration.count())},
+          {"maximum_stroke_duration_ms",
+           std::to_string(gesture_.config().maximum_stroke_duration.count())},
           {"minimum_head_distance_m", std::to_string(gesture_.config().minimum_head_distance_metres)},
           {"maximum_head_distance_m", std::to_string(gesture_.config().maximum_head_distance_metres)},
-          {"maximum_below_head_m", std::to_string(gesture_.config().maximum_hand_below_head_metres)},
           {"maximum_behind_head_m", std::to_string(gesture_.config().maximum_behind_head_metres)},
           {"clock_reset", gesture_diagnostic.clock_reset ? "true" : "false"},
           {"prerequisites_ready", prereq.ready() ? "true" : "false"},
@@ -1392,12 +1398,6 @@ int RuntimeApp::run() {
     if (dashboard_visible) {
       if (!overlays_->hide_wrist())
         log_overlay_error(now);
-    } else if (overlays_->wrist_visible()) {
-      if (!configured.tracked) {
-        if (!overlays_->hide_wrist())
-          log_overlay_error(now);
-      } else if (!overlays_->update_wrist_pose(configured, frame.sampled_at))
-        abort_overlay_flow(now, frame);
     }
     // Preserve the start-of-iteration sample so a visibility change that
     // arrives later in this iteration is handled immediately next time.

@@ -3,15 +3,29 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 namespace bailout::platform::openvr {
 struct SurfaceStyle {
   float r, g, b, a;
 };
 struct SurfaceModel {
+  SurfaceModel() = default;
+  SurfaceModel(std::wstring next_title, std::wstring next_body,
+               std::wstring next_left_button = {}, std::wstring next_right_button = {},
+               std::wstring next_footer = {}, float next_progress = 0)
+      : title(std::move(next_title)),
+        body(std::move(next_body)),
+        left_button(std::move(next_left_button)),
+        right_button(std::move(next_right_button)),
+        footer(std::move(next_footer)),
+        progress(next_progress) {}
+
   std::wstring title, body, left_button, right_button, footer;
   float progress = 0;
   bool left_hover = false, right_hover = false;
+  bool pointer_visible = false;
+  float pointer_x = 0, pointer_y = 0;
 };
 struct DashboardSettingDisplay {
   core::DashboardSettingRow row{};

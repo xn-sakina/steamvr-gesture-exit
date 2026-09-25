@@ -18,16 +18,14 @@ struct HandPose {
   int tracking_result = -1;
   std::uint32_t device_index = 0xFFFFFFFFU;
   Vec3 position{}, forward{}, up{}, right{};
+  bool trigger_available = false;
+  bool trigger_pressed = false;
 
   [[nodiscard]] constexpr bool pointer_available() const noexcept {
-    // SteamVR sends overlay mouse events itself. Legacy button state and the
-    // supported-buttons property do not determine whether it can do so.
+    // A ray only requires a tracked controller pose. Trigger sampling is kept
+    // separate so a transient input-state failure does not hide the control or
+    // its pointer feedback.
     return connected && tracked && device_index != 0xFFFFFFFFU;
-  }
-
-  [[nodiscard]] constexpr bool accepts_pointer_event(
-      const std::uint32_t source_device_index) const noexcept {
-    return pointer_available() && source_device_index == device_index;
   }
 };
 struct TrackingFrame {

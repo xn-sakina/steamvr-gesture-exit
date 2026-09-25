@@ -9,14 +9,19 @@
 namespace bailout::core {
 
 struct GestureConfig {
-  std::chrono::milliseconds recognition_window{2000};
-  double minimum_amplitude_metres{0.10};
-  double reversal_deadband_metres{0.025};
-  double minimum_head_distance_metres{0.20};
-  double maximum_head_distance_metres{1.25};
-  double maximum_behind_head_metres{0.10};
-  // Head-relative upper-body proxy; the MVP has no anatomical torso tracking.
-  double maximum_hand_below_head_metres{0.70};
+  std::chrono::milliseconds recognition_window{2400};
+  std::chrono::milliseconds minimum_gesture_duration{700};
+  std::chrono::milliseconds maximum_stroke_duration{800};
+  // A farewell wave must contain four deliberate lateral strokes (three
+  // reversals). Position is deliberately not height-gated: seated players may
+  // start with a controller on an armrest or their lap.
+  double minimum_stroke_metres{0.16};
+  double minimum_total_lateral_travel_metres{0.62};
+  double maximum_orthogonal_stroke_ratio{0.75};
+  int required_reversals{3};
+  double minimum_head_distance_metres{0.18};
+  double maximum_head_distance_metres{1.30};
+  double maximum_behind_head_metres{0.20};
 };
 
 struct GestureSample {
@@ -28,8 +33,18 @@ struct GestureSample {
 };
 
 enum class GestureDecision {
-  Reset, HandUntracked, TooClose, TooFar, TooLow, BehindHead,
-  WaitingForSamples, InsufficientAmplitude, InsufficientReversals, Recognized
+  Reset,
+  HandUntracked,
+  TooClose,
+  TooFar,
+  BehindHead,
+  WaitingForSamples,
+  InsufficientStroke,
+  InsufficientReversals,
+  TooBrief,
+  StrokeTooSlow,
+  NonLateralMotion,
+  Recognized
 };
 [[nodiscard]] std::string_view to_string(GestureDecision) noexcept;
 
@@ -39,9 +54,10 @@ struct GestureDiagnostic {
   std::size_t sample_count = 0;
   int span_ms = 0;
   double head_distance_m = 0;
-  double below_head_m = 0;
   double behind_head_m = 0;
   double amplitude_m = 0;
+  double lateral_travel_m = 0;
+  double maximum_orthogonal_ratio = 0;
   int reversals = 0;
 };
 

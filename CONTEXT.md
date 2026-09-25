@@ -17,19 +17,19 @@ The reliable main-process target selected from the Current VR Game at the moment
 _Avoid_: current process, latest app, foreground app
 
 **Farewell Gesture**:
-The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller inside the Activation Zone in a short side-to-side wave with at least two direction reversals. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation.
+The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller through four deliberate side-to-side strokes with three direction reversals, enough total lateral travel, and a recognisable human pace. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation or a standing posture.
 _Avoid_: wave, bye-bye, gesture trigger
 
 **Activation Zone**:
-The body-relative area where a Farewell Gesture can be recognized. It is roughly in front of or to the side-front of the user and high enough to resemble an intentional farewell, rather than a low or behind-the-body hand movement.
+The head-relative area where a Farewell Gesture can be recognized. It stays within plausible arm reach and is not substantially behind the user, but has no chest or height gate: seated players may begin from an armrest, in front of the body, or over their lap.
 _Avoid_: world position, height threshold, tracking area
 
 **Configured Hand**:
-The hand selected by the user for detecting the Farewell Gesture and carrying the Exit Control.
+The hand selected by the user for detecting the Farewell Gesture.
 _Avoid_: dominant hand, active hand, right hand
 
 **Opposite Hand Pointer**:
-The pointing input from the hand that is not the Configured Hand. It is the only intended way to hover and activate the Exit Control.
+The pointing ray and trigger input from the hand that is not the Configured Hand. It is the only intended way to hover and activate the Exit Control. The add-on renders this pointer itself and must not activate SteamVR's system-wide overlay laser or capture scene input focus.
 _Avoid_: gaze pointer, same-hand input, controller shortcut
 
 **Supported Controller Setup**:
@@ -37,12 +37,12 @@ A SteamVR controller setup that provides stable poses for both hands and an Oppo
 _Avoid_: hand tracking, single-controller mode, controller brand support
 
 **Exit Control**:
-The compact, low-distraction in-world control that follows the Configured Hand near the Controller Wrist Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. It can be idle, ask the user to confirm or dismiss a Game Exit, or offer cancellation while a Game Exit is counting down.
+The compact, low-distraction in-world control that follows the HMD in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. It can be idle, ask the user to confirm or dismiss a Game Exit, or offer cancellation while a Game Exit is counting down.
 _Avoid_: exit button, quit button, wrist button
 
-**Controller Wrist Zone**:
-The approximate wrist or watch-like area inferred from the Configured Hand controller pose. It is a practical placement target for the Exit Control, not a requirement for precise anatomical wrist tracking.
-_Avoid_: real wrist, hand bone, watch position
+**Opposite-side View Zone**:
+The HMD-relative side of the view corresponding to the Opposite Hand Pointer: right side after a left-hand Farewell Gesture and left side after a right-hand Farewell Gesture. It keeps the Exit Control visible and reachable without attaching it to either moving controller.
+_Avoid_: real wrist, hand bone, watch position, controller-attached panel
 
 **Exit Countdown**:
 The short, visible delay between confirming a Game Exit and carrying it out. It communicates remaining time without being directly interactive; cancellation remains part of the Exit Control, and new Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.

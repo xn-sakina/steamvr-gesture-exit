@@ -1,6 +1,7 @@
 #include "platform/openvr/overlay_manager.hpp"
 #include "platform/windows/paths.hpp"
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <utility>
 namespace bailout::platform::openvr {
@@ -10,7 +11,7 @@ constexpr char kWristKey[] = "dev.kanamio.steamvrbailout.wrist";
 constexpr char kHudKey[] = "dev.kanamio.steamvrbailout.hud";
 constexpr float kDashboardWidth = 1024.0f;
 constexpr float kDashboardHeight = 640.0f;
-constexpr float kDashboardWidthMeters = 3.5f * (2.0f / 3.0f);
+constexpr float kDashboardWidthMeters = 2.8f;  // 1.2x the previous 7/3-metre panel.
 constexpr float kWristWidth = 768.0f;
 constexpr float kWristHeight = 384.0f;
 constexpr float kButtonTop = 272.0f;
@@ -60,12 +61,16 @@ WristHit wrist_hit(const SurfaceModel& model, const float x, const float y) {
     return WristHit::Right;
   return WristHit::None;
 }
-WristHit wrist_hit(const SurfaceModel& model, const vr::VREvent_t& event) {
-  return wrist_hit(model, event.data.mouse.x, kWristHeight - event.data.mouse.y);
-}
 vr::HmdMatrix34_t hud_transform() {
   vr::HmdMatrix34_t m = {{{1, 0, 0, 0.30f}, {0, 1, 0, 0.17f}, {0, 0, 1, -0.70f}}};
   return m;
+}
+vr::HmdMatrix34_t control_transform(const core::Hand configured_hand) {
+  // Put the control on the side of the hand that will operate it: a left-hand
+  // farewell appears on the right and vice versa. HMD-relative placement keeps
+  // it in view for standing, seated, armrest, and lap postures.
+  const float x = configured_hand == core::Hand::Left ? 0.32f : -0.32f;
+  return {{{1, 0, 0, x}, {0, 1, 0, -0.04f}, {0, 0, 1, -0.64f}}};
 }
 }  // namespace
 bool OverlayManager::fail(const char* operation, vr::EVROverlayError result) {
@@ -94,7 +99,7 @@ bool OverlayManager::initialize() {
                                                   &dashboard_, &thumbnail_);
   if (result != vr::VROverlayError_None)
     return fail("CreateDashboardOverlay", result);
-  result = overlays_->CreateOverlay(kWristKey, "SteamVR Gesture Exit Wrist", &wrist_);
+  result = overlays_->CreateOverlay(kWristKey, "SteamVR Gesture Exit Control", &wrist_);
   if (result != vr::VROverlayError_None) {
     fail("CreateOverlay(wrist)", result);
     shutdown();
@@ -133,25 +138,20 @@ bool OverlayManager::initialize() {
   };
   if (!configure(dashboard_, kDashboardWidthMeters, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
                  kDashboardHeight) ||
-      !configure(wrist_, 0.27f, vr::VROverlayInputMethod_Mouse, 768, 384) ||
+      !configure(wrist_, 0.34f, vr::VROverlayInputMethod_None, 0, 0) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {
     shutdown();
     return false;
   }
-  result = overlays_->SetOverlayInputMethod(wrist_, vr::VROverlayInputMethod_None);
+  // This overlay draws and hit-tests its own pointer. Keeping Mouse input and
+  // the global-interactive flag disabled prevents SteamVR from taking input
+  // focus away from the running game merely because the pointer touched it.
+  result = overlays_->SetOverlayFlag(
+      wrist_, vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible, false);
   if (result != vr::VROverlayError_None) {
-    fail("SetOverlayInputMethod(wrist inactive)", result);
+    fail("SetOverlayFlag(wrist non-interactive)", result);
     shutdown();
     return false;
-  }
-  for (auto flag : {vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible,
-                    vr::VROverlayFlags_EnableClickStabilization, vr::VROverlayFlags_MultiCursor}) {
-    result = overlays_->SetOverlayFlag(wrist_, flag, true);
-    if (result != vr::VROverlayError_None) {
-      fail("SetOverlayFlag(wrist)", result);
-      shutdown();
-      return false;
-    }
   }
   auto hm = hud_transform();
   result = overlays_->SetOverlayTransformTrackedDeviceRelative(hud_, vr::k_unTrackedDeviceIndex_Hmd,
@@ -204,7 +204,6 @@ void OverlayManager::shutdown() {
       overlays_->DestroyOverlay(h);
   wrist_ = hud_ = dashboard_ = thumbnail_ = vr::k_ulOverlayHandleInvalid;
   wrist_visible_ = false;
-  wrist_interactive_ = false;
   dashboard_texture_initialized_ = false;
   dashboard_texture_dirty_ = true;
   dashboard_was_visible_ = false;
@@ -212,8 +211,10 @@ void OverlayManager::shutdown() {
   dashboard_tab_ = core::DashboardTab::Settings;
   thumbnail_requested_ = false;
   renderer_generation_seen_ = renderer_.generation();
-  wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
-  wrist_smoother_.reset();
+  wrist_side_.reset();
+  pointer_device_ = vr::k_unTrackedDeviceIndexInvalid;
+  trigger_state_primed_ = false;
+  previous_trigger_pressed_ = false;
 }
 bool OverlayManager::submit(vr::VROverlayHandle_t h, const std::string& id, const SurfaceModel& m) {
   if (h == vr::k_ulOverlayHandleInvalid)
@@ -225,117 +226,53 @@ bool OverlayManager::submit(vr::VROverlayHandle_t h, const std::string& id, cons
   renderer_.flush();
   return result == vr::VROverlayError_None || fail("SetOverlayTexture", result);
 }
-bool OverlayManager::show_wrist(const app::HandPose& hand, core::TimePoint sampled_at,
-                                const SurfaceModel& m) {
-  if (!hand.tracked || hand.device_index == vr::k_unTrackedDeviceIndexInvalid)
-    return fail("wrist controller is not tracked");
+bool OverlayManager::show_wrist(const core::Hand configured_hand, const SurfaceModel& m) {
   bool same_content = wrist_model_.title == m.title && wrist_model_.body == m.body &&
                       wrist_model_.left_button == m.left_button &&
                       wrist_model_.right_button == m.right_button &&
                       wrist_model_.progress == m.progress;
-  const bool interaction_regions_changed =
-      wrist_model_.left_button.empty() != m.left_button.empty() ||
-      wrist_model_.right_button.empty() != m.right_button.empty();
-  if (interaction_regions_changed &&
-      (!set_wrist_interactive(false) || !update_wrist_intersection_mask(m)))
-    return false;
   SurfaceModel next = m;
   if (wrist_visible_ && wrist_model_.left_button == m.left_button &&
       wrist_model_.right_button == m.right_button) {
     next.left_hover = wrist_model_.left_hover;
     next.right_hover = wrist_model_.right_hover;
+    next.pointer_visible = wrist_model_.pointer_visible;
+    next.pointer_x = wrist_model_.pointer_x;
+    next.pointer_y = wrist_model_.pointer_y;
   }
   if ((!same_content || !wrist_visible_) && !submit(wrist_, "wrist", next))
     return false;
   wrist_model_ = std::move(next);
-  if (wrist_device_ != hand.device_index) {
-    wrist_smoother_.reset();
-    wrist_device_ = hand.device_index;
+  if (!wrist_side_ || *wrist_side_ != configured_hand) {
+    auto transform = control_transform(configured_hand);
+    const auto transform_result = overlays_->SetOverlayTransformTrackedDeviceRelative(
+        wrist_, vr::k_unTrackedDeviceIndex_Hmd, &transform);
+    if (transform_result != vr::VROverlayError_None)
+      return fail("SetOverlayTransformTrackedDeviceRelative(wrist)", transform_result);
+    wrist_side_ = configured_hand;
   }
-  if (!update_wrist_pose(hand, sampled_at))
-    return false;
   auto result = overlays_->ShowOverlay(wrist_);
   if (result != vr::VROverlayError_None)
     return fail("ShowOverlay(wrist)", result);
   wrist_visible_ = true;
   return true;
 }
-bool OverlayManager::update_wrist_pose(const app::HandPose& hand, core::TimePoint sampled_at) {
-  if (wrist_device_ == vr::k_unTrackedDeviceIndexInvalid)
-    return fail("wrist device unavailable");
-  if (!hand.tracked || hand.device_index != wrist_device_) {
-    (void)hide_wrist();
-    return fail("wrist tracking lost");
-  }
-  const core::Vec3 right{hand.right.x, hand.right.y, hand.right.z};
-  const core::Vec3 up{hand.up.x, hand.up.y, hand.up.z};
-  const core::Vec3 back{-hand.forward.x, -hand.forward.y, -hand.forward.z};
-  const core::Vec3 position{hand.position.x - 0.055 * up.x - 0.115 * back.x,
-                            hand.position.y - 0.055 * up.y - 0.115 * back.y,
-                            hand.position.z - 0.055 * up.z - 0.115 * back.z};
-  const auto pose = wrist_smoother_.update({position, right, up, back}, sampled_at);
-  vr::HmdMatrix34_t transform = {
-      {{static_cast<float>(pose.right.x), static_cast<float>(pose.up.x),
-        static_cast<float>(pose.back.x), static_cast<float>(pose.position.x)},
-       {static_cast<float>(pose.right.y), static_cast<float>(pose.up.y),
-        static_cast<float>(pose.back.y), static_cast<float>(pose.position.y)},
-       {static_cast<float>(pose.right.z), static_cast<float>(pose.up.z),
-        static_cast<float>(pose.back.z), static_cast<float>(pose.position.z)}}};
-  auto result =
-      overlays_->SetOverlayTransformAbsolute(wrist_, vr::TrackingUniverseStanding, &transform);
-  return result == vr::VROverlayError_None || fail("SetOverlayTransformAbsolute(wrist)", result);
-}
 bool OverlayManager::hide_wrist() {
-  bool ok = set_wrist_interactive(false);
+  bool ok = true;
   if (wrist_ != vr::k_ulOverlayHandleInvalid) {
     auto result = overlays_->HideOverlay(wrist_);
     if (result != vr::VROverlayError_None)
       ok = fail("HideOverlay(wrist)", result);
   }
   wrist_visible_ = false;
-  wrist_device_ = vr::k_unTrackedDeviceIndexInvalid;
-  wrist_smoother_.reset();
+  wrist_side_.reset();
+  pointer_device_ = vr::k_unTrackedDeviceIndexInvalid;
+  trigger_state_primed_ = false;
+  previous_trigger_pressed_ = false;
+  wrist_model_.left_hover = false;
+  wrist_model_.right_hover = false;
+  wrist_model_.pointer_visible = false;
   return ok;
-}
-bool OverlayManager::update_wrist_intersection_mask(const SurfaceModel& model) {
-  std::array<vr::VROverlayIntersectionMaskPrimitive_t, 2> masks{};
-  uint32_t count = 0;
-  auto add_rectangle = [&](const float left, const float right) {
-    auto& mask = masks[count++];
-    mask.m_nPrimitiveType = vr::OverlayIntersectionPrimitiveType_Rectangle;
-    mask.m_Primitive.m_Rectangle = {left, kButtonTop, right - left, kButtonBottom - kButtonTop};
-  };
-  if (!model.left_button.empty())
-    add_rectangle(kLeftButtonLeft, kLeftButtonRight);
-  if (!model.right_button.empty())
-    add_rectangle(kRightButtonLeft, kRightButtonRight);
-  const auto result = overlays_->SetOverlayIntersectionMask(
-      wrist_, masks.data(), count, sizeof(vr::VROverlayIntersectionMaskPrimitive_t));
-  return result == vr::VROverlayError_None || fail("SetOverlayIntersectionMask(wrist)", result);
-}
-bool OverlayManager::set_wrist_interactive(const bool interactive) {
-  if (wrist_interactive_ == interactive)
-    return true;
-  const auto method = interactive ? vr::VROverlayInputMethod_Mouse : vr::VROverlayInputMethod_None;
-  const auto result = overlays_->SetOverlayInputMethod(wrist_, method);
-  if (result != vr::VROverlayError_None)
-    return fail("SetOverlayInputMethod(wrist)", result);
-  wrist_interactive_ = interactive;
-  return true;
-}
-bool OverlayManager::wrist_pointer_over_button(const app::HandPose& hand) const {
-  if (!wrist_visible_ || !hand.pointer_available())
-    return false;
-  vr::VROverlayIntersectionParams_t parameters{};
-  parameters.vSource = {{hand.position.x, hand.position.y, hand.position.z}};
-  parameters.vDirection = {{hand.forward.x, hand.forward.y, hand.forward.z}};
-  parameters.eOrigin = vr::TrackingUniverseStanding;
-  vr::VROverlayIntersectionResults_t intersection{};
-  if (!overlays_->ComputeOverlayIntersection(wrist_, &parameters, &intersection))
-    return false;
-  const float x = intersection.vUVs.v[0] * kWristWidth;
-  const float y = (1.0f - intersection.vUVs.v[1]) * kWristHeight;
-  return wrist_hit(wrist_model_, x, y) != WristHit::None;
 }
 bool OverlayManager::show_hud(const SurfaceModel& m) {
   if (!submit(hud_, "hud", m))
@@ -434,56 +371,73 @@ bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
 std::vector<OverlayAction> OverlayManager::poll_wrist_events(const app::HandPose& hand,
                                                              bool confirming, bool counting) {
   std::vector<OverlayAction> out;
-  if (!set_wrist_interactive(wrist_pointer_over_button(hand)))
-    return out;
-  bool left = wrist_model_.left_hover, right = wrist_model_.right_hover;
-  vr::VREvent_t event{};
-  for (size_t count = 0;
-       count < kMaxOverlayEventsPerPoll &&
-       overlays_->PollNextOverlayEvent(wrist_, &event, sizeof(event)); ++count) {
-    if (event.eventType == vr::VREvent_FocusLeave) {
-      left = false;
-      right = false;
-      continue;
-    }
-    if (!wrist_visible_ || !hand.accepts_pointer_event(event.trackedDeviceIndex))
-      continue;
-    if (event.eventType == vr::VREvent_MouseMove) {
-      const auto hit = wrist_hit(wrist_model_, event);
-      left = hit == WristHit::Left;
-      right = hit == WristHit::Right;
-    } else if (event.eventType == vr::VREvent_MouseButtonDown &&
-               event.data.mouse.button == vr::VRMouseButton_Left) {
-      // The click carries its own position. Countdown text may be submitted
-      // without a new MouseMove, so saved hover must never decide the action.
-      const auto hit = wrist_hit(wrist_model_, event);
-      left = hit == WristHit::Left;
-      right = hit == WristHit::Right;
-      if (counting) {
-        if (hit == WristHit::Right)
-          out.push_back(OverlayAction::Cancel);
-      } else if (confirming) {
-        if (hit == WristHit::Left)
-          out.push_back(OverlayAction::Confirm);
-        else if (hit == WristHit::Right)
-          out.push_back(OverlayAction::Dismiss);
-      } else {
-        if (hit == WristHit::Left)
-          out.push_back(OverlayAction::Primary);
-        else if (hit == WristHit::Right)
-          out.push_back(OverlayAction::Dismiss);
-      }
+  bool pointer_visible = false;
+  float pointer_x = 0.0f, pointer_y = 0.0f;
+  WristHit hit = WristHit::None;
+  if (wrist_visible_ && hand.pointer_available()) {
+    vr::VROverlayIntersectionParams_t parameters{};
+    parameters.vSource = {{hand.position.x, hand.position.y, hand.position.z}};
+    parameters.vDirection = {{hand.forward.x, hand.forward.y, hand.forward.z}};
+    parameters.eOrigin = vr::TrackingUniverseStanding;
+    vr::VROverlayIntersectionResults_t intersection{};
+    if (overlays_->ComputeOverlayIntersection(wrist_, &parameters, &intersection) &&
+        intersection.vUVs.v[0] >= 0.0f && intersection.vUVs.v[0] <= 1.0f &&
+        intersection.vUVs.v[1] >= 0.0f && intersection.vUVs.v[1] <= 1.0f) {
+      pointer_visible = true;
+      pointer_x = intersection.vUVs.v[0] * kWristWidth;
+      pointer_y = (1.0f - intersection.vUVs.v[1]) * kWristHeight;
+      hit = wrist_hit(wrist_model_, pointer_x, pointer_y);
     }
   }
-  if (!wrist_visible_ || !hand.pointer_available()) {
-    left = false;
-    right = false;
+
+  const auto next_pointer_device = hand.pointer_available()
+                                       ? hand.device_index
+                                       : vr::k_unTrackedDeviceIndexInvalid;
+  if (pointer_device_ != next_pointer_device) {
+    pointer_device_ = next_pointer_device;
+    trigger_state_primed_ = false;
+    previous_trigger_pressed_ = false;
   }
-  if (wrist_model_.left_hover != left || wrist_model_.right_hover != right) {
+  bool trigger_rising = false;
+  if (hand.pointer_available() && hand.trigger_available) {
+    if (trigger_state_primed_)
+      trigger_rising = hand.trigger_pressed && !previous_trigger_pressed_;
+    trigger_state_primed_ = true;
+    previous_trigger_pressed_ = hand.trigger_pressed;
+  }
+  if (trigger_rising && pointer_visible) {
+    if (counting) {
+      if (hit == WristHit::Right)
+        out.push_back(OverlayAction::Cancel);
+    } else if (confirming) {
+      if (hit == WristHit::Left)
+        out.push_back(OverlayAction::Confirm);
+      else if (hit == WristHit::Right)
+        out.push_back(OverlayAction::Dismiss);
+    } else {
+      if (hit == WristHit::Left)
+        out.push_back(OverlayAction::Primary);
+      else if (hit == WristHit::Right)
+        out.push_back(OverlayAction::Dismiss);
+    }
+  }
+
+  const bool left = hit == WristHit::Left;
+  const bool right = hit == WristHit::Right;
+  const bool moved = pointer_visible != wrist_model_.pointer_visible ||
+                     (pointer_visible &&
+                      (std::abs(pointer_x - wrist_model_.pointer_x) >= 1.5f ||
+                       std::abs(pointer_y - wrist_model_.pointer_y) >= 1.5f));
+  const bool hover_changed = wrist_model_.left_hover != left || wrist_model_.right_hover != right;
+  if (hover_changed || moved) {
     wrist_model_.left_hover = left;
     wrist_model_.right_hover = right;
-    if (!submit(wrist_, "wrist", wrist_model_))
+    wrist_model_.pointer_visible = pointer_visible;
+    wrist_model_.pointer_x = pointer_x;
+    wrist_model_.pointer_y = pointer_y;
+    if (!submit(wrist_, "wrist", wrist_model_)) {
       out.clear();
+    }
   }
   return out;
 }

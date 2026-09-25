@@ -10,7 +10,7 @@ The feature must make Game Exit easy and theatrical while staying conservative. 
 
 ## Solution
 
-Build a Windows Runtime SteamVR Add-on Package that loads with SteamVR and provides a Dashboard Panel plus in-game overlays. While a Current VR Game is running, the player performs a Farewell Gesture with the Configured Hand. If the add-on can also identify a reliable Exit Target and the Opposite Hand Pointer is available, a compact Exit Control appears near the Controller Wrist Zone.
+Build a Windows Runtime SteamVR Add-on Package that loads with SteamVR and provides a Dashboard Panel plus in-game overlays. While a Current VR Game is running, the player performs a Farewell Gesture with the Configured Hand. If the add-on can also identify a reliable Exit Target and the Opposite Hand Pointer is available, a compact Exit Control appears in the HMD-relative Opposite-side View Zone.
 
 The Farewell Gesture only requests the Exit Control. The user must explicitly interact with the Exit Control using the Opposite Hand Pointer, then confirm the Game Exit. After confirmation, a non-interactive HUD Overlay shows an Exit Countdown so the player has time to perform a farewell action. When the countdown reaches zero, cancellation closes, the HUD changes to an exiting state, and the add-on requests a graceful close of the fixed Exit Target main process. If the target remains alive after the fixed Exit Grace Period, the add-on force closes only that same main process.
 
@@ -22,15 +22,15 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 2. As a VR player, I want a short countdown before the game exits, so that I can perform a farewell or exit pose.
 3. As a VR player, I want the default countdown to be 5 seconds, so that I have enough time for a quick performance without waiting too long.
 4. As a VR player, I want optional countdown durations of 1, 3, 5, 10, and 15 seconds, so that I can choose a pace that fits how I play.
-5. As a VR player, I want the exit control to appear near my configured wrist area, so that it feels like a watch-style VR control.
-6. As a VR player, I want the exit control to follow my configured hand, so that it remains findable after I move.
+5. As a VR player, I want the Exit Control to remain in view on the side of the hand that will click it, so that standing, seated, armrest, and lap postures all work.
+6. As a VR player, I want the Exit Control to follow my HMD while staying off-centre, so that it remains findable after I turn or change posture without blocking the centre of play.
 7. As a VR player, I want the exit control to be compact when idle, so that accidental activation does not block my gameplay.
 8. As a VR player, I want hover feedback when I point at the exit control, so that I know it can be clicked.
 9. As a VR player, I want a second confirmation before exit begins, so that a gesture alone cannot close my game.
 10. As a VR player, I want Confirm and Dismiss to be separated large targets, so that I do not accidentally confirm while trying to dismiss.
 11. As a VR player, I want the confirmation to name the Exit Target when possible, so that I know which game will close.
 12. As a VR player, I want the confirmation to tell me the game may be force closed if unresponsive, so that I understand the risk.
-13. As a VR player, I want to cancel during the Exit Countdown from the wrist control, so that I can recover from a mistaken confirmation.
+13. As a VR player, I want to cancel during the Exit Countdown from the Exit Control, so that I can recover from a mistaken confirmation.
 14. As a VR player, I want the countdown HUD to stay in my right-upper view, so that I can see the remaining time while moving.
 15. As a VR player, I want the countdown HUD to be non-interactive, so that it does not steal pointer input or block gameplay interactions.
 16. As a VR player, I want the countdown to show both seconds and smooth progress, so that I can time my farewell action accurately.
@@ -54,7 +54,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 34. As a VR player, I want failures before interaction to stay silent in-game, so that normal social gestures do not produce warning popups.
 35. As a VR player, I want a Dashboard Panel for settings, so that I can adjust the small number of meaningful choices.
 36. As a VR player, I want settings to save immediately, so that I do not need to find an extra save button in VR.
-37. As a left-handed player, I want to choose the Configured Hand, so that the gesture and wrist control match my preference.
+37. As a left-handed player, I want to choose the Configured Hand, so that the gesture and opposite-side Exit Control match my preference.
 38. As a multilingual player, I want Auto language selection, so that UI follows SteamVR or system language when possible.
 39. As a multilingual player, I want manual English and Chinese choices, so that I can override Auto.
 40. As a first-time user, I want brief Dashboard help, so that I understand the gesture, opposite-hand confirmation, and force-close risk.
@@ -85,16 +85,18 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - Keep Exit Grace Period internal and separate from the user-visible Exit Countdown.
 - Keep the Add-on Session running after Game Exit and clear only Exit Target related state.
 - Model Farewell Gesture as a request for Exit Control only. It must never directly confirm, cancel, or execute Game Exit.
-- Detect Farewell Gesture from the Configured Hand controller's tracked position in the Activation Zone, with at least two side-to-side direction reversals and enough amplitude to reject jitter. Do not infer palm direction from a controller axis; that mapping is not shared across controller models.
-- Use a default 1.2-second recognition window for the direction-reversal gesture. Keep gesture thresholds internal for MVP.
+- Detect Farewell Gesture from the Configured Hand controller's tracked position in the Activation Zone. Require four committed lateral strokes, three direction reversals, sufficient total travel, a bounded human pace, and lateral dominance over vertical/depth motion. Do not infer palm direction from a controller axis; that mapping is not shared across controller models.
+- Do not gate Farewell Gesture on a chest-height assumption. Armrest and lap-height starts are valid when they remain within arm reach and not substantially behind the HMD.
+- Use a 2.4-second rolling recognition window while requiring at least 700 ms across the final three full strokes. Keep gesture thresholds internal for MVP.
 - Require a Supported Controller Setup with both hand poses and Opposite Hand Pointer. Do not support naked hand tracking, data gloves, or single-controller exit flows in MVP.
-- Place Exit Control near the Controller Wrist Zone inferred from the Configured Hand controller pose rather than requiring anatomical wrist or hand-bone tracking.
-- Let the Exit Control follow the Configured Hand with smoothing.
-- Make the Opposite Hand Pointer the only hover and activation input for Exit Control. Do not implement gaze click, same-hand input, keyboard shortcuts, or controller shortcut cancellation.
+- Place Exit Control in the HMD-relative Opposite-side View Zone: right after a left-hand Farewell Gesture and left after a right-hand Farewell Gesture.
+- Let the Exit Control follow HMD movement and never bind it to the moving Configured Hand controller.
+- Make the Opposite Hand Pointer the only hover and activation input for Exit Control. Render its point and button hover feedback on the control itself. Do not implement gaze click, same-hand input, keyboard shortcuts, or controller shortcut cancellation.
+- Keep the Exit Control overlay non-interactive to SteamVR and perform ray hit-testing and trigger-edge handling locally. Merely pointing at or clicking the control must not capture scene input focus or change the Current VR Game's AFK/activity state.
 - Use a three-state control flow before execution: Idle Visible, Confirming, Counting Down, then Exiting.
 - In Idle Visible, repeated Farewell Gestures refresh only the timeout. In Confirming and Counting Down, new Farewell Gestures are ignored.
 - In Idle Visible and Confirming, loss of Configured Hand tracking or Opposite Hand Pointer availability closes the control and returns to no active flow.
-- In Counting Down, temporary hand-tracking loss does not cancel the active countdown. If tracking returns, Cancel Exit returns to the wrist.
+- In Counting Down, temporary hand-tracking loss does not cancel the active countdown. If tracking returns, Cancel Exit remains available from the HMD-relative Exit Control.
 - In Counting Down, disconnection of the HMD or all controllers cancels the flow before a game-close request. Temporary pose loss while devices remain connected does not cancel it.
 - During Counting Down, cancellation remains available only through Exit Control. The HUD Overlay is not clickable.
 - At countdown zero, cancellation ends and the HUD Overlay changes to an exiting state while the graceful close and Exit Grace Period happen.

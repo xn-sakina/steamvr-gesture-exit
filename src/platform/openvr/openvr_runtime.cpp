@@ -44,7 +44,7 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
                   s->GetTrackedDeviceClass(i) == vr::TrackedDeviceClass_Controller;
   // ControllerStateWithPose is aligned to an input update, which can be stale
   // throughout a button-free wave. Use the same current tracking frame as the
-  // HMD so gesture motion and wrist placement continue to update.
+  // HMD so gesture motion and the opposite-hand pointer ray continue to update.
   const auto& pose = poses[i];
   out.pose_valid = pose.bPoseIsValid;
   out.tracking_result = static_cast<int>(pose.eTrackingResult);
@@ -55,6 +55,14 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
     out.forward = axis(pose.mDeviceToAbsoluteTracking, 2, -1);
     out.up = axis(pose.mDeviceToAbsoluteTracking, 1);
     out.right = axis(pose.mDeviceToAbsoluteTracking, 0);
+    // Poll the trigger without enabling overlay mouse input. SteamVR's
+    // system-wide overlay laser can capture scene input focus, which games
+    // such as VRChat may interpret as an AFK transition.
+    vr::VRControllerState_t state{};
+    out.trigger_available = s->GetControllerState(i, &state, sizeof(state));
+    out.trigger_pressed = out.trigger_available &&
+                          (state.ulButtonPressed &
+                           vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0;
   }
   return out;
 }
