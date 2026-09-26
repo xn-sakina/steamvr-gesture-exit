@@ -17,7 +17,7 @@ The reliable main-process target selected from the Current VR Game at the moment
 _Avoid_: current process, latest app, foreground app
 
 **Farewell Gesture**:
-The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller through four deliberate side-to-side strokes with three direction reversals, enough total lateral travel, a recognisable human pace, and reasonably consistent stroke extent and rhythm. Compact chest-level motion is valid. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation or a standing posture.
+The intentional gesture used only to request the Exit Control. It is made by moving the Configured Hand controller through three committed side-to-side reversals with enough repeated lateral travel and a recognisable human rhythm. Recognition combines head-relative trajectory smoothing, lateral path dominance, stroke efficiency, endpoint stability, extent and timing consistency, plausible speed, and the absence of active controller input. Compact, quick motion at chest, armrest, or lap height is valid. Generic controller poses do not establish anatomical palm direction, so recognition does not depend on a guessed palm orientation or a standing posture.
 _Avoid_: wave, bye-bye, gesture trigger
 
 **Activation Zone**:

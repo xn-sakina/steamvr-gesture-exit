@@ -20,6 +20,7 @@ struct HandPose {
   Vec3 position{}, forward{}, up{}, right{};
   bool trigger_available = false;
   bool trigger_pressed = false;
+  bool input_active = false;
 
   [[nodiscard]] constexpr bool pointer_available() const noexcept {
     // A ray only requires a tracked controller pose. Trigger sampling is kept

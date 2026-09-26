@@ -9,18 +9,24 @@
 namespace bailout::core {
 
 struct GestureConfig {
-  std::chrono::milliseconds recognition_window{2400};
-  std::chrono::milliseconds minimum_gesture_duration{600};
-  std::chrono::milliseconds minimum_stroke_duration{140};
-  std::chrono::milliseconds maximum_stroke_duration{750};
-  // A farewell wave must contain four deliberate lateral strokes (three
-  // reversals). Position is deliberately not height-gated: seated players may
-  // start with a controller on an armrest or their lap.
-  double minimum_stroke_metres{0.12};
-  double minimum_total_lateral_travel_metres{0.40};
-  double maximum_orthogonal_stroke_ratio{0.75};
-  double maximum_stroke_length_ratio{2.5};
-  double maximum_stroke_timing_ratio{2.75};
+  std::chrono::milliseconds recognition_window{1800};
+  std::chrono::milliseconds minimum_gesture_duration{300};
+  std::chrono::milliseconds minimum_stroke_duration{75};
+  std::chrono::milliseconds maximum_stroke_duration{650};
+  // Three committed reversals provide the repeated intent evidence. The
+  // smaller stroke floor accepts a lazy armrest/lap wave, while path quality,
+  // endpoint stability, input suppression and the confidence threshold keep
+  // this from becoming a simple relaxed-distance detector.
+  double minimum_stroke_metres{0.075};
+  double minimum_total_lateral_travel_metres{0.235};
+  double maximum_orthogonal_path_ratio{0.70};
+  double minimum_stroke_efficiency{0.65};
+  double maximum_stroke_length_ratio{2.4};
+  double maximum_stroke_timing_ratio{2.8};
+  double maximum_endpoint_drift_ratio{0.65};
+  double maximum_endpoint_drift_metres{0.065};
+  double maximum_instantaneous_speed_metres_per_second{2.8};
+  double minimum_confidence{0.72};
   int required_reversals{3};
   double minimum_head_distance_metres{0.18};
   double maximum_head_distance_metres{1.30};
@@ -33,6 +39,10 @@ struct GestureSample {
   Vec3 hand_position{};
   Vec3 headset_position{};
   Vec3 headset_forward{};
+  // True while the configured controller is actively manipulating the game
+  // (button pressed or a legacy OpenVR axis displaced). An intentional
+  // Farewell Gesture is button-free.
+  bool input_active{};
 };
 
 enum class GestureDecision {
@@ -47,7 +57,10 @@ enum class GestureDecision {
   TooBrief,
   StrokeTooFast,
   StrokeTooSlow,
+  InputActive,
+  AbruptMotion,
   NonLateralMotion,
+  UnstablePath,
   IrregularMotion,
   Recognized
 };
@@ -63,8 +76,13 @@ struct GestureDiagnostic {
   double amplitude_m = 0;
   double lateral_travel_m = 0;
   double maximum_orthogonal_ratio = 0;
+  double minimum_stroke_efficiency = 0;
   double stroke_length_ratio = 0;
   double stroke_timing_ratio = 0;
+  double endpoint_drift_m = 0;
+  double maximum_speed_mps = 0;
+  double confidence = 0;
+  bool input_active = false;
   int reversals = 0;
 };
 

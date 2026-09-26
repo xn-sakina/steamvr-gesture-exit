@@ -1,5 +1,6 @@
 #include "platform/openvr/openvr_runtime.hpp"
 #include <chrono>
+#include <cmath>
 namespace bailout::platform::openvr {
 namespace {
 app::Vec3 position(const vr::HmdMatrix34_t& m) {
@@ -63,6 +64,15 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
     out.trigger_pressed = out.trigger_available &&
                           (state.ulButtonPressed &
                            vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0;
+    if (out.trigger_available) {
+      out.input_active = state.ulButtonPressed != 0;
+      for (const auto& controller_axis : state.rAxis) {
+        if (std::hypot(controller_axis.x, controller_axis.y) > 0.35f) {
+          out.input_active = true;
+          break;
+        }
+      }
+    }
   }
   return out;
 }

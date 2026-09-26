@@ -1250,7 +1250,7 @@ int RuntimeApp::run() {
     } else
       gesture = gesture_.update({now, configured.tracked && frame.headset_tracked,
                                  cv(configured.position), cv(frame.headset_position),
-                                 cv(frame.headset_forward)});
+                                 cv(frame.headset_forward), configured.input_active});
     const auto& gesture_diagnostic = gesture_.diagnostic();
     const std::string gesture_decision = dashboard_visible ? "dashboard_open" :
         std::string(core::to_string(gesture_diagnostic.decision));
@@ -1275,8 +1275,14 @@ int RuntimeApp::run() {
           {"lateral_travel_m", std::to_string(gesture_diagnostic.lateral_travel_m)},
           {"maximum_orthogonal_ratio",
            std::to_string(gesture_diagnostic.maximum_orthogonal_ratio)},
+          {"minimum_stroke_efficiency",
+           std::to_string(gesture_diagnostic.minimum_stroke_efficiency)},
           {"stroke_length_ratio", std::to_string(gesture_diagnostic.stroke_length_ratio)},
           {"stroke_timing_ratio", std::to_string(gesture_diagnostic.stroke_timing_ratio)},
+          {"endpoint_drift_m", std::to_string(gesture_diagnostic.endpoint_drift_m)},
+          {"maximum_speed_mps", std::to_string(gesture_diagnostic.maximum_speed_mps)},
+          {"confidence", std::to_string(gesture_diagnostic.confidence)},
+          {"input_active", gesture_diagnostic.input_active ? "true" : "false"},
           {"reversals", std::to_string(gesture_diagnostic.reversals)},
           {"required_reversals", std::to_string(gesture_.config().required_reversals)},
           {"minimum_stroke_m", std::to_string(gesture_.config().minimum_stroke_metres)},

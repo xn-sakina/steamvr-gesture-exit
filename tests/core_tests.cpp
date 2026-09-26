@@ -63,8 +63,8 @@ bool completes_exit(const Effects& effects) {
 }
 
 GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1}, bool tracked = true,
-                     Vec3 headset = {}) {
-  return {at(milliseconds), tracked, hand, headset, forward};
+                     Vec3 headset = {}, bool input_active = false) {
+  return {at(milliseconds), tracked, hand, headset, forward, input_active};
 }
 
 void gesture_recognizes_valid_wave() {
@@ -164,6 +164,72 @@ void gesture_accepts_real_seated_postures() {
     CHECK(detector.update(sample(1000, {x.back(), height, -0.48}, {0, 0, -1}, true,
                                  headset)));
   }
+}
+
+void gesture_recognizes_lazy_fast_low_wave() {
+  for (const double height : {0.68, 0.96}) {
+    GestureDetector detector;
+    bool recognized = false;
+    // A compact 10 cm peak-to-peak wave at 3 Hz is intentionally much faster
+    // and lower than the old idealized chest-level gesture.
+    for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+      const double seconds = static_cast<double>(milliseconds) / 1000.0;
+      const double x = 0.12 + 0.05 * std::sin(2.0 * 3.141592653589793 * 3.0 * seconds);
+      if (detector.update(
+              sample(milliseconds, {x, height, -0.48}, {0, 0, -1}, true, {0, 1.55, 0}))) {
+        recognized = true;
+        break;
+      }
+    }
+    CHECK(recognized);
+    CHECK(detector.diagnostic().span_ms < 700);
+  }
+}
+
+void gesture_rejects_game_input_and_body_motion() {
+  GestureDetector active_input;
+  for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const double x = 0.12 + 0.07 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+    CHECK(!active_input.update(sample(milliseconds, {x, 0.85, -0.48}, {0, 0, -1}, true, {}, true)));
+  }
+  CHECK(active_input.diagnostic().decision == GestureDecision::InputActive);
+
+  GestureDetector body_motion;
+  for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const double body_x = 0.09 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+    const Vec3 headset{body_x, 1.55, 0.0};
+    CHECK(!body_motion.update(
+        sample(milliseconds, {body_x + 0.12, 0.85, -0.48}, {0, 0, -1}, true, headset)));
+  }
+  CHECK(body_motion.diagnostic().decision == GestureDecision::InsufficientStroke);
+}
+
+void gesture_rejects_unstable_and_abrupt_motion() {
+  GestureDetector wandering;
+  for (const auto [time, x] : std::array<std::pair<int, double>, 5>{
+           {{0, 0.04}, {180, 0.18}, {360, 0.04}, {540, 0.30}, {720, 0.16}}})
+    CHECK(!wandering.update(sample(time, {x, 0.85, -0.48})));
+  CHECK(wandering.diagnostic().decision == GestureDecision::UnstablePath ||
+        wandering.diagnostic().decision == GestureDecision::IrregularMotion);
+
+  GestureDetector abrupt;
+  const std::array<double, 5> extrema{0.12, 0.34, -0.10, 0.34, -0.10};
+  int milliseconds = 0;
+  CHECK(!abrupt.update(sample(milliseconds, {extrema.front(), 0.85, -0.48})));
+  for (std::size_t stroke = 1; stroke < extrema.size(); ++stroke) {
+    const double direction = extrema[stroke] > extrema[stroke - 1] ? 1.0 : -1.0;
+    milliseconds += 50;
+    CHECK(!abrupt.update(
+        sample(milliseconds, {extrema[stroke - 1] + direction * 0.02, 0.85, -0.48})));
+    milliseconds += 10;
+    CHECK(!abrupt.update(sample(milliseconds, {extrema[stroke] - direction * 0.02, 0.85, -0.48})));
+    milliseconds += 50;
+    CHECK(!abrupt.update(sample(milliseconds, {extrema[stroke], 0.85, -0.48})));
+  }
+  CHECK(abrupt.diagnostic().decision == GestureDecision::AbruptMotion ||
+        abrupt.diagnostic().decision == GestureDecision::StrokeTooFast);
 }
 
 void gesture_requires_deliberate_repeated_lateral_strokes() {
@@ -1104,6 +1170,9 @@ int main() {
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},
       {"gesture accepts seated postures", gesture_accepts_real_seated_postures},
+      {"gesture recognizes lazy fast low wave", gesture_recognizes_lazy_fast_low_wave},
+      {"gesture rejects game input and body motion", gesture_rejects_game_input_and_body_motion},
+      {"gesture rejects unstable and abrupt motion", gesture_rejects_unstable_and_abrupt_motion},
       {"gesture requires deliberate strokes",
        gesture_requires_deliberate_repeated_lateral_strokes},
       {"settings round trip and recovery", settings_round_trip_and_recovery},
