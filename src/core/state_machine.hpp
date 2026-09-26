@@ -29,10 +29,10 @@ struct Prerequisites {
 enum class EffectType {
   ShowIdleControl,
   ShowConfirmation,
+  UpdateControlTimeout,
   HideControl,
   ShowCountdownControl,
   UpdateCountdownControl,
-  ShowExitingHud,
   ShowFailureHud,
   HideHud,
   RequestGracefulClose,
@@ -79,6 +79,8 @@ struct FlowSnapshot {
   std::optional<TargetIdentity> locked_target;
   std::chrono::milliseconds countdown_remaining{};
   double countdown_progress{};
+  double control_timeout_progress{};
+  bool control_hovered{};
   bool failure_hud_visible{};
   std::string last_error_code;
 };
@@ -96,6 +98,7 @@ class FlowStateMachine {
 
   [[nodiscard]] Effects on_gesture(TimePoint now, const Prerequisites& prerequisites);
   [[nodiscard]] Effects on_control_clicked(TimePoint now);
+  [[nodiscard]] Effects on_control_hover(TimePoint now, bool hovered);
   [[nodiscard]] Effects on_dismiss();
   [[nodiscard]] Effects on_confirm(TimePoint now, const TargetIdentity& target,
                                    std::chrono::seconds countdown_duration);
@@ -116,6 +119,7 @@ class FlowStateMachine {
   void finish_target_unavailable(Effects& effects, std::string code);
   void finish_failure(TimePoint now, Effects& effects, std::string code);
   [[nodiscard]] std::chrono::milliseconds remaining(TimePoint now) const noexcept;
+  [[nodiscard]] double control_progress(TimePoint now) const noexcept;
 
   FlowState state_{FlowState::NoActiveFlow};
   LastExitStatus last_exit_{LastExitStatus::Never};
@@ -123,6 +127,7 @@ class FlowStateMachine {
   std::optional<TargetIdentity> visible_target_;
   std::optional<TargetIdentity> locked_target_;
   TimePoint control_deadline_{};
+  TimePoint control_refill_started_{};
   TimePoint countdown_started_{};
   TimePoint countdown_deadline_{};
   TimePoint grace_deadline_{};
@@ -131,6 +136,8 @@ class FlowStateMachine {
   std::chrono::seconds control_timeout_;
   std::chrono::seconds exit_grace_period_;
   bool force_requested_{};
+  bool control_hovered_{};
+  double control_refill_start_progress_{};
   bool failure_hud_visible_{};
   std::string last_error_code_;
 };

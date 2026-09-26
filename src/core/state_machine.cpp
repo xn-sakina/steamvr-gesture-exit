@@ -8,8 +8,7 @@ namespace bailout::core {
 
 bool Prerequisites::ready() const noexcept {
   return current_vr_game && hardware_available && headset_tracked && configured_hand_tracked &&
-         opposite_pointer_available && exit_target &&
-         exit_target->valid();
+         opposite_pointer_available && exit_target && exit_target->valid();
 }
 
 std::string_view to_string(const FlowState value) noexcept {
@@ -71,6 +70,9 @@ void FlowStateMachine::reset_flow() noexcept {
   locked_target_.reset();
   force_requested_ = false;
   force_deadline_ = {};
+  control_hovered_ = false;
+  control_refill_started_ = {};
+  control_refill_start_progress_ = 0.0;
 }
 
 std::chrono::milliseconds FlowStateMachine::remaining(const TimePoint now) const noexcept {
@@ -79,9 +81,39 @@ std::chrono::milliseconds FlowStateMachine::remaining(const TimePoint now) const
   return std::chrono::duration_cast<std::chrono::milliseconds>(countdown_deadline_ - now);
 }
 
+double FlowStateMachine::control_progress(const TimePoint now) const noexcept {
+  if (state_ != FlowState::IdleVisible && state_ != FlowState::Confirming)
+    return 0.0;
+  if (control_hovered_) {
+    constexpr auto refill_duration = std::chrono::milliseconds{180};
+    const auto elapsed = std::max(TimePoint::duration::zero(), now - control_refill_started_);
+    const double refill =
+        std::clamp(static_cast<double>(
+                       std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()) /
+                       static_cast<double>(refill_duration.count()),
+                   0.0, 1.0);
+    return control_refill_start_progress_ + (1.0 - control_refill_start_progress_) * refill;
+  }
+  if (now >= control_deadline_)
+    return 0.0;
+  const auto remaining =
+      std::chrono::duration_cast<std::chrono::milliseconds>(control_deadline_ - now);
+  const auto total = std::chrono::duration_cast<std::chrono::milliseconds>(control_timeout_);
+  return total.count() > 0 ? std::clamp(static_cast<double>(remaining.count()) /
+                                            static_cast<double>(total.count()),
+                                        0.0, 1.0)
+                           : 0.0;
+}
+
 FlowSnapshot FlowStateMachine::snapshot(const TimePoint now) const {
-  FlowSnapshot result{state_, last_exit_,           locked_target_,  {},
-                      0.0,    failure_hud_visible_, last_error_code_};
+  FlowSnapshot result{};
+  result.state = state_;
+  result.last_exit = last_exit_;
+  result.locked_target = locked_target_;
+  result.control_timeout_progress = control_progress(now);
+  result.control_hovered = control_hovered_;
+  result.failure_hud_visible = failure_hud_visible_;
+  result.last_error_code = last_error_code_;
   if (state_ == FlowState::CountingDown) {
     result.countdown_remaining = remaining(now);
     const auto total = countdown_deadline_ - countdown_started_;
@@ -109,6 +141,7 @@ Effects FlowStateMachine::on_gesture(const TimePoint now, const Prerequisites& p
     prerequisites_ = prerequisites;
     visible_target_ = prerequisites.exit_target;
     control_deadline_ = now + control_timeout_;
+    control_hovered_ = false;
     transition(FlowState::IdleVisible, effects, "FLOW_GESTURE_ACCEPTED");
     effects.insert(effects.begin(), {EffectType::ShowIdleControl});
   } else if (state_ == FlowState::IdleVisible && visible_target_ == prerequisites.exit_target) {
@@ -126,6 +159,25 @@ Effects FlowStateMachine::on_control_clicked(const TimePoint) {
     transition(FlowState::Confirming, effects, "FLOW_CONFIRMATION_OPENED");
     effects.insert(effects.begin(), {EffectType::ShowConfirmation, visible_target_});
   }
+  return effects;
+}
+
+Effects FlowStateMachine::on_control_hover(const TimePoint now, const bool hovered) {
+  Effects effects;
+  if ((state_ != FlowState::IdleVisible && state_ != FlowState::Confirming) ||
+      hovered == control_hovered_)
+    return effects;
+  if (hovered) {
+    control_refill_start_progress_ = control_progress(now);
+    control_refill_started_ = now;
+    control_hovered_ = true;
+  } else {
+    control_hovered_ = false;
+    control_deadline_ = now + control_timeout_;
+    control_refill_started_ = {};
+    control_refill_start_progress_ = 0.0;
+  }
+  effects.push_back({EffectType::UpdateControlTimeout, visible_target_, {}, control_progress(now)});
   return effects;
 }
 
@@ -266,8 +318,7 @@ Effects FlowStateMachine::on_graceful_result(const TimePoint, const CloseRequest
                        locked_target_,
                        {},
                        0.0,
-                       error_code.empty() ? "EXIT_GRACEFUL_REQUEST_FAILED"
-                                          : std::move(error_code),
+                       error_code.empty() ? "EXIT_GRACEFUL_REQUEST_FAILED" : std::move(error_code),
                        state_,
                        state_});
   } else {
@@ -288,8 +339,13 @@ Effects FlowStateMachine::on_force_result(const TimePoint now, const CloseReques
   if (state_ != FlowState::Exiting || !force_requested_)
     return effects;
   if (result == CloseRequestResult::Accepted) {
-    effects.push_back({EffectType::Diagnostic, locked_target_, {}, 0.0,
-                       "EXIT_FORCE_CLOSE_REQUESTED", state_, state_});
+    effects.push_back({EffectType::Diagnostic,
+                       locked_target_,
+                       {},
+                       0.0,
+                       "EXIT_FORCE_CLOSE_REQUESTED",
+                       state_,
+                       state_});
   } else if (result == CloseRequestResult::TargetExited) {
     finish_success(effects, "EXIT_FORCE_CLOSE_SUCCEEDED");
   } else {
@@ -305,10 +361,14 @@ Effects FlowStateMachine::tick(const TimePoint now) {
     failure_hud_visible_ = false;
     effects.push_back({EffectType::HideHud});
   }
-  if (state_ == FlowState::IdleVisible && now >= control_deadline_) {
+  if ((state_ == FlowState::IdleVisible || state_ == FlowState::Confirming) && !control_hovered_ &&
+      now >= control_deadline_) {
     effects.push_back({EffectType::HideControl});
     transition(FlowState::NoActiveFlow, effects, "FLOW_IDLE_TIMEOUT");
     reset_flow();
+  } else if (state_ == FlowState::IdleVisible || state_ == FlowState::Confirming) {
+    effects.push_back(
+        {EffectType::UpdateControlTimeout, visible_target_, {}, control_progress(now)});
   } else if (state_ == FlowState::CountingDown) {
     if (now < countdown_deadline_) {
       const FlowSnapshot current = snapshot(now);
@@ -316,7 +376,7 @@ Effects FlowStateMachine::tick(const TimePoint now) {
                          current.countdown_remaining, current.countdown_progress});
     } else {
       transition(FlowState::Exiting, effects, "FLOW_COUNTDOWN_COMPLETE");
-      effects.insert(effects.begin(), {EffectType::ShowExitingHud, locked_target_});
+      effects.insert(effects.begin(), {EffectType::HideControl, locked_target_});
       effects.insert(effects.begin() + 1, {EffectType::RequestGracefulClose, locked_target_});
       grace_deadline_ = now + exit_grace_period_;
     }

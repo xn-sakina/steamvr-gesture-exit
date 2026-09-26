@@ -14,14 +14,14 @@ constexpr float kDashboardWidth = 1024.0f;
 // Keep the same 24 px of canvas space below the final settings row.
 constexpr float kDashboardHeight = 456.0f;
 constexpr float kDashboardWidthMeters = 2.52f;  // 90% of the previous 2.8-metre panel.
-constexpr float kWristWidth = 768.0f;
-constexpr float kWristHeight = 384.0f;
-constexpr float kButtonTop = 272.0f;
-constexpr float kButtonBottom = 330.0f;
-constexpr float kLeftButtonLeft = 42.0f;
-constexpr float kLeftButtonRight = 372.0f;
-constexpr float kRightButtonLeft = 396.0f;
-constexpr float kRightButtonRight = 726.0f;
+constexpr float kWristWidth = 512.0f;
+constexpr float kWristHeight = 560.0f;
+constexpr float kButtonTop = 438.0f;
+constexpr float kButtonBottom = 510.0f;
+constexpr float kLeftButtonLeft = 40.0f;
+constexpr float kLeftButtonRight = 244.0f;
+constexpr float kRightButtonLeft = 268.0f;
+constexpr float kRightButtonRight = 472.0f;
 constexpr size_t kMaxOverlayEventsPerPoll = 256;
 enum class WristHit { None, Left, Right };
 struct Float3 {
@@ -44,35 +44,51 @@ Float3 normalized(Float3 value) {
   return magnitude > 1e-5f ? value * (1.0f / magnitude) : Float3{};
 }
 Float3 cross(Float3 a, Float3 b) {
-  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
-          a.x * b.y - a.y * b.x};
+  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 #ifndef NDEBUG
 const char* tab_name(core::DashboardTab tab) {
   switch (tab) {
-    case core::DashboardTab::Settings: return "settings";
-    case core::DashboardTab::Status: return "status";
-    case core::DashboardTab::Help: return "help";
+    case core::DashboardTab::Settings:
+      return "settings";
+    case core::DashboardTab::Status:
+      return "status";
+    case core::DashboardTab::Help:
+      return "help";
   }
   return "unknown";
 }
 const char* action_name(core::DashboardAction action) {
   using A = core::DashboardAction;
   switch (action) {
-    case A::SetLeftHand: return "set_left_hand";
-    case A::SetRightHand: return "set_right_hand";
-    case A::SetCountdown1: return "set_countdown_1";
-    case A::SetCountdown3: return "set_countdown_3";
-    case A::SetCountdown5: return "set_countdown_5";
-    case A::SetCountdown10: return "set_countdown_10";
-    case A::SetCountdown15: return "set_countdown_15";
-    case A::DecreaseControlTimeout: return "decrease_control_timeout";
-    case A::IncreaseControlTimeout: return "increase_control_timeout";
-    case A::EnableCountdownSound: return "enable_countdown_sound";
-    case A::DisableCountdownSound: return "disable_countdown_sound";
-    case A::SetLanguageAuto: return "set_language_auto";
-    case A::SetLanguageEnglish: return "set_language_english";
-    case A::SetLanguageChinese: return "set_language_chinese";
+    case A::SetLeftHand:
+      return "set_left_hand";
+    case A::SetRightHand:
+      return "set_right_hand";
+    case A::SetCountdown1:
+      return "set_countdown_1";
+    case A::SetCountdown3:
+      return "set_countdown_3";
+    case A::SetCountdown5:
+      return "set_countdown_5";
+    case A::SetCountdown10:
+      return "set_countdown_10";
+    case A::SetCountdown15:
+      return "set_countdown_15";
+    case A::DecreaseControlTimeout:
+      return "decrease_control_timeout";
+    case A::IncreaseControlTimeout:
+      return "increase_control_timeout";
+    case A::EnableCountdownSound:
+      return "enable_countdown_sound";
+    case A::DisableCountdownSound:
+      return "disable_countdown_sound";
+    case A::SetLanguageAuto:
+      return "set_language_auto";
+    case A::SetLanguageEnglish:
+      return "set_language_english";
+    case A::SetLanguageChinese:
+      return "set_language_chinese";
   }
   return "unknown";
 }
@@ -98,8 +114,7 @@ vr::HmdMatrix34_t control_transform(const core::Hand configured_hand,
   const Float3 world_up{0.0f, 1.0f, 0.0f};
   const Float3 head_right = normalized(cross(forward, world_up));
   const float side = configured_hand == core::Hand::Left ? 0.28f : -0.28f;
-  const Float3 head{frame.headset_position.x, frame.headset_position.y,
-                    frame.headset_position.z};
+  const Float3 head{frame.headset_position.x, frame.headset_position.y, frame.headset_position.z};
   const Float3 panel = head + head_right * side + forward * 0.68f + world_up * -0.08f;
 
   // Aim the panel back toward the eye position. This introduces a modest
@@ -133,7 +148,9 @@ bool OverlayManager::initialize() {
   if (!renderer_.create_surface("dashboard", static_cast<uint32_t>(kDashboardWidth),
                                 static_cast<uint32_t>(kDashboardHeight)) ||
       !renderer_.create_surface("thumbnail", 256, 256) ||
-      !renderer_.create_surface("wrist", 768, 384) || !renderer_.create_surface("hud", 768, 256))
+      !renderer_.create_surface("wrist", static_cast<uint32_t>(kWristWidth),
+                                static_cast<uint32_t>(kWristHeight)) ||
+      !renderer_.create_surface("hud", 768, 256))
     return fail("overlay texture creation failed");
   auto result = overlays_->CreateDashboardOverlay(kDashboardKey, "SteamVR Gesture Exit",
                                                   &dashboard_, &thumbnail_);
@@ -178,7 +195,7 @@ bool OverlayManager::initialize() {
   };
   if (!configure(dashboard_, kDashboardWidthMeters, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
                  kDashboardHeight) ||
-      !configure(wrist_, 0.34f, vr::VROverlayInputMethod_None, 0, 0) ||
+      !configure(wrist_, 0.22f, vr::VROverlayInputMethod_None, 0, 0) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {
     shutdown();
     return false;
@@ -186,8 +203,8 @@ bool OverlayManager::initialize() {
   // This overlay draws and hit-tests its own pointer. Keeping Mouse input and
   // the global-interactive flag disabled prevents SteamVR from taking input
   // focus away from the running game merely because the pointer touched it.
-  result = overlays_->SetOverlayFlag(
-      wrist_, vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible, false);
+  result =
+      overlays_->SetOverlayFlag(wrist_, vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible, false);
   if (result != vr::VROverlayError_None) {
     fail("SetOverlayFlag(wrist non-interactive)", result);
     shutdown();
@@ -270,23 +287,26 @@ bool OverlayManager::show_wrist(const core::Hand configured_hand, const app::Tra
   bool same_content = wrist_model_.title == m.title && wrist_model_.body == m.body &&
                       wrist_model_.left_button == m.left_button &&
                       wrist_model_.right_button == m.right_button &&
-                      wrist_model_.progress == m.progress;
+                      wrist_model_.progress == m.progress && wrist_model_.mode == m.mode &&
+                      wrist_model_.timeout_progress == m.timeout_progress &&
+                      wrist_model_.countdown_seconds == m.countdown_seconds;
   SurfaceModel next = m;
-  if (wrist_visible_ && wrist_model_.left_button == m.left_button &&
-      wrist_model_.right_button == m.right_button) {
-    next.left_hover = wrist_model_.left_hover;
-    next.right_hover = wrist_model_.right_hover;
+  if (wrist_visible_) {
     next.pointer_visible = wrist_model_.pointer_visible;
     next.pointer_x = wrist_model_.pointer_x;
     next.pointer_y = wrist_model_.pointer_y;
+    const auto hit =
+        next.pointer_visible ? wrist_hit(next, next.pointer_x, next.pointer_y) : WristHit::None;
+    next.left_hover = hit == WristHit::Left;
+    next.right_hover = hit == WristHit::Right;
   }
   if ((!same_content || !wrist_visible_) && !submit(wrist_, "wrist", next))
     return false;
   wrist_model_ = std::move(next);
   if (!wrist_visible_) {
     auto transform = control_transform(configured_hand, frame);
-    const auto transform_result = overlays_->SetOverlayTransformAbsolute(
-        wrist_, vr::TrackingUniverseStanding, &transform);
+    const auto transform_result =
+        overlays_->SetOverlayTransformAbsolute(wrist_, vr::TrackingUniverseStanding, &transform);
     if (transform_result != vr::VROverlayError_None)
       return fail("SetOverlayTransformAbsolute(wrist)", transform_result);
   }
@@ -295,6 +315,15 @@ bool OverlayManager::show_wrist(const core::Hand configured_hand, const app::Tra
     return fail("ShowOverlay(wrist)", result);
   wrist_visible_ = true;
   return true;
+}
+bool OverlayManager::update_wrist_timeout(const float progress) {
+  if (!wrist_visible_)
+    return true;
+  const float next = std::clamp(progress, 0.0f, 1.0f);
+  if (std::abs(wrist_model_.timeout_progress - next) < 0.001f)
+    return true;
+  wrist_model_.timeout_progress = next;
+  return submit(wrist_, "wrist", wrist_model_);
 }
 bool OverlayManager::hide_wrist() {
   bool ok = true;
@@ -342,13 +371,14 @@ bool OverlayManager::submit_dashboard() {
   const auto submit_finished = std::chrono::steady_clock::now();
   if (log_ && submit_finished - render_started >= std::chrono::milliseconds(16) &&
       submit_finished - last_dashboard_submit_log_at_ >= std::chrono::seconds(5)) {
-    core::DiagnosticRecord record{core::DiagnosticEventType::Error,
-                                  "DASHBOARD_TEXTURE_SLOW"};
+    core::DiagnosticRecord record{core::DiagnosticEventType::Error, "DASHBOARD_TEXTURE_SLOW"};
     record.details = {
         {"render_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          render_finished - render_started).count())},
+                                         render_finished - render_started)
+                                         .count())},
         {"submit_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          submit_finished - render_finished).count())}};
+                                         submit_finished - render_finished)
+                                         .count())}};
     (void)log_->append(record);
     last_dashboard_submit_log_at_ = submit_finished;
   }
@@ -428,9 +458,8 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand, bool co
     }
   }
 
-  const auto next_pointer_device = hand.pointer_available()
-                                       ? hand.device_index
-                                       : vr::k_unTrackedDeviceIndexInvalid;
+  const auto next_pointer_device =
+      hand.pointer_available() ? hand.device_index : vr::k_unTrackedDeviceIndexInvalid;
   if (pointer_device_ != next_pointer_device) {
     pointer_device_ = next_pointer_device;
     trigger_state_primed_ = false;
@@ -463,13 +492,13 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand, bool co
   const bool left = hit == WristHit::Left;
   const bool right = hit == WristHit::Right;
   const bool moved = pointer_visible != wrist_model_.pointer_visible ||
-                     (pointer_visible &&
-                      (std::abs(pointer_x - wrist_model_.pointer_x) >= 1.5f ||
-                       std::abs(pointer_y - wrist_model_.pointer_y) >= 1.5f));
+                     (pointer_visible && (std::abs(pointer_x - wrist_model_.pointer_x) >= 1.5f ||
+                                          std::abs(pointer_y - wrist_model_.pointer_y) >= 1.5f));
   const bool hover_changed = wrist_model_.left_hover != left || wrist_model_.right_hover != right;
-  out.entered_button = (left && !wrist_model_.left_hover) ||
-                       (right && !wrist_model_.right_hover);
+  out.entered_button = (left && !wrist_model_.left_hover) || (right && !wrist_model_.right_hover);
   out.clicked_button = !out.actions.empty();
+  out.panel_hovered = pointer_visible;
+  out.panel_hover_changed = pointer_visible != wrist_model_.pointer_visible;
   if (hover_changed || moved) {
     wrist_model_.left_hover = left;
     wrist_model_.right_hover = right;
@@ -501,11 +530,10 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
   bool pointer_seen = false;
   bool allow_hover_sound = dashboard_pointer_primed_;
   vr::VREvent_t e{};
-  for (size_t count = 0;
-       count < kMaxOverlayEventsPerPoll &&
-       overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e)); ++count) {
-    if (e.eventType == vr::VREvent_FocusLeave ||
-        e.eventType == vr::VREvent_OverlayShown ||
+  for (size_t count = 0; count < kMaxOverlayEventsPerPoll &&
+                         overlays_->PollNextOverlayEvent(dashboard_, &e, sizeof(e));
+       ++count) {
+    if (e.eventType == vr::VREvent_FocusLeave || e.eventType == vr::VREvent_OverlayShown ||
         e.eventType == vr::VREvent_OverlayHidden) {
       hovered.reset();
       hovered_tab.reset();
@@ -518,9 +546,9 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
         (e.eventType != vr::VREvent_MouseMove && e.eventType != vr::VREvent_MouseButtonDown &&
          e.eventType != vr::VREvent_MouseButtonUp))
       continue;
-    const auto point = core::dashboard_mouse_to_pixels(
-        e.data.mouse.x, e.data.mouse.y, kDashboardWidth, kDashboardHeight, kDashboardWidth,
-        kDashboardHeight);
+    const auto point =
+        core::dashboard_mouse_to_pixels(e.data.mouse.x, e.data.mouse.y, kDashboardWidth,
+                                        kDashboardHeight, kDashboardWidth, kDashboardHeight);
     const auto tab_hit = point ? core::dashboard_tab_hit_test(point->x, point->y) : std::nullopt;
     const auto hit = point && dashboard_tab_ == core::DashboardTab::Settings && !tab_hit
                          ? core::dashboard_hit_test(dashboard_model_.buttons, point->x, point->y)
@@ -557,10 +585,9 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
       if (hit) {
         for (const auto& button : dashboard_model_.buttons) {
           if (button.action == *hit) {
-            record.details["hit_bounds"] = std::to_string(button.bounds.left) + "," +
-                std::to_string(button.bounds.top) + "," +
-                std::to_string(button.bounds.right) + "," +
-                std::to_string(button.bounds.bottom);
+            record.details["hit_bounds"] =
+                std::to_string(button.bounds.left) + "," + std::to_string(button.bounds.top) + "," +
+                std::to_string(button.bounds.right) + "," + std::to_string(button.bounds.bottom);
             break;
           }
         }
@@ -568,10 +595,9 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
       if (tab_hit) {
         for (const auto& tab : core::dashboard_tabs()) {
           if (tab.tab == *tab_hit) {
-            record.details["hit_bounds"] = std::to_string(tab.bounds.left) + "," +
-                std::to_string(tab.bounds.top) + "," +
-                std::to_string(tab.bounds.right) + "," +
-                std::to_string(tab.bounds.bottom);
+            record.details["hit_bounds"] =
+                std::to_string(tab.bounds.left) + "," + std::to_string(tab.bounds.top) + "," +
+                std::to_string(tab.bounds.right) + "," + std::to_string(tab.bounds.bottom);
             break;
           }
         }
@@ -603,9 +629,9 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
   if (const auto repeated =
           dashboard_hold_repeater_.update(hovered, std::chrono::steady_clock::now()))
     out.actions.push_back(*repeated);
-  out.entered_button = allow_hover_sound &&
-                       ((hovered && hovered != dashboard_model_.hovered_action) ||
-                        (hovered_tab && hovered_tab != dashboard_model_.hovered_tab));
+  out.entered_button =
+      allow_hover_sound && ((hovered && hovered != dashboard_model_.hovered_action) ||
+                            (hovered_tab && hovered_tab != dashboard_model_.hovered_tab));
   if (visible && pointer_seen)
     dashboard_pointer_primed_ = true;
   if (hovered != dashboard_model_.hovered_action) {

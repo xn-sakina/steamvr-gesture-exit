@@ -15,6 +15,8 @@ struct WristEvents {
   std::vector<OverlayAction> actions;
   bool entered_button = false;
   bool clicked_button = false;
+  bool panel_hovered = false;
+  bool panel_hover_changed = false;
 };
 struct DashboardEvents {
   std::vector<core::DashboardAction> actions;
@@ -31,6 +33,7 @@ class OverlayManager {
   void shutdown();
   [[nodiscard]] bool show_wrist(core::Hand configured_hand, const app::TrackingFrame&,
                                 const SurfaceModel&);
+  [[nodiscard]] bool update_wrist_timeout(float progress);
   [[nodiscard]] bool hide_wrist();
   [[nodiscard]] bool show_hud(const SurfaceModel&);
   [[nodiscard]] bool hide_hud();

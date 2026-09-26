@@ -11,7 +11,6 @@
 #include <ctime>
 #include <filesystem>
 #include <mutex>
-#include <sstream>
 #include <thread>
 
 namespace bailout::app {
@@ -20,21 +19,31 @@ constexpr char kAppKey[] = "dev.kanamio.steamvrbailout";
 constexpr auto kMaxTargetResolutionAge = std::chrono::seconds(2);
 const char* wrist_action_name(platform::openvr::OverlayAction action) {
   switch (action) {
-    case platform::openvr::OverlayAction::Primary: return "primary";
-    case platform::openvr::OverlayAction::Confirm: return "confirm";
-    case platform::openvr::OverlayAction::Dismiss: return "dismiss";
-    case platform::openvr::OverlayAction::Cancel: return "cancel";
+    case platform::openvr::OverlayAction::Primary:
+      return "primary";
+    case platform::openvr::OverlayAction::Confirm:
+      return "confirm";
+    case platform::openvr::OverlayAction::Dismiss:
+      return "dismiss";
+    case platform::openvr::OverlayAction::Cancel:
+      return "cancel";
   }
   return "unknown";
 }
 const char* tracking_result_name(int value) {
   switch (static_cast<vr::ETrackingResult>(value)) {
-    case vr::TrackingResult_Uninitialized: return "uninitialized";
-    case vr::TrackingResult_Calibrating_InProgress: return "calibrating";
-    case vr::TrackingResult_Calibrating_OutOfRange: return "calibrating_out_of_range";
-    case vr::TrackingResult_Running_OK: return "running_ok";
-    case vr::TrackingResult_Running_OutOfRange: return "running_out_of_range";
-    case vr::TrackingResult_Fallback_RotationOnly: return "rotation_only";
+    case vr::TrackingResult_Uninitialized:
+      return "uninitialized";
+    case vr::TrackingResult_Calibrating_InProgress:
+      return "calibrating";
+    case vr::TrackingResult_Calibrating_OutOfRange:
+      return "calibrating_out_of_range";
+    case vr::TrackingResult_Running_OK:
+      return "running_ok";
+    case vr::TrackingResult_Running_OutOfRange:
+      return "running_out_of_range";
+    case vr::TrackingResult_Fallback_RotationOnly:
+      return "rotation_only";
   }
   return "unavailable";
 }
@@ -47,7 +56,9 @@ class ScopedHandle {
   }
   ScopedHandle(const ScopedHandle&) = delete;
   ScopedHandle& operator=(const ScopedHandle&) = delete;
-  HANDLE get() const { return value_; }
+  HANDLE get() const {
+    return value_;
+  }
 
  private:
   HANDLE value_;
@@ -55,7 +66,9 @@ class ScopedHandle {
 
 class TimerResolution {
  public:
-  ~TimerResolution() { set_active(false); }
+  ~TimerResolution() {
+    set_active(false);
+  }
   void set_active(bool active) {
     if (active && !active_)
       active_ = timeBeginPeriod(1) == TIMERR_NOERROR;
@@ -64,6 +77,7 @@ class TimerResolution {
       active_ = false;
     }
   }
+
  private:
   bool active_ = false;
 };
@@ -117,8 +131,7 @@ class SteamVrServerMonitor {
                                &required))
       return false;
     const auto expected =
-        (std::filesystem::path(widen(runtime_path.data())) / L"bin" / L"win64" /
-         L"vrserver.exe")
+        (std::filesystem::path(widen(runtime_path.data())) / L"bin" / L"win64" / L"vrserver.exe")
             .lexically_normal()
             .wstring();
     ScopedHandle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
@@ -132,18 +145,17 @@ class SteamVrServerMonitor {
     do {
       if (_wcsicmp(entry.szExeFile, L"vrserver.exe") != 0)
         continue;
-      HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE,
-                                   entry.th32ProcessID);
+      HANDLE process =
+          OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, entry.th32ProcessID);
       if (!process)
         continue;
       std::array<wchar_t, 32768> image{};
       DWORD length = static_cast<DWORD>(image.size());
       const bool matches =
           QueryFullProcessImageNameW(process, 0, image.data(), &length) &&
-          _wcsicmp(std::filesystem::path(std::wstring(image.data(), length))
-                        .lexically_normal()
-                        .c_str(),
-                    expected.c_str()) == 0;
+          _wcsicmp(
+              std::filesystem::path(std::wstring(image.data(), length)).lexically_normal().c_str(),
+              expected.c_str()) == 0;
       if (matches && WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
         const auto creation = process_creation_token(process);
         if (creation > latest_creation) {
@@ -165,7 +177,9 @@ class SteamVrServerMonitor {
   SteamVrServerMonitor(const SteamVrServerMonitor&) = delete;
   SteamVrServerMonitor& operator=(const SteamVrServerMonitor&) = delete;
   SteamVrServerMonitor() = default;
-  bool alive() const { return process_ && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT; }
+  bool alive() const {
+    return process_ && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT;
+  }
 
  private:
   HANDLE process_ = nullptr;
@@ -200,7 +214,7 @@ class ForegroundResolutionWorker {
                 resolution.scene_state = verified_state;
                 resolution.scene_pid = verified_pid;
                 resolution.game_status =
-                    verified_pid ? platform::windows::CurrentVrGameStatus::Resolving
+                    verified_pid   ? platform::windows::CurrentVrGameStatus::Resolving
                     : scene_active ? platform::windows::CurrentVrGameStatus::SceneProcessUnavailable
                                    : platform::windows::CurrentVrGameStatus::SceneNotRunning;
               }
@@ -237,7 +251,9 @@ class ForegroundResolutionWorker {
             refresh_requested_ = false;
           }
         }) {}
-  ~ForegroundResolutionWorker() { stop(); }
+  ~ForegroundResolutionWorker() {
+    stop();
+  }
   ForegroundResolutionWorker(const ForegroundResolutionWorker&) = delete;
   ForegroundResolutionWorker& operator=(const ForegroundResolutionWorker&) = delete;
   void request_stop() {
@@ -261,7 +277,9 @@ class ForegroundResolutionWorker {
     pending_ = false;
     return true;
   }
-  bool autolaunch_disabled() const { return autolaunch_disabled_.load(); }
+  bool autolaunch_disabled() const {
+    return autolaunch_disabled_.load();
+  }
   void request_refresh() {
     {
       std::scoped_lock lock(mutex_);
@@ -406,8 +424,8 @@ void RuntimeApp::abort_overlay_flow(std::chrono::steady_clock::time_point now,
   log_overlay_error(now);
   apply(flow_->on_overlay_failure("OVERLAY_PRESENT_FAILED"), now, frame);
 }
-std::optional<core::SettingsChange> RuntimeApp::dashboard_input(
-    const core::DashboardAction action, const core::Settings& base) {
+std::optional<core::SettingsChange> RuntimeApp::dashboard_input(const core::DashboardAction action,
+                                                                const core::Settings& base) {
   auto candidate = base;
   if (!core::apply_dashboard_action(candidate, action))
     return std::nullopt;
@@ -435,8 +453,7 @@ std::optional<core::SettingsChange> RuntimeApp::dashboard_input(
 }
 void RuntimeApp::apply_settings(const core::Settings& next) {
   const bool hand_changed = next.configured_hand != settings_.configured_hand;
-  const bool timeout_changed =
-      next.control_timeout_seconds != settings_.control_timeout_seconds;
+  const bool timeout_changed = next.control_timeout_seconds != settings_.control_timeout_seconds;
   const bool language_changed = next.language != settings_.language;
   settings_ = next;
   if (hand_changed)
@@ -524,36 +541,34 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   }
   const bool game_available = resolution.game.has_value();
   const bool target_available = resolution.target.has_value();
-  const std::wstring game_value = game_available
-                                      ? resolution.game->display_name
-                                      : text(game_reason(resolution.game_status));
+  const std::wstring game_value =
+      game_available ? resolution.game->display_name : text(game_reason(resolution.game_status));
   const std::wstring target_value = target_available
                                         ? resolution.target->display_name
                                         : text(target_reason(resolution.target_status));
   std::wstring last = widen(core::localize_last_exit(snapshot.last_exit, language_));
   if (snapshot.last_exit == core::LastExitStatus::Succeeded && last_successful_exit_at_)
     last += L"  ·  " + local_timestamp(*last_successful_exit_at_);
-  model.statuses = {
-      {text(core::StringId::CurrentVrGame), game_value,
-       game_available ? platform::openvr::DashboardStatusTone::Available
-                      : platform::openvr::DashboardStatusTone::Neutral},
-      {text(core::StringId::ExitTarget), target_value,
-       target_available ? platform::openvr::DashboardStatusTone::Available
-                        : platform::openvr::DashboardStatusTone::Neutral},
-      {text(core::StringId::HandTracking),
-       configured.tracked ? text(core::StringId::ControllerTracked)
-                          : text(core::StringId::ControllerNotTracked),
-       configured.tracked ? platform::openvr::DashboardStatusTone::Available
-                          : platform::openvr::DashboardStatusTone::Neutral},
-      {text(core::StringId::OppositePointer),
-       opposite.pointer_available() ? text(core::StringId::ControllerTracked)
-                                    : text(core::StringId::ControllerNotTracked),
-       opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
+  model.statuses = {{text(core::StringId::CurrentVrGame), game_value,
+                     game_available ? platform::openvr::DashboardStatusTone::Available
                                     : platform::openvr::DashboardStatusTone::Neutral},
-      {text(core::StringId::LastExit), last,
-       snapshot.last_exit == core::LastExitStatus::Succeeded
-           ? platform::openvr::DashboardStatusTone::Available
-           : platform::openvr::DashboardStatusTone::Neutral}};
+                    {text(core::StringId::ExitTarget), target_value,
+                     target_available ? platform::openvr::DashboardStatusTone::Available
+                                      : platform::openvr::DashboardStatusTone::Neutral},
+                    {text(core::StringId::HandTracking),
+                     configured.tracked ? text(core::StringId::ControllerTracked)
+                                        : text(core::StringId::ControllerNotTracked),
+                     configured.tracked ? platform::openvr::DashboardStatusTone::Available
+                                        : platform::openvr::DashboardStatusTone::Neutral},
+                    {text(core::StringId::OppositePointer),
+                     opposite.pointer_available() ? text(core::StringId::ControllerTracked)
+                                                  : text(core::StringId::ControllerNotTracked),
+                     opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
+                                                  : platform::openvr::DashboardStatusTone::Neutral},
+                    {text(core::StringId::LastExit), last,
+                     snapshot.last_exit == core::LastExitStatus::Succeeded
+                         ? platform::openvr::DashboardStatusTone::Available
+                         : platform::openvr::DashboardStatusTone::Neutral}};
   model.help_lines = {text(core::StringId::HelpGesture), text(core::StringId::HelpOppositeHand),
                       text(core::StringId::HelpForceClose)};
   const auto submit_started = std::chrono::steady_clock::now();
@@ -585,25 +600,31 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
       case core::EffectType::ShowIdleControl:
         if (!overlays_->show_wrist(
                 settings_.configured_hand, f,
-                {text(core::StringId::AppName), text(core::StringId::ExitGame),
-                 text(core::StringId::ExitGame), text(core::StringId::Dismiss)})) {
+                {text(core::StringId::ConfirmTitle), L"", text(core::StringId::ExitGame),
+                 text(core::StringId::Dismiss), L"", 0.0f, platform::openvr::SurfaceMode::Prompt,
+                 1.0f, settings_.countdown_seconds})) {
           abort_overlay_flow(now, f);
           return;
         }
         break;
       case core::EffectType::ShowConfirmation: {
-        std::wstring name = latest_resolution_.target ? latest_resolution_.target->display_name
-                                                      : text(core::StringId::UnknownGame);
         if (!overlays_->show_wrist(
                 settings_.configured_hand, f,
-                {text(core::StringId::ConfirmTitle),
-                 name + L"\n" + text(core::StringId::ConfirmBody), text(core::StringId::Confirm),
-                 text(core::StringId::Dismiss)})) {
+                {text(core::StringId::ConfirmTitle), L"", text(core::StringId::Confirm),
+                 text(core::StringId::Dismiss), L"", 0.0f, platform::openvr::SurfaceMode::Confirm,
+                 static_cast<float>(flow_->snapshot(now).control_timeout_progress),
+                 settings_.countdown_seconds})) {
           abort_overlay_flow(now, f);
           return;
         }
         break;
       }
+      case core::EffectType::UpdateControlTimeout:
+        if (!overlays_->update_wrist_timeout(static_cast<float>(e.progress))) {
+          abort_overlay_flow(now, f);
+          return;
+        }
+        break;
       case core::EffectType::HideControl:
         if (!overlays_->hide_wrist())
           log_overlay_error(now);
@@ -611,15 +632,11 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
       case core::EffectType::ShowCountdownControl:
       case core::EffectType::UpdateCountdownControl: {
         double seconds = std::max(0.0, e.remaining.count() / 1000.0);
-        std::wstringstream value;
-        value << static_cast<int>(std::ceil(seconds)) << text(core::StringId::SecondsUnit);
-        const std::wstring target_name =
-            e.target ? widen(e.target->display_name) : text(core::StringId::UnknownGame);
-        const std::wstring countdown_body = target_name + L"\n" + value.str();
-        if (!overlays_->show_wrist(settings_.configured_hand, f,
-                                   {text(core::StringId::ExitGame), countdown_body, L"",
-                                    text(core::StringId::CancelExit), L"",
-                                    static_cast<float>(e.progress)})) {
+        const int display_seconds = std::max(1, static_cast<int>(std::ceil(seconds)));
+        if (!overlays_->show_wrist(
+                settings_.configured_hand, f,
+                {L"", L"", L"", text(core::StringId::Dismiss), L"", static_cast<float>(e.progress),
+                 platform::openvr::SurfaceMode::Countdown, 0.0f, display_seconds})) {
           abort_overlay_flow(now, f);
           return;
         }
@@ -630,17 +647,6 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
         }
         break;
       }
-      case core::EffectType::ShowExitingHud:
-        if (!overlays_->hide_wrist()) {
-          abort_overlay_flow(now, f);
-          return;
-        }
-        if (!overlays_->show_hud(
-                {text(core::StringId::Exiting), text(core::StringId::PleaseWait)})) {
-          abort_overlay_flow(now, f);
-          return;
-        }
-        break;
       case core::EffectType::ShowFailureHud:
         if (!overlays_->show_hud(
                 {text(core::StringId::ExitFailed), text(core::StringId::CloseManually)}))
@@ -800,9 +806,11 @@ int RuntimeApp::run() {
                                     "DASHBOARD_VISIBILITY_QUERY_SLOW"};
       record.details = {
           {"global_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            global_finished - started).count())},
+                                           global_finished - started)
+                                           .count())},
           {"overlay_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             finished - global_finished).count())}};
+                                            finished - global_finished)
+                                            .count())}};
       (void)log_.append(record);
       last_slow_visibility_at = finished;
     }
@@ -839,8 +847,9 @@ int RuntimeApp::run() {
       core::DiagnosticRecord record{};
       record.event = result.saved ? core::DiagnosticEventType::SettingsChanged
                                   : core::DiagnosticEventType::Error;
-      record.code = result.saved ? "SETTINGS_SAVED"
-                                 : result.error.empty() ? "SETTINGS_WRITE_FAILED" : result.error;
+      record.code = result.saved           ? "SETTINGS_SAVED"
+                    : result.error.empty() ? "SETTINGS_WRITE_FAILED"
+                                           : result.error;
       if (result.saved) {
         record.setting_name = std::move(result.change.name);
         record.setting_value = std::move(result.change.value);
@@ -849,15 +858,18 @@ int RuntimeApp::run() {
         failure_notice_changed = true;
       }
       if (result.change.requested_at != std::chrono::steady_clock::time_point{}) {
-        record.details["queue_wait_ms"] = std::to_string(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                result.started_at - result.change.requested_at).count());
-        record.details["write_ms"] = std::to_string(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                result.completed_at - result.started_at).count());
-        record.details["persistence_ms"] = std::to_string(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                confirmed_at - result.change.requested_at).count());
+        record.details["queue_wait_ms"] =
+            std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                               result.started_at - result.change.requested_at)
+                               .count());
+        record.details["write_ms"] =
+            std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                               result.completed_at - result.started_at)
+                               .count());
+        record.details["persistence_ms"] =
+            std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                               confirmed_at - result.change.requested_at)
+                               .count());
       }
       (void)log_.append(record);
     }
@@ -904,7 +916,8 @@ int RuntimeApp::run() {
       record.code = "DASHBOARD_VISIBILITY_CHANGED";
       record.debug_only = true;
       record.available = dashboard_at_start;
-      record.details["steamvr_global_visible"] = vr_.overlays()->IsDashboardVisible() ? "true" : "false";
+      record.details["steamvr_global_visible"] =
+          vr_.overlays()->IsDashboardVisible() ? "true" : "false";
       record.details["overlay_visible"] = overlays_->dashboard_visible() ? "true" : "false";
       (void)log_.append(record);
       target_worker.request_refresh();
@@ -931,8 +944,7 @@ int RuntimeApp::run() {
     bool scene_may_have_changed = false;
     const auto system_events_started = std::chrono::steady_clock::now();
     for (size_t count = 0;
-         count < 256 && vr_.system()->PollNextEvent(&system_event, sizeof(system_event));
-         ++count) {
+         count < 256 && vr_.system()->PollNextEvent(&system_event, sizeof(system_event)); ++count) {
       if (system_event.eventType == vr::VREvent_Quit) {
         vr_.system()->AcknowledgeQuit_Exiting();
         vr_quit = true;
@@ -956,10 +968,10 @@ int RuntimeApp::run() {
     const auto system_events_finished = std::chrono::steady_clock::now();
     if (system_events_finished - system_events_started >= std::chrono::milliseconds(32) &&
         system_events_finished - last_slow_system_events_at >= std::chrono::seconds(5)) {
-      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
-                                    "SYSTEM_EVENT_POLL_SLOW"};
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error, "SYSTEM_EVENT_POLL_SLOW"};
       record.status = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         system_events_finished - system_events_started).count()) +
+                                         system_events_finished - system_events_started)
+                                         .count()) +
                       "ms";
       (void)log_.append(record);
       last_slow_system_events_at = system_events_finished;
@@ -1002,32 +1014,35 @@ int RuntimeApp::run() {
                                : platform::windows::CurrentVrGameStatus::SceneNotRunning;
       }
       // A result from a query begun before the click is not confirmation evidence.
-      if (current_scene && pending_confirmation &&
-          resolved_started_at >= confirmation_requested_at)
+      if (current_scene && pending_confirmation && resolved_started_at >= confirmation_requested_at)
         confirmation_resolution = resolved;
       const std::string signature = std::to_string(resolved.scene_pid) + ":" +
-          platform::windows::diagnostic_code(resolved.game_status) + ":" +
-          platform::windows::diagnostic_code(resolved.target_status) + ":" +
-          (current_scene ? "current" : "stale");
-      if (signature != last_target_signature || now - last_target_log_at >= std::chrono::seconds(5)) {
+                                    platform::windows::diagnostic_code(resolved.game_status) + ":" +
+                                    platform::windows::diagnostic_code(resolved.target_status) +
+                                    ":" + (current_scene ? "current" : "stale");
+      if (signature != last_target_signature ||
+          now - last_target_log_at >= std::chrono::seconds(5)) {
         core::DiagnosticRecord record{};
         record.event = core::DiagnosticEventType::AvailabilityChanged;
         record.code = "TARGET_RESOLUTION_RECEIVED";
         record.debug_only = true;
         record.current_game_status = platform::windows::diagnostic_code(resolved.game_status);
         record.exit_target_status = platform::windows::diagnostic_code(resolved.target_status);
-        record.details = {{"resolved_scene_pid", std::to_string(resolved.scene_pid)},
-                          {"observed_scene_pid", std::to_string(observed_scene_pid)},
-                          {"scene_matches", current_scene ? "true" : "false"},
-                          {"result_age_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - resolved_at).count())},
-                          {"has_game", resolved.game ? "true" : "false"},
-                          {"has_target", resolved.target ? "true" : "false"}};
+        record.details = {
+            {"resolved_scene_pid", std::to_string(resolved.scene_pid)},
+            {"observed_scene_pid", std::to_string(observed_scene_pid)},
+            {"scene_matches", current_scene ? "true" : "false"},
+            {"result_age_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                 std::chrono::steady_clock::now() - resolved_at)
+                                                 .count())},
+            {"has_game", resolved.game ? "true" : "false"},
+            {"has_target", resolved.target ? "true" : "false"}};
         (void)log_.append(record);
         last_target_signature = signature;
         last_target_log_at = now;
       }
-      if (current_scene && std::chrono::steady_clock::now() - resolved_at <
-                               kMaxTargetResolutionAge) {
+      if (current_scene &&
+          std::chrono::steady_clock::now() - resolved_at < kMaxTargetResolutionAge) {
         latest_resolution_ = std::move(resolved);
         if (latest_resolution_.scene_pid)
           latest_resolution_at = resolved_at;
@@ -1038,9 +1053,9 @@ int RuntimeApp::run() {
       latest_resolution_at = {};
       latest_resolution_ = {};
       latest_resolution_.scene_pid = observed_scene_pid;
-      latest_resolution_.game_status = observed_scene_pid
-                                           ? platform::windows::CurrentVrGameStatus::Resolving
-                                           : platform::windows::CurrentVrGameStatus::SceneNotRunning;
+      latest_resolution_.game_status =
+          observed_scene_pid ? platform::windows::CurrentVrGameStatus::Resolving
+                             : platform::windows::CurrentVrGameStatus::SceneNotRunning;
       (void)log_.append({core::DiagnosticEventType::Error, "TARGET_RESOLUTION_STALE"});
       target_worker.request_refresh();
     }
@@ -1050,19 +1065,19 @@ int RuntimeApp::run() {
     const auto input_finished = std::chrono::steady_clock::now();
     if (input_finished - input_started >= std::chrono::milliseconds(32) &&
         input_finished - last_slow_input_at >= std::chrono::seconds(5)) {
-      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
-                                    "DASHBOARD_INPUT_POLL_SLOW"};
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error, "DASHBOARD_INPUT_POLL_SLOW"};
       record.status = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         input_finished - input_started).count()) + "ms";
+                                         input_finished - input_started)
+                                         .count()) +
+                      "ms";
       (void)log_.append(record);
       last_slow_input_at = input_finished;
     }
     if (dashboard_events.max_event_age_seconds >= 0.05F &&
         input_finished - last_input_backlog_at >= std::chrono::seconds(5)) {
-      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
-                                    "DASHBOARD_EVENT_BACKLOG"};
-      record.status = std::to_string(static_cast<int>(
-                          dashboard_events.max_event_age_seconds * 1000.0F)) + "ms";
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error, "DASHBOARD_EVENT_BACKLOG"};
+      record.status =
+          std::to_string(static_cast<int>(dashboard_events.max_event_age_seconds * 1000.0F)) + "ms";
       (void)log_.append(record);
       last_input_backlog_at = input_finished;
     }
@@ -1095,8 +1110,8 @@ int RuntimeApp::run() {
       }
     }
     save_notice_changed |= consume_save_results();
-    if (dashboard_events.hover_changed || dashboard_events.tab_changed ||
-        settings_changed || save_notice_changed) {
+    if (dashboard_events.hover_changed || dashboard_events.tab_changed || settings_changed ||
+        save_notice_changed) {
       update_dashboard(latest_resolution_, last_frame);
       last_dashboard_refresh_at = std::chrono::steady_clock::now();
     }
@@ -1105,8 +1120,7 @@ int RuntimeApp::run() {
       const auto interaction_finished = std::chrono::steady_clock::now();
       const auto local_ms =
           std::chrono::duration<double, std::milli>(interaction_finished - input_finished).count();
-      const auto end_to_end_ms =
-          dashboard_events.max_event_age_seconds * 1000.0 + local_ms;
+      const auto end_to_end_ms = dashboard_events.max_event_age_seconds * 1000.0 + local_ms;
       if (end_to_end_ms >= 16.0 &&
           interaction_finished - last_slow_interaction_at >= std::chrono::seconds(5)) {
         core::DiagnosticRecord record{core::DiagnosticEventType::Error,
@@ -1131,10 +1145,11 @@ int RuntimeApp::run() {
     const auto tracking_finished = std::chrono::steady_clock::now();
     if (tracking_finished - tracking_started >= std::chrono::milliseconds(32) &&
         tracking_finished - last_slow_tracking_at >= std::chrono::seconds(5)) {
-      core::DiagnosticRecord record{core::DiagnosticEventType::Error,
-                                    "TRACKING_SAMPLE_SLOW"};
+      core::DiagnosticRecord record{core::DiagnosticEventType::Error, "TRACKING_SAMPLE_SLOW"};
       record.status = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         tracking_finished - tracking_started).count()) + "ms";
+                                         tracking_finished - tracking_started)
+                                         .count()) +
+                      "ms";
       (void)log_.append(record);
       last_slow_tracking_at = tracking_finished;
     }
@@ -1147,9 +1162,15 @@ int RuntimeApp::run() {
           {"source", "GetDeviceToAbsoluteTrackingPose"},
           {"universe", "standing"},
           {"prediction_seconds", "0"},
-          {"sample_interval_ms", last_frame.sampled_at == std::chrono::steady_clock::time_point{}
-                                     ? "first" : std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(frame.sampled_at - last_frame.sampled_at).count())},
-          {"sample_age_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - frame.sampled_at).count())},
+          {"sample_interval_ms",
+           last_frame.sampled_at == std::chrono::steady_clock::time_point{}
+               ? "first"
+               : std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    frame.sampled_at - last_frame.sampled_at)
+                                    .count())},
+          {"sample_age_ms", std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::steady_clock::now() - frame.sampled_at)
+                                               .count())},
           {"hmd_connected", frame.headset_connected ? "true" : "false"},
           {"hmd_tracked", frame.headset_tracked ? "true" : "false"},
           {"hmd_pose_valid", frame.headset_pose_valid ? "true" : "false"},
@@ -1207,18 +1228,19 @@ int RuntimeApp::run() {
     }
     apply(flow_->on_prerequisites(now, prereq), now, frame);
     if (pending_confirmation) {
-      const bool timed_out = std::chrono::steady_clock::now() - confirmation_requested_at >=
-                             kMaxTargetResolutionAge;
+      const bool timed_out =
+          std::chrono::steady_clock::now() - confirmation_requested_at >= kMaxTargetResolutionAge;
       if (confirmation_resolution || timed_out || dashboard_visible ||
           flow_->state() != core::FlowState::Confirming) {
-        const bool same_target = confirmation_resolution && confirmation_resolution->target &&
+        const bool same_target =
+            confirmation_resolution && confirmation_resolution->target &&
             confirmation_resolution->scene_pid == observed_scene_pid &&
             core_target(*confirmation_resolution->target) == core_target(*pending_confirmation);
         const bool accepted = !timed_out && !dashboard_visible && same_target &&
                               flow_->state() == core::FlowState::Confirming;
         if (accepted) {
-          apply(flow_->on_prerequisites(now, prerequisites(frame, *confirmation_resolution)),
-                now, frame);
+          apply(flow_->on_prerequisites(now, prerequisites(frame, *confirmation_resolution)), now,
+                frame);
           if (flow_->state() == core::FlowState::Confirming) {
             locked_native_ = confirmation_resolution->target;
             apply(flow_->on_confirm(now, core_target(*locked_native_),
@@ -1252,8 +1274,9 @@ int RuntimeApp::run() {
                                  cv(configured.position), cv(frame.headset_position),
                                  cv(frame.headset_forward), configured.input_active});
     const auto& gesture_diagnostic = gesture_.diagnostic();
-    const std::string gesture_decision = dashboard_visible ? "dashboard_open" :
-        std::string(core::to_string(gesture_diagnostic.decision));
+    const std::string gesture_decision =
+        dashboard_visible ? "dashboard_open"
+                          : std::string(core::to_string(gesture_diagnostic.decision));
     if ((gesture_decision != last_gesture_decision_ &&
          now - last_gesture_log_at_ >= std::chrono::milliseconds(250)) ||
         now - last_gesture_log_at_ >= std::chrono::seconds(2)) {
@@ -1273,8 +1296,7 @@ int RuntimeApp::run() {
           {"behind_head_m", std::to_string(gesture_diagnostic.behind_head_m)},
           {"amplitude_m", std::to_string(gesture_diagnostic.amplitude_m)},
           {"lateral_travel_m", std::to_string(gesture_diagnostic.lateral_travel_m)},
-          {"maximum_orthogonal_ratio",
-           std::to_string(gesture_diagnostic.maximum_orthogonal_ratio)},
+          {"maximum_orthogonal_ratio", std::to_string(gesture_diagnostic.maximum_orthogonal_ratio)},
           {"minimum_stroke_efficiency",
            std::to_string(gesture_diagnostic.minimum_stroke_efficiency)},
           {"stroke_length_ratio", std::to_string(gesture_diagnostic.stroke_length_ratio)},
@@ -1294,8 +1316,10 @@ int RuntimeApp::run() {
            std::to_string(gesture_.config().minimum_stroke_duration.count())},
           {"maximum_stroke_duration_ms",
            std::to_string(gesture_.config().maximum_stroke_duration.count())},
-          {"minimum_head_distance_m", std::to_string(gesture_.config().minimum_head_distance_metres)},
-          {"maximum_head_distance_m", std::to_string(gesture_.config().maximum_head_distance_metres)},
+          {"minimum_head_distance_m",
+           std::to_string(gesture_.config().minimum_head_distance_metres)},
+          {"maximum_head_distance_m",
+           std::to_string(gesture_.config().maximum_head_distance_metres)},
           {"maximum_behind_head_m", std::to_string(gesture_.config().maximum_behind_head_metres)},
           {"clock_reset", gesture_diagnostic.clock_reset ? "true" : "false"},
           {"prerequisites_ready", prereq.ready() ? "true" : "false"},
@@ -1313,10 +1337,11 @@ int RuntimeApp::run() {
           platform::windows::diagnostic_code(latest_resolution_.game_status);
       recognized.exit_target_status =
           platform::windows::diagnostic_code(latest_resolution_.target_status);
-      recognized.details = {{"flow_state", std::string(core::to_string(flow_->state()))},
-                            {"configured_hand", std::string(core::to_string(settings_.configured_hand))},
-                            {"device_index", std::to_string(configured.device_index)},
-                            {"prerequisites_ready", prereq.ready() ? "true" : "false"}};
+      recognized.details = {
+          {"flow_state", std::string(core::to_string(flow_->state()))},
+          {"configured_hand", std::string(core::to_string(settings_.configured_hand))},
+          {"device_index", std::to_string(configured.device_index)},
+          {"prerequisites_ready", prereq.ready() ? "true" : "false"}};
       (void)log_.append(recognized);
       auto effects = flow_->on_gesture(now, prereq);
       core::DiagnosticRecord dispatch{};
@@ -1342,6 +1367,8 @@ int RuntimeApp::run() {
       if (!overlays_->error().empty())
         abort_overlay_flow(now, frame);
       else {
+        if (wrist_events.panel_hover_changed)
+          apply(flow_->on_control_hover(now, wrist_events.panel_hovered), now, frame);
         if (wrist_events.entered_button &&
             now - last_ui_hover_sound_at >= std::chrono::milliseconds(150)) {
           sound_.ui_hover();
@@ -1372,8 +1399,7 @@ int RuntimeApp::run() {
             if (!pending_confirmation && !dashboard_open() &&
                 flow_->state() == core::FlowState::Confirming && latest_resolution_.target &&
                 latest_resolution_at != std::chrono::steady_clock::time_point{} &&
-                std::chrono::steady_clock::now() - latest_resolution_at <
-                    kMaxTargetResolutionAge) {
+                std::chrono::steady_clock::now() - latest_resolution_at < kMaxTargetResolutionAge) {
               pending_confirmation = latest_resolution_.target;
               confirmation_requested_at = std::chrono::steady_clock::now();
               target_worker.request_refresh();

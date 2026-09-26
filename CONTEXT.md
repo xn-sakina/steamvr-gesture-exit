@@ -13,7 +13,7 @@ The intentional application-level leaving of the Current VR Game. It ends only t
 _Avoid_: leave world, leave instance, quit room, exit SteamVR
 
 **Exit Target**:
-The reliable main-process target selected from the Current VR Game at the moment the user confirms a Game Exit. The Exit Target remains fixed through the Exit Countdown; if it exits or no longer matches the confirmed game, the Game Exit flow ends without affecting a different application. User-facing confirmation and countdown text should identify the Exit Target when a reliable display name is available.
+The reliable main-process target selected from the Current VR Game at the moment the user confirms a Game Exit. The Exit Target remains fixed through the Exit Countdown; if it exits or no longer matches the confirmed game, the Game Exit flow ends without affecting a different application. Target identity remains an internal safety boundary and does not add copy to the compact Exit Control.
 _Avoid_: current process, latest app, foreground app
 
 **Farewell Gesture**:
@@ -37,7 +37,7 @@ A SteamVR controller setup that provides stable poses for both hands and an Oppo
 _Avoid_: hand tracking, single-controller mode, controller brand support
 
 **Exit Control**:
-The compact, low-distraction in-world control that appears in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. Its position and eye-facing angle are captured in world space when it first appears, so head movement does not make the click target move. The same single control can be idle, ask the user to confirm or dismiss a Game Exit, or display and cancel a Game Exit countdown.
+The compact, low-distraction, rounded in-world control that appears in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. Its narrow portrait layout, flat controls, subtle brand background, and fixed button positions minimise view obstruction and layout shift. Its position and eye-facing angle are captured in world space when it first appears, so head movement does not make the click target move. A top progress bar visualises the auto-dismiss timeout; pointing anywhere at the control pauses that timeout and refills the bar, while leaving restarts the full timeout. The same single control can ask the user to exit or cancel, ask for a second confirmation, or display and cancel a Game Exit countdown.
 _Avoid_: exit button, quit button, wrist button
 
 **Opposite-side View Zone**:
@@ -45,15 +45,15 @@ The side of the user's view at the moment the control appears corresponding to t
 _Avoid_: real wrist, hand bone, watch position, controller-attached panel
 
 **Exit Countdown**:
-The short, visible delay between confirming a Game Exit and carrying it out. Remaining time and progress replace the confirmation content inside the existing Exit Control, with Cancel Exit as its only action. New Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.
+The short, visible delay between confirming a Game Exit and carrying it out. A large integer second value and a circular progress ring that shifts from blue toward red replace the confirmation content inside the existing Exit Control, with Cancel as its only action. Fractions above zero display as at least one second. New Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.
 _Avoid_: delay, timer, grace period
 
 **Exit Grace Period**:
-The short wait after the add-on asks the Exit Target to close gracefully and before it may force close the same game process. It is separate from the Exit Countdown and is communicated as an exiting state rather than a cancellable countdown.
+The short wait after the add-on asks the Exit Target to close gracefully and before it may force close the same game process. It is separate from the Exit Countdown and does not create another user-facing panel after the countdown closes.
 _Avoid_: countdown, delay, timeout
 
 **HUD Overlay**:
-A non-interactive status display reserved for execution and failure messages after cancellation has closed. The Exit Countdown does not create a separate HUD Overlay.
+A non-interactive status display reserved for actionable failure messages after cancellation has closed. Successful execution and the Exit Grace Period remain silent; the Exit Countdown does not create a separate HUD Overlay.
 _Avoid_: world overlay, clickable HUD, floating world panel
 
 **Countdown Sound**:

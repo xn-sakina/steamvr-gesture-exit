@@ -12,7 +12,7 @@ The feature must make Game Exit easy and theatrical while staying conservative. 
 
 Build a Windows Runtime SteamVR Add-on Package that loads with SteamVR and provides a Dashboard Panel plus in-game overlays. While a Current VR Game is running, the player performs a Farewell Gesture with the Configured Hand. If the add-on can also identify a reliable Exit Target and the Opposite Hand Pointer is available, a compact Exit Control appears in the Opposite-side View Zone and locks to that world-space position.
 
-The Farewell Gesture only requests the Exit Control. The user must explicitly interact with the Exit Control using the Opposite Hand Pointer, then confirm the Game Exit. After confirmation, the same Exit Control changes in place to show the Exit Countdown and Cancel Exit action. When the countdown reaches zero, cancellation closes, a non-interactive HUD reports the exiting state, and the add-on requests a graceful close of the fixed Exit Target main process. If the target remains alive after the fixed Exit Grace Period, the add-on force closes only that same main process.
+The Farewell Gesture only requests the Exit Control. The user must explicitly interact with the Exit Control using the Opposite Hand Pointer, then confirm the Game Exit. After confirmation, the same Exit Control changes in place to show the Exit Countdown and Cancel action. When the countdown reaches zero, the control closes without another success or exiting panel, and the add-on requests a graceful close of the fixed Exit Target main process. If the target remains alive after the fixed Exit Grace Period, the add-on force closes only that same main process.
 
 The Dashboard Panel provides User Settings, first-use help, and lightweight diagnostics. Diagnostic Log output supports development and Windows-side testing without recording continuous motion data, game content, chat, audio, or broad process dumps.
 
@@ -28,15 +28,15 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 8. As a VR player, I want visible pointer/button feedback and subtle hover/click sounds, so that I know where I am pointing and whether activation succeeded.
 9. As a VR player, I want a second confirmation before exit begins, so that a gesture alone cannot close my game.
 10. As a VR player, I want Confirm and Dismiss to be separated large targets, so that I do not accidentally confirm while trying to dismiss.
-11. As a VR player, I want the confirmation to name the Exit Target when possible, so that I know which game will close.
-12. As a VR player, I want the confirmation to tell me the game may be force closed if unresponsive, so that I understand the risk.
+11. As a VR player, I want the confirmation copy reduced to the single question “Exit game?”, so that I can decide without reading a dense panel.
+12. As a VR player, I want the Exit Control to retain subtle product branding without competing with the decision, so that it feels intentional but unobtrusive.
 13. As a VR player, I want to cancel during the Exit Countdown from the Exit Control, so that I can recover from a mistaken confirmation.
 14. As a VR player, I want the existing Exit Control to change into the countdown view, so that confirmation does not spawn another panel elsewhere.
 15. As a VR player, I want Cancel Exit to remain on that countdown view, so that the same pointer interaction can stop the exit.
 16. As a VR player, I want the countdown to show both seconds and smooth progress, so that I can time my farewell action accurately.
-17. As a VR player, I want a subtle countdown sound, so that I can pace my exit without needing to stare at the HUD.
+17. As a VR player, I want a subtle countdown sound, so that I can pace my exit without needing to stare at the control.
 18. As a VR player, I want to disable countdown sound, so that the countdown stays quiet when I prefer visual timing feedback only.
-19. As a VR player, I want the idle exit control to disappear automatically, so that accidental gesture recognition does not leave UI in my game.
+19. As a VR player, I want the exit control to disappear automatically while unattended, pause that timeout while I point at it, and restart the full timeout after I point away, so that it never vanishes during an intended interaction.
 20. As a VR player, I want to dismiss the exit control manually, so that I can clear it without waiting for timeout.
 21. As a VR player, I want repeated goodbye gestures to refresh only the idle control timeout, so that natural movement does not restart or alter a confirmed exit.
 22. As a VR player, I want new gestures to be ignored during countdown, so that the countdown remains predictable.
@@ -94,12 +94,12 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - Make the Opposite Hand Pointer the only hover and activation input for Exit Control. Render its point and button hover feedback on the control itself, and play subtle sounds when the pointer enters a button and when a button activates. Do not implement gaze click, same-hand input, keyboard shortcuts, or controller shortcut cancellation.
 - Keep the Exit Control overlay non-interactive to SteamVR and perform ray hit-testing and trigger-edge handling locally. Merely pointing at or clicking the control must not capture scene input focus or change the Current VR Game's AFK/activity state.
 - Use a three-state control flow before execution: Idle Visible, Confirming, Counting Down, then Exiting.
-- In Idle Visible, repeated Farewell Gestures refresh only the timeout. In Confirming and Counting Down, new Farewell Gestures are ignored.
+- In Idle Visible, repeated Farewell Gestures refresh only the timeout. In Confirming and Counting Down, new Farewell Gestures are ignored. Idle Visible and Confirming both auto-dismiss when unattended; pointer hover anywhere on the control pauses the timeout and refills its top progress bar, and pointer exit restarts the full timeout.
 - In Idle Visible and Confirming, loss of Configured Hand tracking or Opposite Hand Pointer availability closes the control and returns to no active flow.
 - In Counting Down, temporary hand-tracking loss does not cancel the active countdown. If tracking returns, Cancel Exit remains available from the same world-anchored Exit Control.
 - In Counting Down, disconnection of the HMD or all controllers cancels the flow before a game-close request. Temporary pose loss while devices remain connected does not cancel it.
-- During Counting Down, replace the confirmation content inside the existing Exit Control with remaining seconds, progress, and Cancel Exit. Do not create a second countdown panel or HUD.
-- At countdown zero, cancellation ends, the Exit Control closes, and a non-interactive HUD reports the exiting state while the graceful close and Exit Grace Period happen.
+- During Counting Down, replace the question with a large integer-second value, a circular progress ring that transitions from blue toward red, and Cancel in its fixed button position. Display one second for every positive fraction below one second. Do not create a second countdown panel or HUD.
+- At countdown zero, cancellation ends and the Exit Control closes. Request graceful close immediately and keep the Exit Grace Period silent; do not show an exiting or success HUD.
 - If the target exits or no longer matches the confirmed Exit Target before execution, clear the flow without affecting another application.
 - If force close fails, show a short HUD error, update Last Exit to failed, record the Diagnostic Log entry, and do not retry indefinitely or expand process scope.
 - Keep Dashboard Panel as the surface for User Settings, first-use help, and lightweight diagnostics. It is not part of the in-game exit flow.
@@ -118,12 +118,17 @@ No Active Flow
 
 Idle Visible
   timeout -> No Active Flow
+  pointer enters control -> pause timeout and refill progress
+  pointer leaves control -> restart full timeout
   dismiss -> No Active Flow
   tracking/pointer lost -> No Active Flow
   repeated Farewell Gesture -> refresh timeout
   click with Opposite Hand Pointer -> Confirming
 
 Confirming
+  timeout -> No Active Flow
+  pointer enters control -> pause timeout and refill progress
+  pointer leaves control -> restart full timeout
   dismiss -> No Active Flow
   tracking/pointer lost -> No Active Flow
   Confirm -> Counting Down with locked Exit Target and duration

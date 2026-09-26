@@ -112,8 +112,8 @@ void gesture_recognizes_sampled_controller_wave() {
   for (int frame = 0; frame < 180; ++frame) {
     const double seconds = static_cast<double>(frame) / 90.0;
     const double x = 0.15 + 0.12 * std::sin(2.0 * 3.141592653589793 * 1.2 * seconds);
-    if (detector.update(sample(static_cast<int>(seconds * 1000.0), {x, 1.08, -0.55},
-                               {0, 0, -1}, true, {0, 1.65, 0}))) {
+    if (detector.update(sample(static_cast<int>(seconds * 1000.0), {x, 1.08, -0.55}, {0, 0, -1},
+                               true, {0, 1.65, 0}))) {
       recognized = true;
       break;
     }
@@ -158,11 +158,10 @@ void gesture_accepts_real_seated_postures() {
     GestureDetector detector;
     const std::array<double, 5> x{0.04, 0.24, 0.04, 0.24, 0.04};
     for (std::size_t i = 0; i + 1 < x.size(); ++i) {
-      CHECK(!detector.update(sample(static_cast<int>(i) * 250, {x[i], height, -0.48},
-                                    {0, 0, -1}, true, headset)));
+      CHECK(!detector.update(
+          sample(static_cast<int>(i) * 250, {x[i], height, -0.48}, {0, 0, -1}, true, headset)));
     }
-    CHECK(detector.update(sample(1000, {x.back(), height, -0.48}, {0, 0, -1}, true,
-                                 headset)));
+    CHECK(detector.update(sample(1000, {x.back(), height, -0.48}, {0, 0, -1}, true, headset)));
   }
 }
 
@@ -463,13 +462,14 @@ void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::English, "schinese", "zh-CN") == Language::English);
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
+  CHECK(localize(StringId::ConfirmTitle, Language::ChineseSimplified) == "是否退出？");
+  CHECK(localize(StringId::ExitGame, Language::ChineseSimplified) == "退出");
+  CHECK(localize(StringId::Dismiss, Language::ChineseSimplified) == "取消");
   CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");
   CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "另一只手柄");
-  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) ==
-        "已识别到手柄");
+  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "已识别到手柄");
   CHECK(localize(StringId::ClickHandReady, Language::ChineseSimplified) ==
         "退出按钮出现后，指向按钮并扣动扳机。");
-  CHECK(localize(StringId::PleaseWait, Language::ChineseSimplified) == "请稍候");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
         "设置保存失败，请重试。");
   CHECK(localize(StringId::AppName, Language::ChineseSimplified) == "SteamVR手势退出");
@@ -672,19 +672,15 @@ void diagnostics_rotate_at_a_fixed_size() {
 
 void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(is_current_vr_game_candidate({"steam.app.438100", "url", false, false, false, false}));
-  CHECK(is_current_vr_game_candidate(
-      {"steam.app.450390", "binary", false, false, false, false}));
-  CHECK(is_current_vr_game_candidate(
-      {"steam.app.620980", "url", false, false, false, false}));
-  CHECK(is_current_vr_game_candidate(
-      {"steam.app.438100", "", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.450390", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.620980", "url", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.438100", "", false, false, false, false}));
 
-  CHECK(!is_current_vr_game_candidate(
-      {"com.example.vr-tool", "binary", false, false, false, false}));
+  CHECK(
+      !is_current_vr_game_candidate({"com.example.vr-tool", "binary", false, false, false, false}));
   CHECK(!is_current_vr_game_candidate(
       {"com.example.indie-vr-game", "binary", false, false, false, false}));
-  CHECK(!is_current_vr_game_candidate(
-      {"steam.app.999999", "url", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.999999", "url", false, false, false, false}));
 
   CHECK(
       !is_current_vr_game_candidate({"steam.app.not-a-number", "url", false, false, false, false}));
@@ -694,12 +690,9 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
       {"steam.overlay.1009850", "binary", false, false, false, false}));
   CHECK(!is_current_vr_game_candidate(
       {"system.generated.unknown.exe", "binary", false, false, false, false}));
-  CHECK(
-      !is_current_vr_game_candidate({"steam.app.438100", "binary", true, false, false, false}));
-  CHECK(
-      !is_current_vr_game_candidate({"steam.app.438100", "binary", false, true, false, false}));
-  CHECK(
-      !is_current_vr_game_candidate({"steam.app.438100", "binary", false, false, true, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.438100", "binary", true, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.438100", "binary", false, true, false, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.438100", "binary", false, false, true, false}));
   CHECK(!is_current_vr_game_candidate({"steam.app.438100", "binary", false, false, false, true}));
   CHECK(!is_current_vr_game_candidate({"steam.app.438100", "unknown", false, false, false, false}));
 }
@@ -781,8 +774,7 @@ void dashboard_tabs_have_distinct_large_targets() {
   CHECK(!dashboard_tab_hit_test(354.0F, 126.0F));
   CHECK(!dashboard_tab_hit_test(512.0F, 180.0F));
   const auto value = dashboard_timeout_value_rect();
-  CHECK(!dashboard_hit_test(dashboard_buttons(Settings{}),
-                            (value.left + value.right) * 0.5F,
+  CHECK(!dashboard_hit_test(dashboard_buttons(Settings{}), (value.left + value.right) * 0.5F,
                             (value.top + value.bottom) * 0.5F));
 }
 
@@ -794,11 +786,11 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
     for (const auto [mouse_width, mouse_height] :
-         {std::pair{1024.0F, 456.0F}, std::pair{1920.0F, 855.0F},
-          std::pair{512.0F, 228.0F}, std::pair{1024.0F, 1024.0F}}) {
-      const auto point = dashboard_mouse_to_pixels(
-          x * mouse_width / 1024.0F, (456.0F - y) * mouse_height / 456.0F,
-          mouse_width, mouse_height, 1024.0F, 456.0F);
+         {std::pair{1024.0F, 456.0F}, std::pair{1920.0F, 855.0F}, std::pair{512.0F, 228.0F},
+          std::pair{1024.0F, 1024.0F}}) {
+      const auto point =
+          dashboard_mouse_to_pixels(x * mouse_width / 1024.0F, (456.0F - y) * mouse_height / 456.0F,
+                                    mouse_width, mouse_height, 1024.0F, 456.0F);
       CHECK(point);
       CHECK(dashboard_hit_test(buttons, point->x, point->y) == button.action);
     }
@@ -807,9 +799,9 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
   // catches the previous top-left/bottom-left regression.
   for (const auto [mouse_width, mouse_height] :
        {std::pair{1024.0F, 456.0F}, std::pair{1920.0F, 855.0F}}) {
-    const auto point = dashboard_mouse_to_pixels(
-        300.0F * mouse_width / 1024.0F, (456.0F - 448.0F) * mouse_height / 456.0F,
-        mouse_width, mouse_height, 1024.0F, 456.0F);
+    const auto point = dashboard_mouse_to_pixels(300.0F * mouse_width / 1024.0F,
+                                                 (456.0F - 448.0F) * mouse_height / 456.0F,
+                                                 mouse_width, mouse_height, 1024.0F, 456.0F);
     CHECK(point);
     CHECK(!dashboard_hit_test(buttons, point->x, point->y));
   }
@@ -872,12 +864,10 @@ void dashboard_timeout_buttons_repeat_while_held() {
 
 void state_machine_requires_all_prerequisites() {
   const auto identity = target();
-  const std::vector<Prerequisites> unavailable{{false, true, true, true, true, identity},
-                                               {true, false, true, true, true, identity},
-                                               {true, true, false, true, true, identity},
-                                               {true, true, true, false, true, identity},
-                                               {true, true, true, true, false, identity},
-                                               {true, true, true, true, true, std::nullopt}};
+  const std::vector<Prerequisites> unavailable{
+      {false, true, true, true, true, identity}, {true, false, true, true, true, identity},
+      {true, true, false, true, true, identity}, {true, true, true, false, true, identity},
+      {true, true, true, true, false, identity}, {true, true, true, true, true, std::nullopt}};
   for (const auto& prerequisites : unavailable) {
     FlowStateMachine machine;
     CHECK(machine.on_gesture(at(0), prerequisites).empty());
@@ -894,7 +884,9 @@ void state_machine_happy_graceful_path() {
   CHECK(has_effect(machine.on_confirm(at(20), target(), 3s), EffectType::ShowCountdownControl));
   CHECK(machine.snapshot(at(1020)).countdown_remaining == 2000ms);
   CHECK(std::abs(machine.snapshot(at(1020)).countdown_progress - 2.0 / 3.0) < 0.001);
-  CHECK(has_effect(machine.tick(at(3020)), EffectType::RequestGracefulClose));
+  const auto countdown_complete = machine.tick(at(3020));
+  CHECK(has_effect(countdown_complete, EffectType::RequestGracefulClose));
+  CHECK(has_effect(countdown_complete, EffectType::HideControl));
   CHECK(machine.state() == FlowState::Exiting);
   CHECK(machine.on_cancel().empty());
   CHECK(has_effect(machine.on_graceful_result(at(3100), CloseRequestResult::TargetExited),
@@ -906,15 +898,15 @@ void state_machine_happy_graceful_path() {
 void state_machine_timeout_refresh_and_prerequisite_loss() {
   FlowStateMachine defaults;
   (void)defaults.on_gesture(at(0), ready());
-  CHECK(defaults.tick(at(2999)).empty());
+  CHECK(has_effect(defaults.tick(at(2999)), EffectType::UpdateControlTimeout));
   CHECK(has_effect(defaults.tick(at(3000)), EffectType::HideControl));
 
   FlowStateMachine machine(2s);
   (void)machine.on_gesture(at(0), ready());
-  CHECK(machine.tick(at(1500)).empty());
+  CHECK(has_effect(machine.tick(at(1500)), EffectType::UpdateControlTimeout));
   // A repeated gesture refreshes only the idle deadline.
   (void)machine.on_gesture(at(1500), ready());
-  CHECK(machine.tick(at(3000)).empty());
+  CHECK(has_effect(machine.tick(at(3000)), EffectType::UpdateControlTimeout));
   CHECK(has_effect(machine.tick(at(3500)), EffectType::HideControl));
 
   (void)machine.on_gesture(at(4000), ready());
@@ -922,6 +914,29 @@ void state_machine_timeout_refresh_and_prerequisite_loss() {
   auto lost = ready();
   lost.opposite_pointer_available = false;
   CHECK(has_effect(machine.on_prerequisites(at(4020), lost), EffectType::HideControl));
+  CHECK(machine.state() == FlowState::NoActiveFlow);
+}
+
+void state_machine_hover_pauses_and_restarts_control_timeout() {
+  FlowStateMachine machine;
+  (void)machine.on_gesture(at(0), ready());
+  CHECK(std::abs(machine.snapshot(at(2000)).control_timeout_progress - 1.0 / 3.0) < 0.001);
+  CHECK(has_effect(machine.on_control_hover(at(2000), true), EffectType::UpdateControlTimeout));
+  CHECK(machine.snapshot(at(2000)).control_hovered);
+  CHECK(machine.snapshot(at(2100)).control_timeout_progress > 0.6);
+  CHECK(std::abs(machine.snapshot(at(2180)).control_timeout_progress - 1.0) < 0.001);
+  CHECK(has_effect(machine.tick(at(10000)), EffectType::UpdateControlTimeout));
+  CHECK(machine.state() == FlowState::IdleVisible);
+
+  (void)machine.on_control_clicked(at(10000));
+  CHECK(machine.state() == FlowState::Confirming);
+  CHECK(has_effect(machine.tick(at(20000)), EffectType::UpdateControlTimeout));
+  CHECK(machine.state() == FlowState::Confirming);
+  CHECK(has_effect(machine.on_control_hover(at(20000), false), EffectType::UpdateControlTimeout));
+  CHECK(!machine.snapshot(at(20000)).control_hovered);
+  CHECK(std::abs(machine.snapshot(at(20000)).control_timeout_progress - 1.0) < 0.001);
+  CHECK(has_effect(machine.tick(at(22999)), EffectType::UpdateControlTimeout));
+  CHECK(has_effect(machine.tick(at(23000)), EffectType::HideControl));
   CHECK(machine.state() == FlowState::NoActiveFlow);
 }
 
@@ -941,7 +956,7 @@ void state_machine_timeout_update_during_exit_applies_to_next_control() {
 
   (void)machine.on_gesture(at(5000), ready());
   CHECK(machine.state() == FlowState::IdleVisible);
-  CHECK(machine.tick(at(7999)).empty());
+  CHECK(has_effect(machine.tick(at(7999)), EffectType::UpdateControlTimeout));
   CHECK(has_effect(machine.tick(at(8000)), EffectType::HideControl));
 }
 
@@ -953,18 +968,16 @@ void state_machine_countdown_rules_and_target_lock() {
   CHECK(machine.state() == FlowState::Confirming);
   CHECK(machine.on_confirm(at(2), target(), 2s).empty());
   const auto countdown_started = machine.on_confirm(at(2), target(), 5s);
-  const auto show_countdown =
-      std::find_if(countdown_started.begin(), countdown_started.end(), [](const Effect& effect) {
-        return effect.type == EffectType::ShowCountdownControl;
-      });
+  const auto show_countdown = std::find_if(
+      countdown_started.begin(), countdown_started.end(),
+      [](const Effect& effect) { return effect.type == EffectType::ShowCountdownControl; });
   CHECK(show_countdown != countdown_started.end());
   CHECK(show_countdown->target == target());
 
   const auto countdown_updated = machine.tick(at(50));
-  const auto update_countdown =
-      std::find_if(countdown_updated.begin(), countdown_updated.end(), [](const Effect& effect) {
-        return effect.type == EffectType::UpdateCountdownControl;
-      });
+  const auto update_countdown = std::find_if(
+      countdown_updated.begin(), countdown_updated.end(),
+      [](const Effect& effect) { return effect.type == EffectType::UpdateCountdownControl; });
   CHECK(update_countdown != countdown_updated.end());
   CHECK(update_countdown->target == target());
 
@@ -1052,10 +1065,9 @@ void state_machine_graceful_request_failure_uses_force_fallback() {
                                                  "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
   CHECK(has_effect(failed, EffectType::Diagnostic));
   CHECK(!has_effect(failed, EffectType::ShowFailureHud));
-  const auto diagnostic =
-      std::find_if(failed.begin(), failed.end(), [](const Effect& effect) {
-        return effect.type == EffectType::Diagnostic;
-      });
+  const auto diagnostic = std::find_if(failed.begin(), failed.end(), [](const Effect& effect) {
+    return effect.type == EffectType::Diagnostic;
+  });
   CHECK(diagnostic != failed.end());
   CHECK(diagnostic->code == "EXIT_GRACEFUL_WINDOW_NOT_FOUND");
   CHECK(diagnostic->target == target());
@@ -1173,8 +1185,7 @@ int main() {
       {"gesture recognizes lazy fast low wave", gesture_recognizes_lazy_fast_low_wave},
       {"gesture rejects game input and body motion", gesture_rejects_game_input_and_body_motion},
       {"gesture rejects unstable and abrupt motion", gesture_rejects_unstable_and_abrupt_motion},
-      {"gesture requires deliberate strokes",
-       gesture_requires_deliberate_repeated_lateral_strokes},
+      {"gesture requires deliberate strokes", gesture_requires_deliberate_repeated_lateral_strokes},
       {"settings round trip and recovery", settings_round_trip_and_recovery},
       {"settings durable results", settings_worker_reports_durable_results_in_order},
       {"settings failure and queue bound",
@@ -1198,6 +1209,7 @@ int main() {
       {"state requires prerequisites", state_machine_requires_all_prerequisites},
       {"state happy graceful path", state_machine_happy_graceful_path},
       {"state timeout and loss", state_machine_timeout_refresh_and_prerequisite_loss},
+      {"state hover timeout", state_machine_hover_pauses_and_restarts_control_timeout},
       {"state timeout update during exit",
        state_machine_timeout_update_during_exit_applies_to_next_control},
       {"state countdown rules", state_machine_countdown_rules_and_target_lock},

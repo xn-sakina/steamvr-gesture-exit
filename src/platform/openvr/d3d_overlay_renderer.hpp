@@ -9,20 +9,28 @@ namespace bailout::platform::openvr {
 struct SurfaceStyle {
   float r, g, b, a;
 };
+enum class SurfaceMode { Message, Prompt, Confirm, Countdown };
 struct SurfaceModel {
   SurfaceModel() = default;
-  SurfaceModel(std::wstring next_title, std::wstring next_body,
-               std::wstring next_left_button = {}, std::wstring next_right_button = {},
-               std::wstring next_footer = {}, float next_progress = 0)
+  SurfaceModel(std::wstring next_title, std::wstring next_body, std::wstring next_left_button = {},
+               std::wstring next_right_button = {}, std::wstring next_footer = {},
+               float next_progress = 0, SurfaceMode next_mode = SurfaceMode::Message,
+               float next_timeout_progress = 0, int next_countdown_seconds = 0)
       : title(std::move(next_title)),
         body(std::move(next_body)),
         left_button(std::move(next_left_button)),
         right_button(std::move(next_right_button)),
         footer(std::move(next_footer)),
-        progress(next_progress) {}
+        progress(next_progress),
+        mode(next_mode),
+        timeout_progress(next_timeout_progress),
+        countdown_seconds(next_countdown_seconds) {}
 
   std::wstring title, body, left_button, right_button, footer;
   float progress = 0;
+  SurfaceMode mode = SurfaceMode::Message;
+  float timeout_progress = 0;
+  int countdown_seconds = 0;
   bool left_hover = false, right_hover = false;
   bool pointer_visible = false;
   float pointer_x = 0, pointer_y = 0;
