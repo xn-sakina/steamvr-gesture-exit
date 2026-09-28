@@ -44,8 +44,9 @@ class OverlayManager {
   }
   [[nodiscard]] bool update_thumbnail(const std::wstring& title, const std::wstring& description,
                                       const std::string& friendly_name);
-  WristEvents poll_wrist_events(const app::HandPose& opposite_hand, bool confirming,
-                                bool counting_down);
+  WristEvents poll_wrist_events(const app::HandPose& opposite_hand,
+                                const app::Vec3& headset_position, bool pointer_enabled,
+                                bool confirming, bool counting_down);
   DashboardEvents poll_dashboard_events();
   bool wrist_visible() const {
     return wrist_visible_;
@@ -63,6 +64,9 @@ class OverlayManager {
   bool submit(vr::VROverlayHandle_t, const std::string&, const SurfaceModel&);
   bool submit_dashboard();
   bool refresh_recreated_textures();
+  bool show_pointer_ray(const app::HandPose&, const app::Vec3& headset_position,
+                        const vr::HmdVector3_t& target);
+  bool hide_pointer_ray();
   bool fail(const char* operation, vr::EVROverlayError result);
   bool fail(const char* operation);
   vr::IVROverlay* overlays_ = nullptr;
@@ -72,8 +76,11 @@ class OverlayManager {
   D3dOverlayRenderer renderer_;
   vr::VROverlayHandle_t dashboard_ = vr::k_ulOverlayHandleInvalid,
                         thumbnail_ = vr::k_ulOverlayHandleInvalid,
-                        wrist_ = vr::k_ulOverlayHandleInvalid, hud_ = vr::k_ulOverlayHandleInvalid;
+                        wrist_ = vr::k_ulOverlayHandleInvalid,
+                        pointer_ray_ = vr::k_ulOverlayHandleInvalid,
+                        hud_ = vr::k_ulOverlayHandleInvalid;
   bool wrist_visible_ = false;
+  bool pointer_ray_visible_ = false;
   bool dashboard_texture_initialized_ = false;
   bool dashboard_texture_dirty_ = true;
   bool dashboard_was_visible_ = false;

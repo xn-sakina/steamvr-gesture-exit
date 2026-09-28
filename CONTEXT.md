@@ -29,7 +29,7 @@ The hand selected by the user for detecting the Farewell Gesture.
 _Avoid_: dominant hand, active hand, right hand
 
 **Opposite Hand Pointer**:
-The pointing ray and trigger input from the hand that is not the Configured Hand. It is the only intended way to hover and activate the Exit Control. The add-on renders this pointer itself and must not activate SteamVR's system-wide overlay laser or capture scene input focus.
+The pointing ray and trigger input from the hand that is not the Configured Hand. It is the only intended way to hover and activate the Exit Control. While the ray intersects the Exit Control, the add-on renders a live guide line from the controller pose to the pointer point on the control; both disappear as soon as the intersection ends. The add-on renders this pointer itself and must not activate SteamVR's system-wide overlay laser or capture scene input focus.
 _Avoid_: gaze pointer, same-hand input, controller shortcut
 
 **Supported Controller Setup**:
@@ -37,7 +37,7 @@ A SteamVR controller setup that provides stable poses for both hands and an Oppo
 _Avoid_: hand tracking, single-controller mode, controller brand support
 
 **Exit Control**:
-The compact, low-distraction, rounded in-world control that appears in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. Its narrow portrait layout, flat controls, subtle brand background, and fixed button positions minimise view obstruction and layout shift. Its position and eye-facing angle are captured in world space when it first appears, so head movement does not make the click target move. A top progress bar visualises the auto-dismiss timeout; pointing anywhere at the control pauses that timeout and refills the bar, while leaving restarts the full timeout. The same single control can ask the user to exit or cancel, ask for a second confirmation, or display and cancel a Game Exit countdown.
+The compact, low-distraction, rounded in-world control that appears in the Opposite-side View Zone after a Farewell Gesture is detected while a Current VR Game and Opposite Hand Pointer are available. Its narrow portrait layout, flat controls, central full-opacity brand mark, and fixed button positions minimise view obstruction and layout shift. Its position and eye-facing angle are captured in world space when it first appears, so head movement does not make the click target move. A top progress bar visualises the auto-dismiss timeout; pointing anywhere at the control pauses that timeout and refills the bar, while leaving restarts the full timeout. The same single control can ask the user to exit or cancel, ask for a second confirmation, or replace the brand mark with the Game Exit countdown.
 _Avoid_: exit button, quit button, wrist button
 
 **Opposite-side View Zone**:
@@ -45,7 +45,7 @@ The side of the user's view at the moment the control appears corresponding to t
 _Avoid_: real wrist, hand bone, watch position, controller-attached panel
 
 **Exit Countdown**:
-The short, visible delay between confirming a Game Exit and carrying it out. A large integer second value and a circular progress ring that shifts from blue toward red replace the confirmation content inside the existing Exit Control, with Cancel as its only action. Fractions above zero display as at least one second. New Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.
+The short, visible delay between confirming a Game Exit and carrying it out. A large integer second value and a circular progress ring that shifts from blue toward red replace the central brand mark inside the existing Exit Control, with a button-group-width Cancel action as its only action. Fractions above zero display as at least one second. New Farewell Gestures or temporary hand-tracking loss do not change an active Exit Countdown.
 _Avoid_: delay, timer, grace period
 
 **Exit Grace Period**:

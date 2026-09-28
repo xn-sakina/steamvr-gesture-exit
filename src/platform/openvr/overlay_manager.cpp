@@ -8,6 +8,7 @@ namespace bailout::platform::openvr {
 namespace {
 constexpr char kDashboardKey[] = "dev.kanamio.steamvrbailout.dashboard";
 constexpr char kWristKey[] = "dev.kanamio.steamvrbailout.wrist";
+constexpr char kPointerRayKey[] = "dev.kanamio.steamvrbailout.pointer-ray";
 constexpr char kHudKey[] = "dev.kanamio.steamvrbailout.hud";
 constexpr float kDashboardWidth = 1024.0f;
 // The visible dashboard content starts 24 px from the top and ends at y=432.
@@ -22,6 +23,8 @@ constexpr float kLeftButtonLeft = 40.0f;
 constexpr float kLeftButtonRight = 244.0f;
 constexpr float kRightButtonLeft = 268.0f;
 constexpr float kRightButtonRight = 472.0f;
+constexpr uint32_t kPointerRayTextureWidth = 8;
+constexpr uint32_t kPointerRayTextureHeight = 512;
 constexpr size_t kMaxOverlayEventsPerPoll = 256;
 enum class WristHit { None, Left, Right };
 struct Float3 {
@@ -38,6 +41,9 @@ Float3 operator*(Float3 value, float scale) {
 }
 float length(Float3 value) {
   return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+}
+float dot(Float3 a, Float3 b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 Float3 normalized(Float3 value) {
   const float magnitude = length(value);
@@ -98,7 +104,9 @@ WristHit wrist_hit(const SurfaceModel& model, const float x, const float y) {
     return WristHit::None;
   if (!model.left_button.empty() && x >= kLeftButtonLeft && x <= kLeftButtonRight)
     return WristHit::Left;
-  if (!model.right_button.empty() && x >= kRightButtonLeft && x <= kRightButtonRight)
+  const float right_left =
+      model.mode == SurfaceMode::Countdown ? kLeftButtonLeft : kRightButtonLeft;
+  if (!model.right_button.empty() && x >= right_left && x <= kRightButtonRight)
     return WristHit::Right;
   return WristHit::None;
 }
@@ -162,6 +170,13 @@ bool OverlayManager::initialize() {
     shutdown();
     return false;
   }
+  result = overlays_->CreateOverlay(kPointerRayKey, "SteamVR Gesture Exit Pointer Ray",
+                                    &pointer_ray_);
+  if (result != vr::VROverlayError_None) {
+    fail("CreateOverlay(pointer ray)", result);
+    shutdown();
+    return false;
+  }
   result = overlays_->CreateOverlay(kHudKey, "SteamVR Gesture Exit HUD", &hud_);
   if (result != vr::VROverlayError_None) {
     fail("CreateOverlay(hud)", result);
@@ -196,7 +211,25 @@ bool OverlayManager::initialize() {
   if (!configure(dashboard_, kDashboardWidthMeters, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
                  kDashboardHeight) ||
       !configure(wrist_, 0.22f, vr::VROverlayInputMethod_None, 0, 0) ||
+      !configure(pointer_ray_, 0.005f, vr::VROverlayInputMethod_None, 0, 0) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {
+    shutdown();
+    return false;
+  }
+  std::array<uint8_t, kPointerRayTextureWidth * kPointerRayTextureHeight * 4> ray_pixels;
+  ray_pixels.fill(0xFF);
+  result = overlays_->SetOverlayRaw(pointer_ray_, ray_pixels.data(), kPointerRayTextureWidth,
+                                    kPointerRayTextureHeight, 4);
+  if (result != vr::VROverlayError_None) {
+    fail("SetOverlayRaw(pointer ray)", result);
+    shutdown();
+    return false;
+  }
+  result = overlays_->SetOverlayColor(pointer_ray_, 0.20f, 0.74f, 0.94f);
+  if (result == vr::VROverlayError_None)
+    result = overlays_->SetOverlayAlpha(pointer_ray_, 0.88f);
+  if (result != vr::VROverlayError_None) {
+    fail("configure pointer ray appearance", result);
     shutdown();
     return false;
   }
@@ -256,11 +289,12 @@ bool OverlayManager::update_thumbnail(const std::wstring& title, const std::wstr
 void OverlayManager::shutdown() {
   if (!overlays_)
     return;
-  for (auto h : {wrist_, hud_, dashboard_})
+  for (auto h : {pointer_ray_, wrist_, hud_, dashboard_})
     if (h != vr::k_ulOverlayHandleInvalid)
       overlays_->DestroyOverlay(h);
-  wrist_ = hud_ = dashboard_ = thumbnail_ = vr::k_ulOverlayHandleInvalid;
+  pointer_ray_ = wrist_ = hud_ = dashboard_ = thumbnail_ = vr::k_ulOverlayHandleInvalid;
   wrist_visible_ = false;
+  pointer_ray_visible_ = false;
   dashboard_texture_initialized_ = false;
   dashboard_texture_dirty_ = true;
   dashboard_was_visible_ = false;
@@ -281,6 +315,66 @@ bool OverlayManager::submit(vr::VROverlayHandle_t h, const std::string& id, cons
   auto result = overlays_->SetOverlayTexture(h, &t);
   renderer_.flush();
   return result == vr::VROverlayError_None || fail("SetOverlayTexture", result);
+}
+bool OverlayManager::show_pointer_ray(const app::HandPose& hand,
+                                      const app::Vec3& headset_position,
+                                      const vr::HmdVector3_t& target) {
+  if (pointer_ray_ == vr::k_ulOverlayHandleInvalid)
+    return fail("pointer ray overlay unavailable");
+  const Float3 source{hand.position.x, hand.position.y, hand.position.z};
+  const Float3 endpoint{target.v[0], target.v[1], target.v[2]};
+  const Float3 segment = endpoint - source;
+  const float segment_length = length(segment);
+  if (segment_length < 0.01f)
+    return hide_pointer_ray();
+
+  const Float3 y_axis = segment * (1.0f / segment_length);
+  const Float3 centre = source + segment * 0.5f;
+  const Float3 eye{headset_position.x, headset_position.y, headset_position.z};
+  Float3 z_axis = eye - centre;
+  z_axis = z_axis - y_axis * dot(z_axis, y_axis);
+  if (length(z_axis) < 1e-4f) {
+    z_axis = Float3{hand.up.x, hand.up.y, hand.up.z};
+    z_axis = z_axis - y_axis * dot(z_axis, y_axis);
+  }
+  if (length(z_axis) < 1e-4f) {
+    z_axis = Float3{0.0f, 1.0f, 0.0f};
+    z_axis = z_axis - y_axis * dot(z_axis, y_axis);
+  }
+  if (length(z_axis) < 1e-4f)
+    z_axis = {1.0f, 0.0f, 0.0f};
+  z_axis = normalized(z_axis);
+  const Float3 x_axis = normalized(cross(y_axis, z_axis));
+  z_axis = normalized(cross(x_axis, y_axis));
+  const vr::HmdMatrix34_t transform =
+      {{{x_axis.x, y_axis.x, z_axis.x, centre.x},
+        {x_axis.y, y_axis.y, z_axis.y, centre.y},
+        {x_axis.z, y_axis.z, z_axis.z, centre.z}}};
+  const float width = segment_length * static_cast<float>(kPointerRayTextureWidth) /
+                      static_cast<float>(kPointerRayTextureHeight);
+  auto result = overlays_->SetOverlayWidthInMeters(pointer_ray_, width);
+  if (result != vr::VROverlayError_None)
+    return fail("SetOverlayWidthInMeters(pointer ray)", result);
+  result = overlays_->SetOverlayTransformAbsolute(pointer_ray_, vr::TrackingUniverseStanding,
+                                                  &transform);
+  if (result != vr::VROverlayError_None)
+    return fail("SetOverlayTransformAbsolute(pointer ray)", result);
+  if (!pointer_ray_visible_) {
+    result = overlays_->ShowOverlay(pointer_ray_);
+    if (result != vr::VROverlayError_None)
+      return fail("ShowOverlay(pointer ray)", result);
+  }
+  pointer_ray_visible_ = true;
+  return true;
+}
+bool OverlayManager::hide_pointer_ray() {
+  if (!pointer_ray_visible_ || pointer_ray_ == vr::k_ulOverlayHandleInvalid)
+    return true;
+  const auto result = overlays_->HideOverlay(pointer_ray_);
+  if (result != vr::VROverlayError_None)
+    return fail("HideOverlay(pointer ray)", result);
+  pointer_ray_visible_ = false;
+  return true;
 }
 bool OverlayManager::show_wrist(const core::Hand configured_hand, const app::TrackingFrame& frame,
                                 const SurfaceModel& m) {
@@ -326,7 +420,7 @@ bool OverlayManager::update_wrist_timeout(const float progress) {
   return submit(wrist_, "wrist", wrist_model_);
 }
 bool OverlayManager::hide_wrist() {
-  bool ok = true;
+  bool ok = hide_pointer_ray();
   if (wrist_ != vr::k_ulOverlayHandleInvalid) {
     auto result = overlays_->HideOverlay(wrist_);
     if (result != vr::VROverlayError_None)
@@ -436,13 +530,16 @@ bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
     return false;
   return recovered && refreshed;
 }
-WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand, bool confirming,
+WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
+                                              const app::Vec3& headset_position,
+                                              const bool pointer_enabled, bool confirming,
                                               bool counting) {
   WristEvents out;
   bool pointer_visible = false;
   float pointer_x = 0.0f, pointer_y = 0.0f;
   WristHit hit = WristHit::None;
-  if (wrist_visible_ && hand.pointer_available()) {
+  vr::HmdVector3_t pointer_target{};
+  if (wrist_visible_ && pointer_enabled && hand.pointer_available()) {
     vr::VROverlayIntersectionParams_t parameters{};
     parameters.vSource = {{hand.position.x, hand.position.y, hand.position.z}};
     parameters.vDirection = {{hand.forward.x, hand.forward.y, hand.forward.z}};
@@ -454,19 +551,25 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand, bool co
       pointer_visible = true;
       pointer_x = intersection.vUVs.v[0] * kWristWidth;
       pointer_y = (1.0f - intersection.vUVs.v[1]) * kWristHeight;
+      pointer_target = intersection.vPoint;
       hit = wrist_hit(wrist_model_, pointer_x, pointer_y);
     }
   }
 
+  const bool ray_updated = pointer_visible
+                               ? show_pointer_ray(hand, headset_position, pointer_target)
+                               : hide_pointer_ray();
+
   const auto next_pointer_device =
-      hand.pointer_available() ? hand.device_index : vr::k_unTrackedDeviceIndexInvalid;
+      pointer_enabled && hand.pointer_available() ? hand.device_index
+                                                  : vr::k_unTrackedDeviceIndexInvalid;
   if (pointer_device_ != next_pointer_device) {
     pointer_device_ = next_pointer_device;
     trigger_state_primed_ = false;
     previous_trigger_pressed_ = false;
   }
   bool trigger_rising = false;
-  if (hand.pointer_available() && hand.trigger_available) {
+  if (pointer_enabled && hand.pointer_available() && hand.trigger_available) {
     if (trigger_state_primed_)
       trigger_rising = hand.trigger_pressed && !previous_trigger_pressed_;
     trigger_state_primed_ = true;
@@ -509,6 +612,8 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand, bool co
       out = {};
     }
   }
+  if (!ray_updated)
+    out = {};
   return out;
 }
 DashboardEvents OverlayManager::poll_dashboard_events() {

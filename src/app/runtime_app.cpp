@@ -1360,58 +1360,57 @@ int RuntimeApp::run() {
       (void)log_.append(record);
     }
     const auto state = flow_->state();
-    if (!dashboard_visible) {
-      const auto wrist_events = overlays_->poll_wrist_events(
-          opposite, state == core::FlowState::Confirming, state == core::FlowState::CountingDown);
-      if (!overlays_->error().empty())
-        abort_overlay_flow(now, frame);
-      else {
-        if (wrist_events.panel_hover_changed)
-          apply(flow_->on_control_hover(now, wrist_events.panel_hovered), now, frame);
-        if (wrist_events.entered_button &&
-            now - last_ui_hover_sound_at >= std::chrono::milliseconds(150)) {
-          sound_.ui_hover();
-          last_ui_hover_sound_at = now;
-        }
-        if (wrist_events.clicked_button)
-          sound_.ui_select();
-        for (const auto action : wrist_events.actions) {
-          if (dashboard_open())
-            break;
-          core::DiagnosticRecord action_record{};
-          action_record.event = core::DiagnosticEventType::StateTransition;
-          action_record.code = "WRIST_ACTION";
-          action_record.debug_only = true;
-          action_record.status = wrist_action_name(action);
-          action_record.details = {{"flow_state", std::string(core::to_string(flow_->state()))},
-                                   {"pointer_device_index", std::to_string(opposite.device_index)},
-                                   {"pointer_tracked", opposite.tracked ? "true" : "false"}};
-          (void)log_.append(action_record);
-          if (action == platform::openvr::OverlayAction::Primary)
-            apply(flow_->on_control_clicked(now), now, frame);
-          else if (action == platform::openvr::OverlayAction::Dismiss) {
-            pending_confirmation.reset();
+    const auto wrist_events = overlays_->poll_wrist_events(
+        opposite, frame.headset_position, !dashboard_visible,
+        state == core::FlowState::Confirming, state == core::FlowState::CountingDown);
+    if (!overlays_->error().empty())
+      abort_overlay_flow(now, frame);
+    else if (!dashboard_visible) {
+      if (wrist_events.panel_hover_changed)
+        apply(flow_->on_control_hover(now, wrist_events.panel_hovered), now, frame);
+      if (wrist_events.entered_button &&
+          now - last_ui_hover_sound_at >= std::chrono::milliseconds(150)) {
+        sound_.ui_hover();
+        last_ui_hover_sound_at = now;
+      }
+      if (wrist_events.clicked_button)
+        sound_.ui_select();
+      for (const auto action : wrist_events.actions) {
+        if (dashboard_open())
+          break;
+        core::DiagnosticRecord action_record{};
+        action_record.event = core::DiagnosticEventType::StateTransition;
+        action_record.code = "WRIST_ACTION";
+        action_record.debug_only = true;
+        action_record.status = wrist_action_name(action);
+        action_record.details = {{"flow_state", std::string(core::to_string(flow_->state()))},
+                                 {"pointer_device_index", std::to_string(opposite.device_index)},
+                                 {"pointer_tracked", opposite.tracked ? "true" : "false"}};
+        (void)log_.append(action_record);
+        if (action == platform::openvr::OverlayAction::Primary)
+          apply(flow_->on_control_clicked(now), now, frame);
+        else if (action == platform::openvr::OverlayAction::Dismiss) {
+          pending_confirmation.reset();
+          apply(flow_->on_dismiss(), now, frame);
+        } else if (action == platform::openvr::OverlayAction::Cancel)
+          apply(flow_->on_cancel(), now, frame);
+        else if (action == platform::openvr::OverlayAction::Confirm) {
+          if (!pending_confirmation && !dashboard_open() &&
+              flow_->state() == core::FlowState::Confirming && latest_resolution_.target &&
+              latest_resolution_at != std::chrono::steady_clock::time_point{} &&
+              std::chrono::steady_clock::now() - latest_resolution_at < kMaxTargetResolutionAge) {
+            pending_confirmation = latest_resolution_.target;
+            confirmation_requested_at = std::chrono::steady_clock::now();
+            target_worker.request_refresh();
+          } else if (!pending_confirmation) {
+            core::DiagnosticRecord blocked{};
+            blocked.event = core::DiagnosticEventType::StateTransition;
+            blocked.code = "CONFIRM_BLOCKED";
+            blocked.debug_only = true;
+            blocked.details = {{"dashboard_visible", dashboard_open() ? "true" : "false"},
+                               {"flow_state", std::string(core::to_string(flow_->state()))}};
+            (void)log_.append(blocked);
             apply(flow_->on_dismiss(), now, frame);
-          } else if (action == platform::openvr::OverlayAction::Cancel)
-            apply(flow_->on_cancel(), now, frame);
-          else if (action == platform::openvr::OverlayAction::Confirm) {
-            if (!pending_confirmation && !dashboard_open() &&
-                flow_->state() == core::FlowState::Confirming && latest_resolution_.target &&
-                latest_resolution_at != std::chrono::steady_clock::time_point{} &&
-                std::chrono::steady_clock::now() - latest_resolution_at < kMaxTargetResolutionAge) {
-              pending_confirmation = latest_resolution_.target;
-              confirmation_requested_at = std::chrono::steady_clock::now();
-              target_worker.request_refresh();
-            } else if (!pending_confirmation) {
-              core::DiagnosticRecord blocked{};
-              blocked.event = core::DiagnosticEventType::StateTransition;
-              blocked.code = "CONFIRM_BLOCKED";
-              blocked.debug_only = true;
-              blocked.details = {{"dashboard_visible", dashboard_open() ? "true" : "false"},
-                                 {"flow_state", std::string(core::to_string(flow_->state()))}};
-              (void)log_.append(blocked);
-              apply(flow_->on_dismiss(), now, frame);
-            }
           }
         }
       }
