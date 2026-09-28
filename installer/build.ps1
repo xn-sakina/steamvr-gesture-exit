@@ -1,0 +1,113 @@
+[CmdletBinding()]
+param(
+    [string]$IsccPath,
+    [switch]$SkipRuntimeBuild
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$version = (Get-Content -LiteralPath (Join-Path $projectRoot "VERSION") -Raw).Trim()
+if ($version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "VERSION must contain X.Y.Z."
+}
+
+$packageVersion = (Get-Content -LiteralPath (Join-Path $projectRoot "package.json") -Raw | ConvertFrom-Json).version
+if ($packageVersion -ne $version) {
+    throw "VERSION ($version) and package.json ($packageVersion) do not match."
+}
+
+if (-not $SkipRuntimeBuild) {
+    & (Join-Path $projectRoot "scripts\windows\dev.ps1") package -Configuration Release
+}
+
+$runtimeRoot = Join-Path $projectRoot "out\package\steamvr-bail-out"
+$buildRoot = Join-Path $projectRoot "out\build\windows-x64\Release"
+$payloadRoot = Join-Path $projectRoot "out\installer\payload"
+$outputRoot = Join-Path $projectRoot "out\installer"
+$archivePath = Join-Path $outputRoot "payload.zip"
+
+$runtimeFiles = @(
+    "bin\win64\steamvr_bail_out.exe",
+    "bin\win64\openvr_api.dll",
+    "manifest\steamvr_bail_out.vrmanifest",
+    "assets\brand\bailout.png"
+)
+foreach ($relative in $runtimeFiles) {
+    $source = Join-Path $runtimeRoot $relative
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing release file: $source" }
+}
+
+$helperCli = Join-Path $buildRoot "steamvr_bail_out_cli.exe"
+$helperOpenVr = Join-Path $buildRoot "openvr_api.dll"
+foreach ($source in @($helperCli, $helperOpenVr)) {
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing installer helper: $source" }
+}
+
+Remove-Item -LiteralPath $payloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
+foreach ($relative in $runtimeFiles) {
+    $destination = Join-Path $payloadRoot $relative
+    New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $runtimeRoot $relative) -Destination $destination -Force
+}
+New-Item -ItemType Directory -Path (Join-Path $payloadRoot "installer") -Force | Out-Null
+Copy-Item -LiteralPath $helperCli -Destination (Join-Path $payloadRoot "installer\steamvr_bail_out_cli.exe") -Force
+Copy-Item -LiteralPath $helperOpenVr -Destination (Join-Path $payloadRoot "installer\openvr_api.dll") -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "transaction.ps1") -Destination (Join-Path $payloadRoot "installer\transaction.ps1") -Force
+$openVrLicense = Join-Path $projectRoot "openvr\LICENSE"
+if (-not (Test-Path -LiteralPath $openVrLicense -PathType Leaf)) { throw "Missing OpenVR license: $openVrLicense" }
+@(
+    "OpenVR SDK / openvr_api.dll"
+    ""
+    (Get-Content -LiteralPath $openVrLicense -Raw)
+) -join "`r`n" | Set-Content -LiteralPath (Join-Path $payloadRoot "THIRD_PARTY_NOTICES.txt") -Encoding UTF8
+
+$records = [Collections.Generic.List[object]]::new()
+$payloadPrefix = $payloadRoot.TrimEnd('\') + '\'
+foreach ($file in (Get-ChildItem -LiteralPath $payloadRoot -File -Recurse | Sort-Object FullName)) {
+    if (-not $file.FullName.StartsWith($payloadPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Payload file escaped the staging root: $($file.FullName)"
+    }
+    $relative = $file.FullName.Substring($payloadPrefix.Length).Replace('\', '/')
+    $records.Add([ordered]@{
+        path = $relative
+        sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    })
+}
+$manifest = [ordered]@{ schema = 1; version = $version; files = $records }
+$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $payloadRoot "payload.json") -Encoding UTF8
+
+Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal
+
+if (-not $IsccPath) {
+    $command = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+    if ($command) { $IsccPath = $command.Source }
+}
+if (-not $IsccPath) {
+    $isccCandidates = [Collections.Generic.List[string]]::new()
+    if ($env:ProgramFiles) { $isccCandidates.Add((Join-Path $env:ProgramFiles "Inno Setup 7\ISCC.exe")) }
+    if ($env:LOCALAPPDATA) { $isccCandidates.Add((Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 7\ISCC.exe")) }
+    if (${env:ProgramFiles(x86)}) {
+        $isccCandidates.Add((Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7\ISCC.exe"))
+    }
+    foreach ($candidate in $isccCandidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            $IsccPath = $candidate
+            break
+        }
+    }
+}
+if (-not $IsccPath -or -not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
+    throw "ISCC.exe was not found. Install Inno Setup 7 or pass -IsccPath."
+}
+
+New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+& $IsccPath "/DAppVersion=$version" "/DPayloadArchive=$archivePath" "/DOutputDir=$outputRoot" (Join-Path $PSScriptRoot "steamvr-bail-out.iss")
+if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed with exit code $LASTEXITCODE." }
+
+$installer = Join-Path $outputRoot "SteamVR-Gesture-Exit-$version-windows-x64-setup.exe"
+if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Installer output was not created: $installer" }
+Write-Host "Installer ready: $installer" -ForegroundColor Green

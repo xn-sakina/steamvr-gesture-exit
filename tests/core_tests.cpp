@@ -524,7 +524,7 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::HelpOppositeHand, Language::English) ==
         "When the exit panel appears, use the other controller to press the Exit button.");
   CHECK(localize(StringId::SettingsSaved, Language::ChineseSimplified) == "配置已修改");
-  CHECK(localize(StringId::GestureSensitivity, Language::ChineseSimplified) == "触发敏感程度");
+  CHECK(localize(StringId::GestureSensitivity, Language::ChineseSimplified) == "触发灵敏度");
   CHECK(localize(StringId::SensitivityLow, Language::ChineseSimplified) == "低灵敏");
   CHECK(localize(StringId::SensitivityNormal, Language::ChineseSimplified) == "一般");
   CHECK(localize(StringId::SensitivityHigh, Language::ChineseSimplified) == "高灵敏");

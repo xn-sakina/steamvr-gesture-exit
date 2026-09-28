@@ -42,7 +42,8 @@ int application_command(int argc, wchar_t** argv) {
       command == L"--register-manifest" || command == L"--unregister-manifest";
   const bool status_command =
       command == L"--manifest-status" || command == L"--autolaunch-status";
-  if (!manifest_command && !status_command) {
+  const bool autolaunch_command = command == L"--set-autolaunch";
+  if (!manifest_command && !status_command && !autolaunch_command) {
     std::cerr << "unknown command\n";
     return 1;
   }
@@ -52,6 +53,10 @@ int application_command(int argc, wchar_t** argv) {
   }
   if (status_command && argc != 3) {
     std::cerr << "status command requires an app key\n";
+    return 1;
+  }
+  if (autolaunch_command && argc != 4) {
+    std::cerr << "set-autolaunch requires an app key and true or false\n";
     return 1;
   }
   bailout::platform::openvr::OpenVrRuntime runtime;
@@ -93,7 +98,7 @@ int application_command(int argc, wchar_t** argv) {
       else
         std::cerr << apps->GetApplicationsErrorNameFromEnum(error) << "\n";
     }
-  } else if (status_command) {
+  } else if (status_command || autolaunch_command) {
     std::wstring key_w(argv[2]);
     int n = WideCharToMultiByte(CP_UTF8, 0, key_w.data(), static_cast<int>(key_w.size()), nullptr,
                                 0, nullptr, nullptr);
@@ -102,10 +107,22 @@ int application_command(int argc, wchar_t** argv) {
                         nullptr, nullptr);
     if (command == L"--manifest-status")
       result = apps->IsApplicationInstalled(key.c_str()) ? 0 : 2;
-    else if (!apps->IsApplicationInstalled(key.c_str()))
+    else if (command == L"--autolaunch-status" && !apps->IsApplicationInstalled(key.c_str()))
       result = 3;
-    else
+    else if (command == L"--autolaunch-status")
       result = apps->GetApplicationAutoLaunch(key.c_str()) ? 0 : 2;
+    else {
+      const std::wstring_view enabled(argv[3]);
+      if (enabled != L"true" && enabled != L"false") {
+        std::cerr << "set-autolaunch value must be true or false\n";
+      } else {
+        const auto error = apps->SetApplicationAutoLaunch(key.c_str(), enabled == L"true");
+        if (error == vr::VRApplicationError_None)
+          result = 0;
+        else
+          std::cerr << apps->GetApplicationsErrorNameFromEnum(error) << "\n";
+      }
+    }
   }
   runtime.shutdown();
   return result;

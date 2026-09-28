@@ -1,8 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(steamvr_bail_out VERSION 0.1.0 LANGUAGES CXX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" BAILOUT_VERSION)
+string(STRIP "${BAILOUT_VERSION}" BAILOUT_VERSION)
+if(NOT BAILOUT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain a semantic X.Y.Z version")
+endif()
 
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/package.json")
+project(steamvr_bail_out VERSION "${BAILOUT_VERSION}" LANGUAGES CXX)
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+    "${CMAKE_CURRENT_SOURCE_DIR}/package.json"
+)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" BAILOUT_PACKAGE_JSON)
 string(JSON BAILOUT_PACKAGE_VERSION GET "${BAILOUT_PACKAGE_JSON}" version)
 if(NOT "${BAILOUT_PACKAGE_VERSION}" STREQUAL "${PROJECT_VERSION}")
@@ -70,6 +79,12 @@ endif()
 
 if(WIN32)
     enable_language(RC)
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/version.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
+        @ONLY
+    )
     set(OPENVR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/openvr")
     if(NOT EXISTS "${OPENVR_ROOT}/headers/openvr.h")
         message(FATAL_ERROR "The bundled OpenVR SDK is required at ${OPENVR_ROOT}")
@@ -96,6 +111,7 @@ if(WIN32)
         src/platform/windows/paths.cpp
         src/platform/windows/countdown_sound.cpp
         assets/brand/app.rc
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
     )
     target_include_directories(steamvr_bail_out PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand")
     target_compile_features(steamvr_bail_out PRIVATE cxx_std_20)
@@ -140,6 +156,7 @@ if(WIN32)
         src/app/cli_main.cpp
         src/platform/openvr/openvr_runtime.cpp
         src/platform/windows/paths.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
     )
     target_include_directories(steamvr_bail_out_cli PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"

@@ -6,6 +6,10 @@ layout. `bailout.png` is the 256 × 256 production image. The packaged Dashboard
 thumbnail loads that PNG through OpenVR's file API; a direct EXE launch can
 still decode the executable's RCDATA copy. The Windows application icon uses
 `bailout.ico`.
+The production installer uses the same ICO for its executable and the same
+square PNG in its wizard. Windows' installed-apps entry explicitly points at
+the branded runtime executable, so setup, uninstall listing, and SteamVR do
+not fall back to an empty icon.
 The Release package also includes `bailout.png` because the SteamVR application
 manifest refers to it with `image_path`; the EXE resource alone is not visible
 to SteamVR's application list.
