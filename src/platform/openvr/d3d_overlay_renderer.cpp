@@ -655,9 +655,10 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   }
   impl_->context->CopyResource(s.texture.Get(), background.texture.Get());
   t->BeginDraw();
-  if (!m.notice.empty())
+  if (m.active_tab == core::DashboardTab::Settings && !m.notice.empty())
     t->DrawTextW(m.notice.c_str(), static_cast<UINT32>(m.notice.size()),
-                 impl_->small_text_format.Get(), D2D1::RectF(620, 78, 980, 96), bad.Get());
+                 impl_->small_text_format.Get(), D2D1::RectF(620, 78, 980, 96),
+                 m.notice_tone == DashboardNoticeTone::Success ? good.Get() : bad.Get());
   for (const auto& tab : core::dashboard_tabs()) {
     const std::wstring* label = &m.settings_title;
     if (tab.tab == core::DashboardTab::Status)
@@ -717,7 +718,7 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
       const float top = 96.0f + 116.0f * static_cast<float>(i);
       const auto number = std::to_wstring(i + 1);
       const auto badge = D2D1::RectF(64, top + 28, 112, top + 76);
-      t->FillRectangle(badge, accent.Get());
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(88, top + 52), 24, 24), accent.Get());
       t->DrawTextW(number.c_str(), static_cast<UINT32>(number.size()), impl_->step_number.Get(),
                    badge, white.Get());
       t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),

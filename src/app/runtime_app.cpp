@@ -371,7 +371,6 @@ RuntimeApp::RuntimeApp()
     recovery.event = core::DiagnosticEventType::SettingsRecovered;
     recovery.code = loaded.diagnostic_code;
     (void)log_.append(recovery);
-    recovery_notice_pending_ = true;
   }
   flow_ = std::make_unique<core::FlowStateMachine>(
       std::chrono::seconds(settings_.control_timeout_seconds));
@@ -472,19 +471,18 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   const auto& configured = settings_.configured_hand == core::Hand::Left ? f.left : f.right;
   const auto& opposite = settings_.configured_hand == core::Hand::Left ? f.right : f.left;
   const auto now = std::chrono::steady_clock::now();
-  if (recovery_notice_pending_ && overlays_->dashboard_visible()) {
-    recovery_notice_pending_ = false;
-    recovery_notice_until_ = now + std::chrono::seconds(8);
-  }
   const auto snapshot = flow_->snapshot(now);
   platform::openvr::DashboardSurfaceModel model{};
   model.settings_title = text(core::StringId::SettingsTitle);
   model.diagnostics_title = text(core::StringId::DiagnosticsTitle);
   model.help_title = text(core::StringId::QuickGuide);
-  if (now < save_failure_notice_until_)
-    model.notice = text(core::StringId::SettingsSaveFailed);
-  else if (recovery_notice_pending_ || now < recovery_notice_until_)
-    model.notice = text(core::StringId::SettingsRecovered);
+  if (save_notice_success_ && now < save_notice_until_) {
+    model.notice = text(*save_notice_success_ ? core::StringId::SettingsSaved
+                                             : core::StringId::SettingsSaveFailed);
+    model.notice_tone = *save_notice_success_
+                            ? platform::openvr::DashboardNoticeTone::Success
+                            : platform::openvr::DashboardNoticeTone::Error;
+  }
   model.settings = {
       {core::DashboardSettingRow::ConfiguredHand, text(core::StringId::ConfiguredHand), L""},
       {core::DashboardSettingRow::CountdownDuration, text(core::StringId::CountdownDuration), L""},
@@ -841,7 +839,7 @@ int RuntimeApp::run() {
   // without rolling a newer in-memory setting back to an older disk snapshot.
   const auto consume_save_results = [&] {
     auto results = settings_writer.take_results();
-    bool failure_notice_changed = false;
+    bool save_notice_changed = false;
     const auto confirmed_at = std::chrono::steady_clock::now();
     for (auto& result : results) {
       core::DiagnosticRecord record{};
@@ -853,10 +851,10 @@ int RuntimeApp::run() {
       if (result.saved) {
         record.setting_name = std::move(result.change.name);
         record.setting_value = std::move(result.change.value);
-      } else {
-        save_failure_notice_until_ = confirmed_at + std::chrono::seconds(8);
-        failure_notice_changed = true;
       }
+      save_notice_success_ = result.saved;
+      save_notice_until_ = confirmed_at + std::chrono::seconds(8);
+      save_notice_changed = true;
       if (result.change.requested_at != std::chrono::steady_clock::time_point{}) {
         record.details["queue_wait_ms"] =
             std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -873,7 +871,7 @@ int RuntimeApp::run() {
       }
       (void)log_.append(record);
     }
-    return failure_notice_changed;
+    return save_notice_changed;
   };
   const auto started_at = std::chrono::steady_clock::now();
   auto next_server_check = started_at;
@@ -1104,7 +1102,8 @@ int RuntimeApp::run() {
           settings_changed = true;
           sound_.ui_select();
         } else {
-          save_failure_notice_until_ = now + std::chrono::seconds(8);
+          save_notice_success_ = false;
+          save_notice_until_ = now + std::chrono::seconds(8);
           save_notice_changed = true;
         }
       }

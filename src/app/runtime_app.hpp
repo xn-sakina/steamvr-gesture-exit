@@ -59,10 +59,9 @@ class RuntimeApp {
   std::string last_gesture_decision_;
   std::chrono::steady_clock::time_point last_gesture_log_at_{};
   std::chrono::steady_clock::time_point last_tracking_log_at_{};
-  bool recovery_notice_pending_ = false;
   bool thumbnail_dirty_ = false;
-  std::chrono::steady_clock::time_point recovery_notice_until_{};
-  std::chrono::steady_clock::time_point save_failure_notice_until_{};
+  std::optional<bool> save_notice_success_;
+  std::chrono::steady_clock::time_point save_notice_until_{};
   std::string last_overlay_error_;
   std::chrono::steady_clock::time_point last_overlay_error_at_{};
   std::chrono::steady_clock::time_point last_slow_dashboard_at_{};

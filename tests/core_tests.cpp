@@ -470,8 +470,9 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "已识别到手柄");
   CHECK(localize(StringId::HelpOppositeHand, Language::English) ==
         "When the exit panel appears, use the other controller to press the Exit button.");
+  CHECK(localize(StringId::SettingsSaved, Language::ChineseSimplified) == "配置已修改");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
-        "设置保存失败，请重试。");
+        "配置保存失败，请重试。");
   CHECK(localize(StringId::AppName, Language::ChineseSimplified) == "SteamVR手势退出");
   CHECK(localize(StringId::AppName, Language::English) == "SteamVR Gesture Exit");
   CHECK(localize(StringId::ThumbnailTitle, Language::ChineseSimplified) == "SteamVR手势退出");
@@ -812,14 +813,14 @@ void dashboard_mouse_coordinates_match_buttons_at_any_mouse_scale() {
 void dashboard_actions_change_only_the_intended_setting() {
   Settings settings;
   CHECK(settings.countdown_seconds == 3);
-  CHECK(settings.control_timeout_seconds == 3);
+  CHECK(settings.control_timeout_seconds == 5);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetRightHand));
   CHECK(settings.configured_hand == Hand::Right);
   CHECK(settings.countdown_seconds == 3);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetCountdown15));
   CHECK(settings.countdown_seconds == 15);
   CHECK(apply_dashboard_action(settings, DashboardAction::IncreaseControlTimeout));
-  CHECK(settings.control_timeout_seconds == 4);
+  CHECK(settings.control_timeout_seconds == 6);
   CHECK(apply_dashboard_action(settings, DashboardAction::DisableCountdownSound));
   CHECK(!settings.countdown_sound);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetLanguageChinese));
@@ -898,8 +899,8 @@ void state_machine_happy_graceful_path() {
 void state_machine_timeout_refresh_and_prerequisite_loss() {
   FlowStateMachine defaults;
   (void)defaults.on_gesture(at(0), ready());
-  CHECK(has_effect(defaults.tick(at(2999)), EffectType::UpdateControlTimeout));
-  CHECK(has_effect(defaults.tick(at(3000)), EffectType::HideControl));
+  CHECK(has_effect(defaults.tick(at(4999)), EffectType::UpdateControlTimeout));
+  CHECK(has_effect(defaults.tick(at(5000)), EffectType::HideControl));
 
   FlowStateMachine machine(2s);
   (void)machine.on_gesture(at(0), ready());
@@ -920,7 +921,7 @@ void state_machine_timeout_refresh_and_prerequisite_loss() {
 void state_machine_hover_pauses_and_restarts_control_timeout() {
   FlowStateMachine machine;
   (void)machine.on_gesture(at(0), ready());
-  CHECK(std::abs(machine.snapshot(at(2000)).control_timeout_progress - 1.0 / 3.0) < 0.001);
+  CHECK(std::abs(machine.snapshot(at(2000)).control_timeout_progress - 3.0 / 5.0) < 0.001);
   CHECK(has_effect(machine.on_control_hover(at(2000), true), EffectType::UpdateControlTimeout));
   CHECK(machine.snapshot(at(2000)).control_hovered);
   CHECK(machine.snapshot(at(2100)).control_timeout_progress > 0.6);
@@ -935,8 +936,8 @@ void state_machine_hover_pauses_and_restarts_control_timeout() {
   CHECK(has_effect(machine.on_control_hover(at(20000), false), EffectType::UpdateControlTimeout));
   CHECK(!machine.snapshot(at(20000)).control_hovered);
   CHECK(std::abs(machine.snapshot(at(20000)).control_timeout_progress - 1.0) < 0.001);
-  CHECK(has_effect(machine.tick(at(22999)), EffectType::UpdateControlTimeout));
-  CHECK(has_effect(machine.tick(at(23000)), EffectType::HideControl));
+  CHECK(has_effect(machine.tick(at(24999)), EffectType::UpdateControlTimeout));
+  CHECK(has_effect(machine.tick(at(25000)), EffectType::HideControl));
   CHECK(machine.state() == FlowState::NoActiveFlow);
 }
 
