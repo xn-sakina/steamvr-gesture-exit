@@ -28,6 +28,10 @@ _Avoid_: world position, height threshold, tracking area
 The hand selected by the user for detecting the Farewell Gesture.
 _Avoid_: dominant hand, active hand, right hand
 
+**Gesture Sensitivity**:
+The user-selected amount of clean Farewell Gesture evidence required before showing the Exit Control. Low, Normal, and High adjust accepted stroke extent, lateral dominance, path efficiency, rhythm consistency, endpoint stability, and aggregate confidence; Normal is the default. Every level still requires three committed reversals and preserves the same tracking, active-input, plausible-speed, arm-reach, head-relative, and behind-head safety boundaries. Sensitivity never imposes a hand-height, standing-posture, overhead, forward-reach, or palm-orientation requirement.
+_Avoid_: pose difficulty, safety level, gesture mode
+
 **Opposite Hand Pointer**:
 The pointing ray and trigger input from the hand that is not the Configured Hand. It is the only intended way to hover and activate the Exit Control. While the ray intersects the Exit Control, the add-on renders a live guide line from the controller pose to the pointer point on the control; both disappear as soon as the intersection ends. The add-on renders this pointer itself and must not activate SteamVR's system-wide overlay laser or capture scene input focus.
 _Avoid_: gaze pointer, same-hand input, controller shortcut
@@ -61,7 +65,7 @@ An optional, low-distraction audio cue that supports the Exit Countdown. It is n
 _Avoid_: alarm, alert, warning sound
 
 **User Settings**:
-The small set of choices exposed to the user for adapting the add-on without tuning recognition internals. MVP User Settings cover Configured Hand, Exit Countdown duration, Exit Control timeout, Countdown Sound, and Language.
+The small set of choices exposed to the user for adapting the add-on without exposing individual recognition thresholds. MVP User Settings cover Configured Hand, Gesture Sensitivity, Exit Countdown duration, Exit Control timeout, Countdown Sound, and Language.
 _Avoid_: advanced settings, debug settings, tuning panel
 
 **Dashboard Panel**:

@@ -48,6 +48,9 @@ struct DashboardTabTarget {
 enum class DashboardAction {
   SetLeftHand,
   SetRightHand,
+  SetSensitivityLow,
+  SetSensitivityNormal,
+  SetSensitivityHigh,
   SetCountdown1,
   SetCountdown3,
   SetCountdown5,
@@ -64,6 +67,7 @@ enum class DashboardAction {
 
 enum class DashboardSettingRow {
   ConfiguredHand,
+  GestureSensitivity,
   CountdownDuration,
   ControlTimeout,
   CountdownSound,

@@ -74,6 +74,16 @@ std::optional<Language> parse_language(const std::string& value) {
   return std::nullopt;
 }
 
+std::optional<GestureSensitivity> parse_gesture_sensitivity(const std::string& value) {
+  if (value == "low")
+    return GestureSensitivity::Low;
+  if (value == "normal")
+    return GestureSensitivity::Normal;
+  if (value == "high")
+    return GestureSensitivity::High;
+  return std::nullopt;
+}
+
 void discard_temporary_file(const std::filesystem::path& path) {
   auto temporary = path;
   temporary += ".tmp";
@@ -119,6 +129,18 @@ std::string to_string(const Language value) {
   return "auto";
 }
 
+std::string to_string(const GestureSensitivity value) {
+  switch (value) {
+    case GestureSensitivity::Low:
+      return "low";
+    case GestureSensitivity::Normal:
+      return "normal";
+    case GestureSensitivity::High:
+      return "high";
+  }
+  return "normal";
+}
+
 SettingsStore::SettingsStore(std::filesystem::path path) : path_(std::move(path)) {}
 
 SettingsLoadResult SettingsStore::load() const {
@@ -157,7 +179,8 @@ SettingsLoadResult SettingsStore::load() const {
   if (!version.isInt()) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_JSON_INVALID"};
   }
-  if (version.asInt() != Settings::current_version) {
+  const int document_version = version.asInt();
+  if (document_version != 1 && document_version != Settings::current_version) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredIncompatible,
             "SETTINGS_VERSION_UNSUPPORTED"};
   }
@@ -166,17 +189,31 @@ SettingsLoadResult SettingsStore::load() const {
   const auto& timeout = root["controlTimeoutSeconds"];
   const auto& sound = root["countdownSound"];
   const auto& language_text = root["language"];
-  if (root.size() != 6 || !hand_text.isString() || !countdown.isInt() || !timeout.isInt() ||
-      !sound.isBool() || !language_text.isString()) {
+  const bool legacy = document_version == 1;
+  const auto expected_size = legacy ? 6U : 7U;
+  if (root.size() != expected_size || !hand_text.isString() || !countdown.isInt() ||
+      !timeout.isInt() || !sound.isBool() || !language_text.isString()) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_JSON_INVALID"};
   }
   const auto hand = parse_hand(hand_text.asString());
   const auto language = parse_language(language_text.asString());
-  if (!hand || !language) {
+  std::optional<GestureSensitivity> sensitivity{GestureSensitivity::Normal};
+  if (!legacy) {
+    const auto& sensitivity_text = root["gestureSensitivity"];
+    sensitivity = sensitivity_text.isString()
+                      ? parse_gesture_sensitivity(sensitivity_text.asString())
+                      : std::nullopt;
+  }
+  if (!hand || !language || !sensitivity) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, "SETTINGS_VALUE_INVALID"};
   }
-  Settings settings{version.asInt(), *hand,          countdown.asInt(),
-                    timeout.asInt(), sound.asBool(), *language};
+  Settings settings{Settings::current_version,
+                    *hand,
+                    countdown.asInt(),
+                    timeout.asInt(),
+                    sound.asBool(),
+                    *language,
+                    *sensitivity};
   if (const auto error = settings.validation_error()) {
     return {Settings::defaults(), SettingsLoadStatus::RecoveredCorrupt, *error};
   }
@@ -209,7 +246,8 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
            << "  \"countdownSeconds\": " << settings.countdown_seconds << ",\n"
            << "  \"controlTimeoutSeconds\": " << settings.control_timeout_seconds << ",\n"
            << "  \"countdownSound\": " << (settings.countdown_sound ? "true" : "false") << ",\n"
-           << "  \"language\": \"" << to_string(settings.language) << "\"\n"
+           << "  \"language\": \"" << to_string(settings.language) << "\",\n"
+           << "  \"gestureSensitivity\": \"" << to_string(settings.gesture_sensitivity) << "\"\n"
            << "}\n";
     output.flush();
     written = static_cast<bool>(output);

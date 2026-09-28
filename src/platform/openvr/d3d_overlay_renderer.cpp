@@ -633,8 +633,9 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
                                                                           : m.help_lines.size();
     for (size_t i = 0; i < row_count; ++i) {
       const bool help = m.active_tab == core::DashboardTab::Help;
-      const float top = 96.0f + (help ? 116.0f : 68.0f) * static_cast<float>(i);
-      base->FillRectangle(D2D1::RectF(44, top + 4, 980, top + (help ? 104.0f : 64.0f)),
+      const float row_height = m.active_tab == core::DashboardTab::Settings ? 56.0f : 68.0f;
+      const float top = 96.0f + (help ? 116.0f : row_height) * static_cast<float>(i);
+      base->FillRectangle(D2D1::RectF(44, top + 4, 980, top + (help ? 104.0f : row_height - 4.0f)),
                           base_card.Get());
     }
     const auto background_result = base->EndDraw();
@@ -672,10 +673,10 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   }
   if (m.active_tab == core::DashboardTab::Settings) {
     for (size_t i = 0; i < m.settings.size(); ++i) {
-      const float top = 96.0f + 68.0f * static_cast<float>(i);
+      const float top = 96.0f + 56.0f * static_cast<float>(i);
       const auto& row = m.settings[i];
       t->DrawTextW(row.label.c_str(), static_cast<UINT32>(row.label.size()), impl_->label.Get(),
-                   D2D1::RectF(64, top + 4, 372, top + 64), white.Get());
+                   D2D1::RectF(64, top + 2, 372, top + 56), white.Get());
       if (!row.value.empty()) {
         const auto value = core::dashboard_timeout_value_rect();
         const auto rect = D2D1::RectF(value.left, value.top + 4, value.right, value.bottom - 4);

@@ -10,9 +10,12 @@ namespace {
 constexpr float kButtonLeft = 396.0F;
 constexpr float kButtonRight = 956.0F;
 constexpr float kRowTop = 96.0F;
-constexpr float kRowHeight = 68.0F;
-constexpr float kButtonInsetY = 4.0F;
-constexpr float kButtonHeight = 60.0F;
+// Six compact rows keep the previous y=432 content boundary. The dashboard
+// surface itself stays fixed, so the other tabs retain their exact layout and
+// bottom spacing.
+constexpr float kRowHeight = 56.0F;
+constexpr float kButtonInsetY = 2.0F;
+constexpr float kButtonHeight = 54.0F;
 constexpr float kButtonGap = 10.0F;
 
 DashboardRect button_rect(const int row, const int column, const int count) {
@@ -52,7 +55,7 @@ std::optional<DashboardTab> dashboard_tab_hit_test(const float x, const float y)
 }
 
 DashboardRect dashboard_timeout_value_rect() noexcept {
-  return button_rect(2, 1, 3);
+  return button_rect(3, 1, 3);
 }
 
 std::optional<DashboardPoint> dashboard_mouse_to_pixels(
@@ -72,10 +75,18 @@ std::optional<DashboardPoint> dashboard_mouse_to_pixels(
 
 std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
   std::vector<DashboardButton> result;
-  result.reserve(14);
+  result.reserve(17);
   add_segment(result, DashboardSettingRow::ConfiguredHand, 0,
               {DashboardAction::SetLeftHand, DashboardAction::SetRightHand},
               settings.configured_hand == Hand::Left ? 0 : 1);
+
+  const int sensitivity = settings.gesture_sensitivity == GestureSensitivity::Low      ? 0
+                          : settings.gesture_sensitivity == GestureSensitivity::Normal ? 1
+                                                                                       : 2;
+  add_segment(result, DashboardSettingRow::GestureSensitivity, 1,
+              {DashboardAction::SetSensitivityLow, DashboardAction::SetSensitivityNormal,
+               DashboardAction::SetSensitivityHigh},
+              sensitivity);
 
   constexpr std::array<int, 5> countdown_values{1, 3, 5, 10, 15};
   const auto countdown =
@@ -83,14 +94,14 @@ std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
   const int countdown_index = countdown == countdown_values.end()
                                   ? 2
                                   : static_cast<int>(countdown - countdown_values.begin());
-  add_segment(result, DashboardSettingRow::CountdownDuration, 1,
+  add_segment(result, DashboardSettingRow::CountdownDuration, 2,
               {DashboardAction::SetCountdown1, DashboardAction::SetCountdown3,
                DashboardAction::SetCountdown5, DashboardAction::SetCountdown10,
                DashboardAction::SetCountdown15},
               countdown_index);
 
-  const auto minus = button_rect(2, 0, 3);
-  const auto plus = button_rect(2, 2, 3);
+  const auto minus = button_rect(3, 0, 3);
+  const auto plus = button_rect(3, 2, 3);
   result.push_back({DashboardAction::DecreaseControlTimeout,
                     DashboardSettingRow::ControlTimeout,
                     minus,
@@ -104,13 +115,13 @@ std::vector<DashboardButton> dashboard_buttons(const Settings& settings) {
                     false,
                     settings.control_timeout_seconds < 30});
 
-  add_segment(result, DashboardSettingRow::CountdownSound, 3,
+  add_segment(result, DashboardSettingRow::CountdownSound, 4,
               {DashboardAction::EnableCountdownSound, DashboardAction::DisableCountdownSound},
               settings.countdown_sound ? 0 : 1);
   const int language = settings.language == Language::Auto      ? 0
                        : settings.language == Language::English ? 1
                                                                 : 2;
-  add_segment(result, DashboardSettingRow::Language, 4,
+  add_segment(result, DashboardSettingRow::Language, 5,
               {DashboardAction::SetLanguageAuto, DashboardAction::SetLanguageEnglish,
                DashboardAction::SetLanguageChinese},
               language);
@@ -134,6 +145,15 @@ bool apply_dashboard_action(Settings& settings, const DashboardAction action) no
       break;
     case DashboardAction::SetRightHand:
       settings.configured_hand = Hand::Right;
+      break;
+    case DashboardAction::SetSensitivityLow:
+      settings.gesture_sensitivity = GestureSensitivity::Low;
+      break;
+    case DashboardAction::SetSensitivityNormal:
+      settings.gesture_sensitivity = GestureSensitivity::Normal;
+      break;
+    case DashboardAction::SetSensitivityHigh:
+      settings.gesture_sensitivity = GestureSensitivity::High;
       break;
     case DashboardAction::SetCountdown1:
       settings.countdown_seconds = 1;

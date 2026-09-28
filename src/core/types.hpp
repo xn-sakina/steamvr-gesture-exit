@@ -28,6 +28,7 @@ Vec3 normalized(Vec3 value) noexcept;
 
 enum class Hand { Left, Right };
 enum class Language { Auto, English, ChineseSimplified };
+enum class GestureSensitivity { Low, Normal, High };
 
 // process_start_token must be captured from the OS process creation time. It is
 // deliberately part of identity so a recycled PID can never inherit an exit.

@@ -87,7 +87,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - Model Farewell Gesture as a request for Exit Control only. It must never directly confirm, cancel, or execute Game Exit.
 - Detect Farewell Gesture from the Configured Hand controller's tracked position in the Activation Zone. Require three committed direction reversals and aggregate evidence from repeated lateral travel, path efficiency, vertical/depth suppression, endpoint stability, stroke extent and rhythm, and plausible speed. Evaluate controller motion relative to the HMD so ordinary body movement is not mistaken for a gesture. Accept compact, quick waves without inferring palm direction from controller axes.
 - Do not gate Farewell Gesture on a chest-height assumption. Armrest and lap-height starts are valid when they remain within arm reach and not substantially behind the HMD.
-- Use a 1.8-second rolling recognition window. Allow 75–650 ms per full stroke and at least 300 ms across the final three full strokes, with a 7.5 cm full-stroke floor and at least 23.5 cm combined lateral travel. Smooth short tracking shimmer, reject abrupt tracking jumps, and suppress recognition while a controller button or legacy OpenVR axis is active. Keep gesture thresholds internal for MVP.
+- Use a 1.8-second rolling recognition window. At Normal sensitivity, allow 75–650 ms per full stroke and at least 300 ms across the final three full strokes, with a 7.5 cm full-stroke floor and at least 23.5 cm combined lateral travel. Low and High sensitivity may adjust stroke extent, lateral dominance, path efficiency, consistency, endpoint stability, and aggregate confidence, but must retain three committed reversals, the same timing and plausible-speed bounds, tracking-jump rejection, active controller-input suppression, and posture-independent Activation Zone. Do not expose individual thresholds.
 - Require a Supported Controller Setup with both hand poses and Opposite Hand Pointer. Do not support naked hand tracking, data gloves, or single-controller exit flows in MVP.
 - Place Exit Control in the Opposite-side View Zone at the moment of recognition: right after a left-hand Farewell Gesture and left after a right-hand Farewell Gesture.
 - Capture one absolute standing-space transform when Exit Control first appears. Aim it modestly inward/upward toward the current eye position, then keep that single overlay fixed through Idle Visible, Confirming, and Counting Down; content changes and repeated gestures must not reposition or duplicate it.
@@ -103,12 +103,12 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - If the target exits or no longer matches the confirmed Exit Target before execution, clear the flow without affecting another application.
 - If force close fails, show a short HUD error, update Last Exit to failed, record the Diagnostic Log entry, and do not retry indefinitely or expand process scope.
 - Keep Dashboard Panel as the surface for User Settings, first-use help, and lightweight diagnostics. It is not part of the in-game exit flow.
-- Expose only Configured Hand, Exit Countdown duration, Exit Control timeout, Countdown Sound, and Language as MVP User Settings.
+- Expose only Configured Hand, Gesture Sensitivity (Low, Normal, High; Normal by default), Exit Countdown duration, Exit Control timeout, Countdown Sound, and Language as MVP User Settings.
 - Save User Settings immediately per Windows user. Do not require Apply or Save.
 - If settings are missing, corrupted, or version-incompatible, recover to defaults, log the recovery, and show a short Dashboard status.
 - Language Auto should prefer SteamVR or Steam runtime language, then OS UI language, then English. Manual English or Chinese overrides Auto.
 - Keep Diagnostic Log entries in English structured form and do not localize them.
-- Do not add haptics, theme customization, advanced gesture sensitivity, pose mode settings, Steam account sync, installer work, auto-update, or signed release to MVP.
+- Do not add haptics, theme customization, per-rule gesture tuning, pose mode settings, Steam account sync, installer work, auto-update, or signed release to MVP.
 
 Prototype-derived state model:
 
@@ -169,7 +169,7 @@ Exiting
 - Per-game integrations, special VRChat APIs, or game-specific world/session handling.
 - Naked hand tracking, data gloves, single-controller operation, or game-specific hand skeleton data.
 - Gaze input, same-hand input, keyboard shortcuts, Alt+F4, or simulated keyboard/mouse input.
-- Haptics, theme customization, color customization, gesture sensitivity UI, pose mode settings, controller-brand-specific UI, or advanced tuning panels.
+- Haptics, theme customization, color customization, per-rule gesture tuning, pose mode settings, controller-brand-specific UI, or advanced tuning panels.
 - Steam account synchronization for settings.
 - Localizing Diagnostic Log output.
 - Making overlays visible to other players, game cameras, or recording tools as a product promise.

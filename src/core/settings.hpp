@@ -9,7 +9,7 @@
 namespace bailout::core {
 
 struct Settings {
-  static constexpr int current_version = 1;
+  static constexpr int current_version = 2;
 
   int version{current_version};
   Hand configured_hand{Hand::Left};
@@ -17,6 +17,7 @@ struct Settings {
   int control_timeout_seconds{5};
   bool countdown_sound{true};
   Language language{Language::Auto};
+  GestureSensitivity gesture_sensitivity{GestureSensitivity::Normal};
 
   [[nodiscard]] static Settings defaults() noexcept;
   [[nodiscard]] std::optional<std::string> validation_error() const;
@@ -52,5 +53,6 @@ class SettingsStore {
 
 [[nodiscard]] std::string to_string(Hand value);
 [[nodiscard]] std::string to_string(Language value);
+[[nodiscard]] std::string to_string(GestureSensitivity value);
 
 }  // namespace bailout::core

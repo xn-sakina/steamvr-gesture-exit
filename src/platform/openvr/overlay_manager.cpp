@@ -71,6 +71,12 @@ const char* action_name(core::DashboardAction action) {
       return "set_left_hand";
     case A::SetRightHand:
       return "set_right_hand";
+    case A::SetSensitivityLow:
+      return "set_sensitivity_low";
+    case A::SetSensitivityNormal:
+      return "set_sensitivity_normal";
+    case A::SetSensitivityHigh:
+      return "set_sensitivity_high";
     case A::SetCountdown1:
       return "set_countdown_1";
     case A::SetCountdown3:

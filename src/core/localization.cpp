@@ -12,7 +12,7 @@ struct TextPair {
   std::string_view chinese;
 };
 
-constexpr std::array<TextPair, 58> strings{{
+constexpr std::array<TextPair, 62> strings{{
     {"SteamVR Gesture Exit", "SteamVR手势退出"},
     {"Exit", "退出"},
     {"Exit the game?", "是否退出？"},
@@ -22,6 +22,10 @@ constexpr std::array<TextPair, 58> strings{{
     {"Please close the game manually.", "请手动关闭游戏。"},
     {"Settings", "设置"},
     {"Controller to Wave", "挥动哪只手柄"},
+    {"Wave Sensitivity", "触发敏感程度"},
+    {"Low", "低灵敏"},
+    {"Normal", "一般"},
+    {"High", "高灵敏"},
     {"Exit Countdown", "退出倒计时"},
     {"Exit Button Display Time", "退出按钮显示时间"},
     {"Countdown Sound", "倒计时声音"},

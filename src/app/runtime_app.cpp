@@ -359,6 +359,7 @@ RuntimeApp::RuntimeApp()
       log_(platform::windows::log_directory() / L"runtime.log") {
   auto loaded = settings_store_.load();
   settings_ = loaded.settings;
+  gesture_ = core::GestureDetector(core::gesture_config(settings_.gesture_sensitivity));
   if (loaded.status != core::SettingsLoadStatus::Loaded) {
     std::string error;
     if (!settings_store_.save(settings_, &error)) {
@@ -436,6 +437,9 @@ std::optional<core::SettingsChange> RuntimeApp::dashboard_input(const core::Dash
   } else if (candidate.countdown_seconds != base.countdown_seconds) {
     name = "countdown_seconds";
     value = std::to_string(candidate.countdown_seconds);
+  } else if (candidate.gesture_sensitivity != base.gesture_sensitivity) {
+    name = "gesture_sensitivity";
+    value = core::to_string(candidate.gesture_sensitivity);
   } else if (candidate.control_timeout_seconds != base.control_timeout_seconds) {
     name = "control_timeout_seconds";
     value = std::to_string(candidate.control_timeout_seconds);
@@ -452,10 +456,13 @@ std::optional<core::SettingsChange> RuntimeApp::dashboard_input(const core::Dash
 }
 void RuntimeApp::apply_settings(const core::Settings& next) {
   const bool hand_changed = next.configured_hand != settings_.configured_hand;
+  const bool sensitivity_changed = next.gesture_sensitivity != settings_.gesture_sensitivity;
   const bool timeout_changed = next.control_timeout_seconds != settings_.control_timeout_seconds;
   const bool language_changed = next.language != settings_.language;
   settings_ = next;
-  if (hand_changed)
+  if (sensitivity_changed)
+    gesture_ = core::GestureDetector(core::gesture_config(settings_.gesture_sensitivity));
+  else if (hand_changed)
     gesture_.reset();
   if (timeout_changed)
     flow_->set_control_timeout(std::chrono::seconds(settings_.control_timeout_seconds));
@@ -485,6 +492,8 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   }
   model.settings = {
       {core::DashboardSettingRow::ConfiguredHand, text(core::StringId::ConfiguredHand), L""},
+      {core::DashboardSettingRow::GestureSensitivity, text(core::StringId::GestureSensitivity),
+       L""},
       {core::DashboardSettingRow::CountdownDuration, text(core::StringId::CountdownDuration), L""},
       {core::DashboardSettingRow::ControlTimeout, text(core::StringId::ControlTimeout),
        std::to_wstring(settings_.control_timeout_seconds) + text(core::StringId::SecondsUnit)},
@@ -498,6 +507,15 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
         break;
       case core::DashboardAction::SetRightHand:
         button.label = text(core::StringId::Right);
+        break;
+      case core::DashboardAction::SetSensitivityLow:
+        button.label = text(core::StringId::SensitivityLow);
+        break;
+      case core::DashboardAction::SetSensitivityNormal:
+        button.label = text(core::StringId::SensitivityNormal);
+        break;
+      case core::DashboardAction::SetSensitivityHigh:
+        button.label = text(core::StringId::SensitivityHigh);
         break;
       case core::DashboardAction::SetCountdown1:
         button.label = L"1" + text(core::StringId::SecondsUnit);
@@ -1305,6 +1323,7 @@ int RuntimeApp::run() {
           {"confidence", std::to_string(gesture_diagnostic.confidence)},
           {"input_active", gesture_diagnostic.input_active ? "true" : "false"},
           {"reversals", std::to_string(gesture_diagnostic.reversals)},
+          {"sensitivity", core::to_string(settings_.gesture_sensitivity)},
           {"required_reversals", std::to_string(gesture_.config().required_reversals)},
           {"minimum_stroke_m", std::to_string(gesture_.config().minimum_stroke_metres)},
           {"minimum_total_lateral_travel_m",

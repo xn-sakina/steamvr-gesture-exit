@@ -278,6 +278,48 @@ void gesture_requires_deliberate_repeated_lateral_strokes() {
   CHECK(stationary_prelude.update(sample(1950, {0.0, 0.1, -0.5})));
 }
 
+void gesture_sensitivity_changes_evidence_thresholds_not_safety_invariants() {
+  const auto run = [](GestureSensitivity sensitivity, double stroke, bool input_active = false) {
+    GestureDetector detector(gesture_config(sensitivity));
+    bool recognized = false;
+    for (int i = 0; i < 5; ++i) {
+      const double x = i % 2 == 0 ? 0.0 : stroke;
+      recognized =
+          detector.update(sample(i * 250, {x, 0.85, -0.48}, {0, 0, -1}, true, {}, input_active)) ||
+          recognized;
+    }
+    return recognized;
+  };
+
+  CHECK(run(GestureSensitivity::High, 0.090));
+  CHECK(!run(GestureSensitivity::Normal, 0.090));
+  CHECK(run(GestureSensitivity::Normal, 0.110));
+  CHECK(!run(GestureSensitivity::Low, 0.110));
+
+  for (const auto sensitivity :
+       {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+    CHECK(!run(sensitivity, 0.20, true));
+    GestureDetector two_reversals(gesture_config(sensitivity));
+    for (int i = 0; i < 4; ++i)
+      CHECK(!two_reversals.update(sample(i * 250, {i % 2 == 0 ? 0.0 : 0.20, 0.85, -0.48})));
+
+    GestureDetector jitter(gesture_config(sensitivity));
+    for (int i = 0; i < 10; ++i)
+      CHECK(!jitter.update(sample(i * 100, {i % 2 == 0 ? 0.0 : 0.02, 0.85, -0.48})));
+
+    GestureDetector too_fast(gesture_config(sensitivity));
+    for (int i = 0; i < 5; ++i)
+      CHECK(!too_fast.update(sample(i * 60, {i % 2 == 0 ? 0.0 : 0.20, 0.85, -0.48})));
+
+    GestureDetector game_like_swing(gesture_config(sensitivity));
+    for (int i = 0; i < 5; ++i) {
+      const double direction = i % 2 == 0 ? 0.0 : 1.0;
+      CHECK(!game_like_swing.update(
+          sample(i * 250, {direction * 0.20, 0.85 + direction * 0.18, -0.48})));
+    }
+  }
+}
+
 void settings_round_trip_and_recovery() {
   const auto root = std::filesystem::temp_directory_path() / "bailout-core-settings-test";
   std::error_code ec;
@@ -294,6 +336,7 @@ void settings_round_trip_and_recovery() {
   settings.control_timeout_seconds = 12;
   settings.countdown_sound = false;
   settings.language = Language::ChineseSimplified;
+  settings.gesture_sensitivity = GestureSensitivity::High;
   std::string error;
   CHECK(store.save(settings, &error));
   const auto loaded = store.load();
@@ -335,6 +378,8 @@ void settings_round_trip_and_recovery() {
   }
   CHECK(store.load().status == SettingsLoadStatus::RecoveredIncompatible);
   const std::string valid =
+      R"({"version":2,"configuredHand":"right","countdownSeconds":15,"controlTimeoutSeconds":12,"countdownSound":false,"language":"zh-CN","gestureSensitivity":"high"})";
+  const std::string legacy =
       R"({"version":1,"configuredHand":"right","countdownSeconds":15,"controlTimeoutSeconds":12,"countdownSound":false,"language":"zh-CN"})";
   const std::vector<std::string> invalid_documents{
       "garbage " + valid,
@@ -367,6 +412,14 @@ void settings_round_trip_and_recovery() {
     output << " \n " << valid << " \n ";
   }
   CHECK(store.load().settings == loaded.settings);
+  {
+    std::ofstream output(store.path());
+    output << legacy;
+  }
+  const auto migrated = store.load();
+  CHECK(migrated.status == SettingsLoadStatus::Loaded);
+  CHECK(migrated.settings.version == Settings::current_version);
+  CHECK(migrated.settings.gesture_sensitivity == GestureSensitivity::Normal);
   std::filesystem::remove_all(root, ec);
 }
 
@@ -471,6 +524,10 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::HelpOppositeHand, Language::English) ==
         "When the exit panel appears, use the other controller to press the Exit button.");
   CHECK(localize(StringId::SettingsSaved, Language::ChineseSimplified) == "配置已修改");
+  CHECK(localize(StringId::GestureSensitivity, Language::ChineseSimplified) == "触发敏感程度");
+  CHECK(localize(StringId::SensitivityLow, Language::ChineseSimplified) == "低灵敏");
+  CHECK(localize(StringId::SensitivityNormal, Language::ChineseSimplified) == "一般");
+  CHECK(localize(StringId::SensitivityHigh, Language::ChineseSimplified) == "高灵敏");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
         "配置保存失败，请重试。");
   CHECK(localize(StringId::AppName, Language::ChineseSimplified) == "SteamVR手势退出");
@@ -739,9 +796,10 @@ void wrist_pose_smoothing_follows_and_resets_safely() {
 void dashboard_controls_are_visible_semantic_targets() {
   Settings settings;
   const auto buttons = dashboard_buttons(settings);
-  CHECK(buttons.size() == 14);
+  CHECK(buttons.size() == 17);
   for (const auto& button : buttons) {
-    CHECK(button.bounds.bottom - button.bounds.top >= 60.0F);
+    CHECK(button.bounds.bottom <= 432.0F);
+    CHECK(button.bounds.bottom - button.bounds.top >= 54.0F);
     CHECK(button.bounds.right - button.bounds.left >= 100.0F);
     const float x = (button.bounds.left + button.bounds.right) * 0.5F;
     const float y = (button.bounds.top + button.bounds.bottom) * 0.5F;
@@ -757,7 +815,7 @@ void dashboard_controls_are_visible_semantic_targets() {
   for (const auto& button : buttons)
     if (button.selected)
       ++selected;
-  CHECK(selected == 4);
+  CHECK(selected == 5);
 }
 
 void dashboard_tabs_have_distinct_large_targets() {
@@ -814,9 +872,12 @@ void dashboard_actions_change_only_the_intended_setting() {
   Settings settings;
   CHECK(settings.countdown_seconds == 3);
   CHECK(settings.control_timeout_seconds == 5);
+  CHECK(settings.gesture_sensitivity == GestureSensitivity::Normal);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetRightHand));
   CHECK(settings.configured_hand == Hand::Right);
   CHECK(settings.countdown_seconds == 3);
+  CHECK(apply_dashboard_action(settings, DashboardAction::SetSensitivityHigh));
+  CHECK(settings.gesture_sensitivity == GestureSensitivity::High);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetCountdown15));
   CHECK(settings.countdown_seconds == 15);
   CHECK(apply_dashboard_action(settings, DashboardAction::IncreaseControlTimeout));
@@ -1187,6 +1248,8 @@ int main() {
       {"gesture rejects game input and body motion", gesture_rejects_game_input_and_body_motion},
       {"gesture rejects unstable and abrupt motion", gesture_rejects_unstable_and_abrupt_motion},
       {"gesture requires deliberate strokes", gesture_requires_deliberate_repeated_lateral_strokes},
+      {"gesture sensitivity preserves safety",
+       gesture_sensitivity_changes_evidence_thresholds_not_safety_invariants},
       {"settings round trip and recovery", settings_round_trip_and_recovery},
       {"settings durable results", settings_worker_reports_durable_results_in_order},
       {"settings failure and queue bound",

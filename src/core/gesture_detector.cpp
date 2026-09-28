@@ -8,6 +8,37 @@
 
 namespace bailout::core {
 
+GestureConfig gesture_config(const GestureSensitivity sensitivity) noexcept {
+  GestureConfig config{};
+  switch (sensitivity) {
+    case GestureSensitivity::Low:
+      config.minimum_stroke_metres = 0.105;
+      config.minimum_total_lateral_travel_metres = 0.320;
+      config.maximum_orthogonal_path_ratio = 0.60;
+      config.minimum_stroke_efficiency = 0.72;
+      config.maximum_stroke_length_ratio = 2.0;
+      config.maximum_stroke_timing_ratio = 2.3;
+      config.maximum_endpoint_drift_ratio = 0.50;
+      config.maximum_endpoint_drift_metres = 0.050;
+      config.minimum_confidence = 0.80;
+      break;
+    case GestureSensitivity::Normal:
+      break;
+    case GestureSensitivity::High:
+      config.minimum_stroke_metres = 0.065;
+      config.minimum_total_lateral_travel_metres = 0.200;
+      config.maximum_orthogonal_path_ratio = 0.78;
+      config.minimum_stroke_efficiency = 0.58;
+      config.maximum_stroke_length_ratio = 2.8;
+      config.maximum_stroke_timing_ratio = 3.2;
+      config.maximum_endpoint_drift_ratio = 0.75;
+      config.maximum_endpoint_drift_metres = 0.075;
+      config.minimum_confidence = 0.66;
+      break;
+  }
+  return config;
+}
+
 std::string_view to_string(GestureDecision decision) noexcept {
   switch (decision) {
     case GestureDecision::Reset: return "reset";

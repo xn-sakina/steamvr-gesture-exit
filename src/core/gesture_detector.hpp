@@ -33,6 +33,11 @@ struct GestureConfig {
   double maximum_behind_head_metres{0.20};
 };
 
+// Sensitivity adjusts how much clean farewell-motion evidence is required.
+// Safety invariants such as input suppression, repeated reversals, plausible
+// speed, tracking continuity and pose independence remain unchanged.
+[[nodiscard]] GestureConfig gesture_config(GestureSensitivity sensitivity) noexcept;
+
 struct GestureSample {
   TimePoint time{};
   bool tracked{};
