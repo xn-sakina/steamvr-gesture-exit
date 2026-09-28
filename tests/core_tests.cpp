@@ -460,7 +460,7 @@ void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::Auto, "english", "zh-CN") == Language::ChineseSimplified);
   CHECK(resolve_language(Language::Auto, "schinese", "") == Language::ChineseSimplified);
   CHECK(resolve_language(Language::English, "schinese", "zh-CN") == Language::English);
-  CHECK(localize(StringId::Confirm, Language::English) == "Confirm exit");
+  CHECK(localize(StringId::Confirm, Language::English) == "Confirm Exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
   CHECK(localize(StringId::ConfirmTitle, Language::ChineseSimplified) == "是否退出？");
   CHECK(localize(StringId::ExitGame, Language::ChineseSimplified) == "退出");
@@ -468,8 +468,8 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");
   CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "另一只手柄");
   CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "已识别到手柄");
-  CHECK(localize(StringId::ClickHandReady, Language::ChineseSimplified) ==
-        "退出按钮出现后，指向按钮并扣动扳机。");
+  CHECK(localize(StringId::HelpOppositeHand, Language::English) ==
+        "When the exit panel appears, use the other controller to press the Exit button.");
   CHECK(localize(StringId::SettingsSaveFailed, Language::ChineseSimplified) ==
         "设置保存失败，请重试。");
   CHECK(localize(StringId::AppName, Language::ChineseSimplified) == "SteamVR手势退出");

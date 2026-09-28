@@ -10,7 +10,7 @@
       "strings": {
         "en_us": {
           "name": "SteamVR Gesture Exit",
-          "description": "Wave to show Exit, then confirm to close the VR game."
+          "description": "Wave the controller to show the Exit button, then confirm to exit the VR game."
         },
         "schinese": {
           "name": "SteamVR手势退出",
