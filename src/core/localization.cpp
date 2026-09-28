@@ -22,7 +22,7 @@ constexpr std::array<TextPair, 62> strings{{
     {"Please close the game manually.", "请手动关闭游戏。"},
     {"Settings", "设置"},
     {"Controller to Wave", "挥动哪只手柄"},
-    {"Wave Sensitivity", "触发敏感程度"},
+    {"Wave Sensitivity", "触发灵敏度"},
     {"Low", "低灵敏"},
     {"Normal", "一般"},
     {"High", "高灵敏"},
