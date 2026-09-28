@@ -55,7 +55,10 @@ int application_command(int argc, wchar_t** argv) {
     return 1;
   }
   bailout::platform::openvr::OpenVrRuntime runtime;
-  if (!runtime.initialize(vr::VRApplication_Background)) {
+  // Manifest management only needs IVRApplications. Utility mode lets OpenVR
+  // provide that interface without requiring the user to launch SteamVR or
+  // loading any hardware drivers.
+  if (!runtime.initialize(vr::VRApplication_Utility)) {
     std::cerr << runtime.error() << "\n";
     return 1;
   }

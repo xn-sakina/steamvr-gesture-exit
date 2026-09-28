@@ -633,16 +633,10 @@ function Publish-Package {
     }
 }
 
-function Require-SteamVrRunning {
-    if (-not (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1)) {
-        throw "SteamVR is stopped. Open SteamVR yourself before running this registration command; the helper will not start it."
-    }
-}
-
-function Wait-SteamVrApplicationsReady {
+function Wait-OpenVrApplicationsReady {
     $deadline = (Get-Date).AddSeconds(60)
     $lastOutput = ""
-    Write-Step "Waiting for the SteamVR applications interface"
+    Write-Step "Preparing the OpenVR applications interface"
     do {
         $probeOutput = & $script:CliPath "--manifest-status" $script:AppKey 2>&1
         $probeExitCode = $LASTEXITCODE
@@ -651,9 +645,9 @@ function Wait-SteamVrApplicationsReady {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
     if ($lastOutput) {
-        throw "SteamVR applications interface did not become ready within 60 seconds: $lastOutput"
+        throw "OpenVR applications interface did not become ready within 60 seconds: $lastOutput"
     }
-    throw "SteamVR applications interface did not become ready within 60 seconds."
+    throw "OpenVR applications interface did not become ready within 60 seconds."
 }
 
 function Invoke-Configure {
@@ -705,8 +699,7 @@ function Invoke-Register {
     Require-Package
     $script:CliPath = Resolve-CliPath
     [void](Find-SteamVr)
-    Require-SteamVrRunning
-    Wait-SteamVrApplicationsReady
+    Wait-OpenVrApplicationsReady
     Remove-Item -LiteralPath (Join-Path $script:UserDataDirectory "registering-autolaunch.txt") -Force -ErrorAction SilentlyContinue
     $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
     $pendingManifest = Get-ReceiptValue $script:PendingRegistrationReceiptPath
@@ -764,8 +757,7 @@ function Invoke-Unregister {
     }
     Require-Package
     $script:CliPath = Resolve-CliPath
-    Require-SteamVrRunning
-    Wait-SteamVrApplicationsReady
+    Wait-OpenVrApplicationsReady
     & $script:CliPath "--manifest-status" $script:AppKey
     $manifestState = $LASTEXITCODE
     if ($manifestState -eq 2) {
@@ -1068,7 +1060,7 @@ function Invoke-Update {
     $confirmedManifest = Get-ReceiptValue $script:RegistrationReceiptPath
     if ($confirmedManifest -ne $script:ManifestPath -or
         (Test-Path -LiteralPath $script:PendingRegistrationReceiptPath -PathType Leaf)) {
-        throw "Package updated, but registration needs attention. Open SteamVR yourself and run 'register'; update did not start SteamVR or the add-on."
+        throw "Package updated, but registration needs attention. Run 'register'; update did not start SteamVR or the add-on."
     }
     Write-Host "Package updated. Registration and auto-launch settings were left unchanged; update did not start SteamVR or the add-on." -ForegroundColor Green
 }
@@ -1084,7 +1076,7 @@ Actions:
   configure   Configure an x64 Visual Studio 2022 CMake build.
   build       Compile the selected configuration.
   package     Build and install the runtime package; SteamVR must be stopped.
-  register    Register the manifest; SteamVR must already be running.
+  register    Register the manifest; the SteamVR window may remain closed.
   update      Replace the package while SteamVR is stopped; start neither program.
   status      Show toolchain, package, registration, and process status.
   logs        Show the last 200 log lines; add -Follow to tail continuously.
