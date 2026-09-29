@@ -371,14 +371,20 @@ function Get-SteamInstallPaths {
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 250820"
     )) {
         $entry = Get-ItemProperty -LiteralPath $location -ErrorAction SilentlyContinue
-        if ($entry -and $entry.InstallLocation) { $paths.Add([string]$entry.InstallLocation) }
+        if ($entry) {
+            $installLocation = $entry.PSObject.Properties["InstallLocation"]
+            if ($installLocation -and $installLocation.Value) {
+                $paths.Add([string]$installLocation.Value)
+            }
+        }
     }
     $steamRoots = [Collections.Generic.List[string]]::new()
     foreach ($location in @("HKCU:\Software\Valve\Steam", "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam")) {
         $entry = Get-ItemProperty -LiteralPath $location -ErrorAction SilentlyContinue
         if (-not $entry) { continue }
         foreach ($property in @("SteamPath", "InstallPath")) {
-            if ($entry.$property) { $steamRoots.Add([string]$entry.$property) }
+            $value = $entry.PSObject.Properties[$property]
+            if ($value -and $value.Value) { $steamRoots.Add([string]$value.Value) }
         }
     }
     if (${env:ProgramFiles(x86)}) { $steamRoots.Add((Join-Path ${env:ProgramFiles(x86)} "Steam")) }
@@ -420,7 +426,10 @@ function Get-OpenVrConfigDirectories {
         $entry = Get-ItemProperty -LiteralPath $location -ErrorAction SilentlyContinue
         if (-not $entry) { continue }
         foreach ($property in @("SteamPath", "InstallPath")) {
-            if ($entry.$property) { $directories.Add((Join-Path (Get-FullPath ([string]$entry.$property)) "config")) }
+            $value = $entry.PSObject.Properties[$property]
+            if ($value -and $value.Value) {
+                $directories.Add((Join-Path (Get-FullPath ([string]$value.Value)) "config"))
+            }
         }
     }
     if (${env:ProgramFiles(x86)}) { $directories.Add((Join-Path ${env:ProgramFiles(x86)} "Steam\config")) }

@@ -7,6 +7,9 @@
 #ifndef OutputDir
   #error OutputDir must be provided by installer/build.ps1
 #endif
+#ifndef TransactionScript
+  #error TransactionScript must be provided by installer/build.ps1
+#endif
 
 #define AppName "SteamVR Gesture Exit"
 #define AppIdValue "{{3F4726BD-29BB-4E6D-A869-529D9145745E}"
@@ -53,6 +56,14 @@ AllowCancelDuringInstall=yes
 DirExistsWarning=yes
 ShowLanguageDialog=no
 LanguageDetectionMethod=uilanguage
+#ifdef SignToolName
+SignTool={#SignToolName}
+SignedUninstaller=yes
+SignToolRetryCount=3
+SignToolRetryDelay=5000
+#else
+SignedUninstaller=no
+#endif
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
@@ -88,7 +99,7 @@ zhtrad.OperationBusy=另一个安装或卸载操作正在运行。
 
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
-Source: "transaction.ps1"; DestName: "transaction.ps1"; Flags: dontcopy noencryption
+Source: "{#TransactionScript}"; DestName: "transaction.ps1"; Flags: dontcopy noencryption
 
 [UninstallDelete]
 Type: files; Name: "{app}\.steamvr-gesture-exit-owner.json"
