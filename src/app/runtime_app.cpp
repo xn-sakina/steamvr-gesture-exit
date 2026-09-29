@@ -13,9 +13,9 @@
 #include <mutex>
 #include <thread>
 
-namespace bailout::app {
+namespace steamvr_gesture_exit::app {
 namespace {
-constexpr char kAppKey[] = "dev.kanamio.steamvrbailout";
+constexpr char kAppKey[] = "dev.kanamio.steamvrgestureexit";
 constexpr auto kMaxTargetResolutionAge = std::chrono::seconds(2);
 const char* wrist_action_name(platform::openvr::OverlayAction action) {
   switch (action) {
@@ -755,7 +755,7 @@ int RuntimeApp::run() {
     (void)log_.append({core::DiagnosticEventType::Error, "STOP_SIGNAL_INIT_FAILED"});
     return 1;
   }
-  const std::wstring stop_name = L"Local\\SteamVRBailOut.Stop." +
+  const std::wstring stop_name = L"Local\\SteamVRGestureExit.Stop." +
                                  std::to_wstring(GetCurrentProcessId()) + L"." +
                                  std::to_wstring(creation_token);
   ScopedHandle stop_event(CreateEventW(nullptr, TRUE, FALSE, stop_name.c_str()));
@@ -1495,4 +1495,4 @@ int RuntimeApp::run() {
   (void)log_.append({core::DiagnosticEventType::Lifecycle, "RUNTIME_STOPPED"});
   return 0;
 }
-}  // namespace bailout::app
+}  // namespace steamvr_gesture_exit::app

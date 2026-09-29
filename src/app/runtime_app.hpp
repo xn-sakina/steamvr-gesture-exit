@@ -17,7 +17,7 @@
 #include <optional>
 #include <string>
 #include <vector>
-namespace bailout::app {
+namespace steamvr_gesture_exit::app {
 class RuntimeApp {
  public:
   RuntimeApp();
@@ -67,4 +67,4 @@ class RuntimeApp {
   std::chrono::steady_clock::time_point last_slow_dashboard_at_{};
   std::optional<std::chrono::system_clock::time_point> last_successful_exit_at_;
 };
-}  // namespace bailout::app
+}  // namespace steamvr_gesture_exit::app

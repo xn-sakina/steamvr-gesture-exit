@@ -1,7 +1,7 @@
 #include "platform/openvr/openvr_runtime.hpp"
 #include <chrono>
 #include <cmath>
-namespace bailout::platform::openvr {
+namespace steamvr_gesture_exit::platform::openvr {
 namespace {
 app::Vec3 position(const vr::HmdMatrix34_t& m) {
   return {m.m[0][3], m.m[1][3], m.m[2][3]};
@@ -98,4 +98,4 @@ app::TrackingFrame OpenVrRuntime::sample_tracking() const {
   }
   return f;
 }
-}  // namespace bailout::platform::openvr
+}  // namespace steamvr_gesture_exit::platform::openvr

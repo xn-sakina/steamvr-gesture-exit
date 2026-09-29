@@ -14,7 +14,7 @@
 #include <thread>
 #include <utility>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 enum class DiagnosticEventType {
   Lifecycle,
@@ -87,4 +87,4 @@ class DiagnosticLog {
 [[nodiscard]] std::string serialize_diagnostic_record(const DiagnosticRecord& record,
                                                       std::string_view timestamp_utc);
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

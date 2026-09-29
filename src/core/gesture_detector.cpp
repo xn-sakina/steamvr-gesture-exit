@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 GestureConfig gesture_config(const GestureSensitivity sensitivity) noexcept {
   GestureConfig config{};
@@ -398,4 +398,4 @@ void GestureDetector::reset() noexcept {
   diagnostic_ = {};
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

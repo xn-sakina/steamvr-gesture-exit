@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 #include <vector>
-namespace bailout::platform::openvr {
+namespace steamvr_gesture_exit::platform::openvr {
 struct SurfaceStyle {
   float r, g, b, a;
 };
@@ -87,4 +87,4 @@ class D3dOverlayRenderer {
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
-}  // namespace bailout::platform::openvr
+}  // namespace steamvr_gesture_exit::platform::openvr

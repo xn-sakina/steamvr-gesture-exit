@@ -1,5 +1,5 @@
 {
-  "name": "steamvr-bail-out",
+  "name": "steamvr-gesture-exit",
   "version": "0.1.0",
   "scripts": {},
   "packageManager": "pnpm@10.32.1"

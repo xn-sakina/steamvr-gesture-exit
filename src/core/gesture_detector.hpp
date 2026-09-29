@@ -6,7 +6,7 @@
 #include <deque>
 #include <string_view>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 struct GestureConfig {
   std::chrono::milliseconds recognition_window{1800};
@@ -109,4 +109,4 @@ class GestureDetector {
   GestureDiagnostic diagnostic_{};
 };
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

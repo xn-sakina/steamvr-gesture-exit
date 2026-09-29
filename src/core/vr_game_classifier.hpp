@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 struct VrApplicationEvidence {
   std::string app_key;
@@ -17,4 +17,4 @@ struct VrApplicationEvidence {
 // prove that this is the running scene app and maps to the same Windows process.
 bool is_current_vr_game_candidate(const VrApplicationEvidence& evidence);
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

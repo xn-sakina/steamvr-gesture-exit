@@ -5,7 +5,7 @@
 
 #include <string_view>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 enum class StringId {
   AppName,
@@ -78,4 +78,4 @@ enum class StringId {
 [[nodiscard]] std::string_view localize_last_exit(LastExitStatus status,
                                                   Language resolved_language) noexcept;
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

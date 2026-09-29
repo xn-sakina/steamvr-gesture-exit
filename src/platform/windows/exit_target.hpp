@@ -6,7 +6,7 @@
 namespace vr {
 class IVRApplications;
 }
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 
 enum class CurrentVrGameStatus {
   Available,
@@ -64,4 +64,4 @@ class ExitTargetResolver {
   vr::IVRApplications* applications_ = nullptr;
   mutable std::timed_mutex applications_mutex_;
 };
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

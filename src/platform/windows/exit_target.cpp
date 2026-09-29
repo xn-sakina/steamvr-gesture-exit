@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <string_view>
 
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 namespace {
 std::uint64_t token(const FILETIME& f) {
   ULARGE_INTEGER u{};
@@ -243,7 +243,7 @@ bool ExitTargetResolver::process_is_safe(const std::wstring& path) const {
   constexpr std::array<std::wstring_view, 12> deny = {
       L"vrserver.exe",       L"vrmonitor.exe",  L"vrcompositor.exe", L"vrdashboard.exe",
       L"vrwebhelper.exe",    L"vrstartup.exe",  L"steam.exe",        L"steamservice.exe",
-      L"steamwebhelper.exe", L"steamtours.exe", L"roomsetup.exe",    L"steamvr-bail-out.exe"};
+      L"steamwebhelper.exe", L"steamtours.exe", L"roomsetup.exe",    L"steamvr_gesture_exit.exe"};
   return std::find(deny.begin(), deny.end(), n) == deny.end();
 }
 
@@ -289,4 +289,4 @@ const char* diagnostic_code(const ExitTargetStatus status) noexcept {
   }
   return "UNKNOWN";
 }
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

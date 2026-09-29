@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-namespace bailout::app {
+namespace steamvr_gesture_exit::app {
 
 enum class Hand { Left, Right };
 struct Vec3 {
@@ -50,4 +50,4 @@ struct PointerEvent {
   Type type = Type::Move;
   float u = 0, v = 0;
 };
-}  // namespace bailout::app
+}  // namespace steamvr_gesture_exit::app

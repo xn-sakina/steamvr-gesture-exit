@@ -1,26 +1,26 @@
 # Brand icon assets
 
-`origin.png` is the canonical square raster source. `bailout-master.png` is a
-byte-for-byte synchronized copy kept for compatibility with the existing asset
-layout. `bailout.png` is the 256 × 256 production image. The packaged Dashboard
+`origin.png` is the canonical square raster source. `steamvr-gesture-exit-master.png` is a
+byte-for-byte synchronized full-resolution copy. `steamvr-gesture-exit.png` is the
+256 × 256 production image. The packaged Dashboard
 thumbnail loads that PNG through OpenVR's file API; a direct EXE launch can
 still decode the executable's RCDATA copy. The Windows application icon uses
-`bailout.ico`.
+`steamvr-gesture-exit.ico`.
 The production installer uses the same ICO for its executable and the same
 square PNG in its wizard. Windows' installed-apps entry explicitly points at
 the branded runtime executable, so setup, uninstall listing, and SteamVR do
 not fall back to an empty icon.
-The Release package also includes `bailout.png` because the SteamVR application
+The Release package also includes `steamvr-gesture-exit.png` because the SteamVR application
 manifest refers to it with `image_path`; the EXE resource alone is not visible
 to SteamVR's application list.
 
 Rebuild both production assets from the master with ImageMagick:
 
 ```sh
-cp assets/brand/origin.png assets/brand/bailout-master.png
-magick assets/brand/origin.png -filter Lanczos -resize 256x256 -strip -colorspace sRGB -define png:color-type=6 PNG32:assets/brand/bailout.png
-magick assets/brand/bailout.png -filter Lanczos -define icon:auto-resize=256,128,96,64,48,40,32,24,20,16 assets/brand/bailout.ico
-magick compare -metric AE assets/brand/bailout.png 'assets/brand/bailout.ico[0]' null:
+cp assets/brand/origin.png assets/brand/steamvr-gesture-exit-master.png
+magick assets/brand/origin.png -filter Lanczos -resize 256x256 -strip -colorspace sRGB -define png:color-type=6 PNG32:assets/brand/steamvr-gesture-exit.png
+magick assets/brand/steamvr-gesture-exit.png -filter Lanczos -define icon:auto-resize=256,128,96,64,48,40,32,24,20,16 assets/brand/steamvr-gesture-exit.ico
+magick compare -metric AE assets/brand/steamvr-gesture-exit.png 'assets/brand/steamvr-gesture-exit.ico[0]' null:
 ```
 
 The final command must print `0 (0)`: the ICO's 256 × 256 layer is then

@@ -9,7 +9,7 @@
 #include <thread>
 
 namespace {
-constexpr char kAppKey[] = "dev.kanamio.steamvrbailout";
+constexpr char kAppKey[] = "dev.kanamio.steamvrgestureexit";
 constexpr auto kManifestReadyTimeout = std::chrono::seconds(15);
 
 bool wait_for_manifest(vr::IVRApplications* applications) {
@@ -29,13 +29,13 @@ int application_command(int argc, wchar_t** argv) {
   }
   std::wstring_view command = argv[1];
   if (command == L"--version") {
-    std::cout << "steamvr-bail-out " << BAILOUT_VERSION << "\n";
+    std::cout << "steamvr-gesture-exit " << STEAMVR_GESTURE_EXIT_VERSION << "\n";
     return 0;
   }
   if (command == L"--diagnostics") {
-    std::wcout << L"settings=" << bailout::platform::windows::settings_path() << L"\nlogs="
-               << bailout::platform::windows::log_directory() << L"\nexecutable="
-               << bailout::platform::windows::executable_path() << L"\n";
+    std::wcout << L"settings=" << steamvr_gesture_exit::platform::windows::settings_path() << L"\nlogs="
+               << steamvr_gesture_exit::platform::windows::log_directory() << L"\nexecutable="
+               << steamvr_gesture_exit::platform::windows::executable_path() << L"\n";
     return 0;
   }
   const bool manifest_command =
@@ -59,7 +59,7 @@ int application_command(int argc, wchar_t** argv) {
     std::cerr << "set-autolaunch requires an app key and true or false\n";
     return 1;
   }
-  bailout::platform::openvr::OpenVrRuntime runtime;
+  steamvr_gesture_exit::platform::openvr::OpenVrRuntime runtime;
   // Manifest management only needs IVRApplications. Utility mode lets OpenVR
   // provide that interface without requiring the user to launch SteamVR or
   // loading any hardware drivers.

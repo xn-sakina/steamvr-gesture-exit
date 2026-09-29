@@ -10,7 +10,7 @@
 #include <windows.h>
 #endif
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 namespace {
 
 bool json_document_boundaries_valid(const std::string& document, const Json::Value& root) {
@@ -293,4 +293,4 @@ bool SettingsStore::save(const Settings& settings, std::string* error) const {
   return true;
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

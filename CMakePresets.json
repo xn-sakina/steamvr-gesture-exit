@@ -6,7 +6,7 @@
       "displayName": "Host build and portable tests",
       "binaryDir": "${sourceDir}/out/build/host",
       "cacheVariables": {
-        "BAILOUT_BUILD_TESTS": "ON"
+        "STEAMVR_GESTURE_EXIT_BUILD_TESTS": "ON"
       }
     },
     {
@@ -16,7 +16,7 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/out/build/windows-x64",
       "cacheVariables": {
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/package/steamvr-bail-out"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/package/steamvr-gesture-exit"
       },
       "condition": {
         "type": "equals",

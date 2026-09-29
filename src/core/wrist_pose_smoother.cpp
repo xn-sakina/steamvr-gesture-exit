@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 namespace {
 constexpr double kTimeConstantSeconds = 0.075;
 constexpr double kTrackingGapSeconds = 0.25;
@@ -62,4 +62,4 @@ void WristPoseSmoother::reset() noexcept {
   previous_time_ = {};
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

@@ -2,10 +2,10 @@
   "source": "builtin",
   "applications": [
     {
-      "app_key": "dev.kanamio.steamvrbailout",
+      "app_key": "dev.kanamio.steamvrgestureexit",
       "launch_type": "binary",
-      "binary_path_windows": "..\\bin\\win64\\steamvr_bail_out.exe",
-      "image_path": "..\\assets\\brand\\bailout.png",
+      "binary_path_windows": "..\\bin\\win64\\steamvr_gesture_exit.exe",
+      "image_path": "..\\assets\\brand\\steamvr-gesture-exit.png",
       "is_dashboard_overlay": true,
       "strings": {
         "en_us": {

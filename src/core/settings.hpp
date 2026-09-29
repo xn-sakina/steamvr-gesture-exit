@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 struct Settings {
   static constexpr int current_version = 2;
@@ -55,4 +55,4 @@ class SettingsStore {
 [[nodiscard]] std::string to_string(Language value);
 [[nodiscard]] std::string to_string(GestureSensitivity value);
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

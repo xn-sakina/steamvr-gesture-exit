@@ -4,7 +4,7 @@
 #include <array>
 #include <string_view>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 namespace {
 
 std::string lower(std::string value) {
@@ -40,4 +40,4 @@ bool is_current_vr_game_candidate(const VrApplicationEvidence& evidence) {
   return launch_type.empty() || launch_type == "binary" || launch_type == "url";
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

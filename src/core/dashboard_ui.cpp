@@ -4,7 +4,7 @@
 #include <array>
 #include <cmath>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 namespace {
 
 constexpr float kButtonLeft = 396.0F;
@@ -224,4 +224,4 @@ std::optional<DashboardAction> DashboardHoldRepeater::update(
   return held_action_;
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

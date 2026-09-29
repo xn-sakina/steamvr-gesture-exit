@@ -1,29 +1,29 @@
 cmake_minimum_required(VERSION 3.24)
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" BAILOUT_VERSION)
-string(STRIP "${BAILOUT_VERSION}" BAILOUT_VERSION)
-if(NOT BAILOUT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" STEAMVR_GESTURE_EXIT_VERSION)
+string(STRIP "${STEAMVR_GESTURE_EXIT_VERSION}" STEAMVR_GESTURE_EXIT_VERSION)
+if(NOT STEAMVR_GESTURE_EXIT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "VERSION must contain a semantic X.Y.Z version")
 endif()
 
-project(steamvr_bail_out VERSION "${BAILOUT_VERSION}" LANGUAGES CXX)
+project(steamvr_gesture_exit VERSION "${STEAMVR_GESTURE_EXIT_VERSION}" LANGUAGES CXX)
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
     "${CMAKE_CURRENT_SOURCE_DIR}/package.json"
 )
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" BAILOUT_PACKAGE_JSON)
-string(JSON BAILOUT_PACKAGE_VERSION GET "${BAILOUT_PACKAGE_JSON}" version)
-if(NOT "${BAILOUT_PACKAGE_VERSION}" STREQUAL "${PROJECT_VERSION}")
-    message(FATAL_ERROR "package.json version ${BAILOUT_PACKAGE_VERSION} must match CMake project version ${PROJECT_VERSION}")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" STEAMVR_GESTURE_EXIT_PACKAGE_JSON)
+string(JSON STEAMVR_GESTURE_EXIT_PACKAGE_VERSION GET "${STEAMVR_GESTURE_EXIT_PACKAGE_JSON}" version)
+if(NOT "${STEAMVR_GESTURE_EXIT_PACKAGE_VERSION}" STREQUAL "${PROJECT_VERSION}")
+    message(FATAL_ERROR "package.json version ${STEAMVR_GESTURE_EXIT_PACKAGE_VERSION} must match CMake project version ${PROJECT_VERSION}")
 endif()
 
-option(BAILOUT_BUILD_TESTS "Build portable core tests" ON)
-option(BAILOUT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
+option(STEAMVR_GESTURE_EXIT_BUILD_TESTS "Build portable core tests" ON)
+option(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 
-find_program(BAILOUT_CLANG_FORMAT NAMES clang-format clang-format-20 clang-format-19 clang-format-18 clang-format-17)
-if(BAILOUT_CLANG_FORMAT)
-    file(GLOB_RECURSE BAILOUT_FORMAT_FILES CONFIGURE_DEPENDS
+find_program(STEAMVR_GESTURE_EXIT_CLANG_FORMAT NAMES clang-format clang-format-20 clang-format-19 clang-format-18 clang-format-17)
+if(STEAMVR_GESTURE_EXIT_CLANG_FORMAT)
+    file(GLOB_RECURSE STEAMVR_GESTURE_EXIT_FORMAT_FILES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
@@ -33,23 +33,23 @@ if(BAILOUT_CLANG_FORMAT)
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/*.h"
     )
     add_custom_target(format
-        COMMAND "${BAILOUT_CLANG_FORMAT}" -i ${BAILOUT_FORMAT_FILES}
+        COMMAND "${STEAMVR_GESTURE_EXIT_CLANG_FORMAT}" -i ${STEAMVR_GESTURE_EXIT_FORMAT_FILES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM
     )
     add_custom_target(format-check
-        COMMAND "${BAILOUT_CLANG_FORMAT}" --dry-run --Werror ${BAILOUT_FORMAT_FILES}
+        COMMAND "${STEAMVR_GESTURE_EXIT_CLANG_FORMAT}" --dry-run --Werror ${STEAMVR_GESTURE_EXIT_FORMAT_FILES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM
     )
 else()
-    message(STATUS "clang-format not found; format targets are unavailable (set BAILOUT_CLANG_FORMAT)")
+    message(STATUS "clang-format not found; format targets are unavailable (set STEAMVR_GESTURE_EXIT_CLANG_FORMAT)")
 endif()
 
-add_library(bailout_jsoncpp STATIC openvr/src/jsoncpp.cpp)
-target_include_directories(bailout_jsoncpp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/openvr/src")
+add_library(steamvr_gesture_exit_jsoncpp STATIC openvr/src/jsoncpp.cpp)
+target_include_directories(steamvr_gesture_exit_jsoncpp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/openvr/src")
 
-add_library(bailout_core STATIC
+add_library(steamvr_gesture_exit_core STATIC
     src/core/types.cpp
     src/core/gesture_detector.cpp
     src/core/settings.cpp
@@ -61,19 +61,19 @@ add_library(bailout_core STATIC
     src/core/dashboard_ui.cpp
     src/core/wrist_pose_smoother.cpp
 )
-target_include_directories(bailout_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(bailout_core PUBLIC cxx_std_20)
-target_link_libraries(bailout_core PRIVATE bailout_jsoncpp)
+target_include_directories(steamvr_gesture_exit_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(steamvr_gesture_exit_core PUBLIC cxx_std_20)
+target_link_libraries(steamvr_gesture_exit_core PRIVATE steamvr_gesture_exit_jsoncpp)
 
 if(MSVC)
-    target_compile_options(bailout_core PRIVATE /W4 /permissive- /utf-8)
-    if(BAILOUT_WARNINGS_AS_ERRORS)
-        target_compile_options(bailout_core PRIVATE /WX)
+    target_compile_options(steamvr_gesture_exit_core PRIVATE /W4 /permissive- /utf-8)
+    if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+        target_compile_options(steamvr_gesture_exit_core PRIVATE /WX)
     endif()
 else()
-    target_compile_options(bailout_core PRIVATE -Wall -Wextra -Wpedantic)
-    if(BAILOUT_WARNINGS_AS_ERRORS)
-        target_compile_options(bailout_core PRIVATE -Werror)
+    target_compile_options(steamvr_gesture_exit_core PRIVATE -Wall -Wextra -Wpedantic)
+    if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+        target_compile_options(steamvr_gesture_exit_core PRIVATE -Werror)
     endif()
 endif()
 
@@ -98,9 +98,9 @@ if(WIN32)
     )
 
     set_source_files_properties(assets/brand/app.rc PROPERTIES
-        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.ico;${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.png")
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/steamvr-gesture-exit.ico;${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/steamvr-gesture-exit.png")
 
-    add_executable(steamvr_bail_out WIN32
+    add_executable(steamvr_gesture_exit WIN32
         src/app/main.cpp
         src/app/runtime_app.cpp
         src/platform/openvr/openvr_runtime.cpp
@@ -113,32 +113,32 @@ if(WIN32)
         assets/brand/app.rc
         "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
     )
-    target_include_directories(steamvr_bail_out PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand")
-    target_compile_features(steamvr_bail_out PRIVATE cxx_std_20)
-    target_compile_definitions(steamvr_bail_out PRIVATE
+    target_include_directories(steamvr_gesture_exit PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand")
+    target_compile_features(steamvr_gesture_exit PRIVATE cxx_std_20)
+    target_compile_definitions(steamvr_gesture_exit PRIVATE
         NOMINMAX
         WIN32_LEAN_AND_MEAN
         UNICODE
         _UNICODE
     )
     if(MSVC)
-        target_compile_options(steamvr_bail_out PRIVATE /W4 /permissive- /utf-8)
-        if(BAILOUT_WARNINGS_AS_ERRORS)
-            target_compile_options(steamvr_bail_out PRIVATE /WX)
+        target_compile_options(steamvr_gesture_exit PRIVATE /W4 /permissive- /utf-8)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit PRIVATE /WX)
         endif()
     else()
-        target_compile_options(steamvr_bail_out PRIVATE -Wall -Wextra -Wpedantic)
-        if(BAILOUT_WARNINGS_AS_ERRORS)
-            target_compile_options(steamvr_bail_out PRIVATE -Werror)
+        target_compile_options(steamvr_gesture_exit PRIVATE -Wall -Wextra -Wpedantic)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit PRIVATE -Werror)
         endif()
     endif()
     if(MINGW)
         # Keep macOS/Linux cross-built Windows packages self-contained instead
         # of requiring MinGW runtime DLLs on the tester's machine.
-        target_link_options(steamvr_bail_out PRIVATE -municode -static)
+        target_link_options(steamvr_gesture_exit PRIVATE -municode -static)
     endif()
-    target_link_libraries(steamvr_bail_out PRIVATE
-        bailout_core
+    target_link_libraries(steamvr_gesture_exit PRIVATE
+        steamvr_gesture_exit_core
         openvr_api
         d3d11
         dxgi
@@ -152,53 +152,53 @@ if(WIN32)
         winmm
     )
 
-    add_executable(steamvr_bail_out_cli
+    add_executable(steamvr_gesture_exit_cli
         src/app/cli_main.cpp
         src/platform/openvr/openvr_runtime.cpp
         src/platform/windows/paths.cpp
         "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
     )
-    target_include_directories(steamvr_bail_out_cli PRIVATE
+    target_include_directories(steamvr_gesture_exit_cli PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${OPENVR_ROOT}/headers"
     )
-    target_compile_features(steamvr_bail_out_cli PRIVATE cxx_std_20)
-    target_compile_definitions(steamvr_bail_out_cli PRIVATE
+    target_compile_features(steamvr_gesture_exit_cli PRIVATE cxx_std_20)
+    target_compile_definitions(steamvr_gesture_exit_cli PRIVATE
         NOMINMAX
         WIN32_LEAN_AND_MEAN
         UNICODE
         _UNICODE
-        BAILOUT_VERSION="${PROJECT_VERSION}"
+        STEAMVR_GESTURE_EXIT_VERSION="${PROJECT_VERSION}"
     )
     if(MSVC)
-        target_compile_options(steamvr_bail_out_cli PRIVATE /W4 /permissive- /utf-8)
-        if(BAILOUT_WARNINGS_AS_ERRORS)
-            target_compile_options(steamvr_bail_out_cli PRIVATE /WX)
+        target_compile_options(steamvr_gesture_exit_cli PRIVATE /W4 /permissive- /utf-8)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit_cli PRIVATE /WX)
         endif()
     else()
-        target_compile_options(steamvr_bail_out_cli PRIVATE -Wall -Wextra -Wpedantic)
-        if(BAILOUT_WARNINGS_AS_ERRORS)
-            target_compile_options(steamvr_bail_out_cli PRIVATE -Werror)
+        target_compile_options(steamvr_gesture_exit_cli PRIVATE -Wall -Wextra -Wpedantic)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit_cli PRIVATE -Werror)
         endif()
     endif()
     if(MINGW)
-        target_link_options(steamvr_bail_out_cli PRIVATE -municode -static)
+        target_link_options(steamvr_gesture_exit_cli PRIVATE -municode -static)
     endif()
-    target_link_libraries(steamvr_bail_out_cli PRIVATE openvr_api shell32 ole32)
+    target_link_libraries(steamvr_gesture_exit_cli PRIVATE openvr_api shell32 ole32)
 
-    add_custom_command(TARGET steamvr_bail_out POST_BUILD
+    add_custom_command(TARGET steamvr_gesture_exit POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${OPENVR_ROOT}/bin/win64/openvr_api.dll"
-            "$<TARGET_FILE_DIR:steamvr_bail_out>/openvr_api.dll"
+            "$<TARGET_FILE_DIR:steamvr_gesture_exit>/openvr_api.dll"
         VERBATIM
     )
 
-    install(TARGETS steamvr_bail_out RUNTIME DESTINATION bin/win64)
-    install(TARGETS steamvr_bail_out_cli RUNTIME DESTINATION bin/win64 CONFIGURATIONS Debug)
+    install(TARGETS steamvr_gesture_exit RUNTIME DESTINATION bin/win64)
+    install(TARGETS steamvr_gesture_exit_cli RUNTIME DESTINATION bin/win64 CONFIGURATIONS Debug)
     install(FILES "${OPENVR_ROOT}/bin/win64/openvr_api.dll" DESTINATION bin/win64)
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/manifest/steamvr_bail_out.vrmanifest"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/manifest/steamvr_gesture_exit.vrmanifest"
         DESTINATION manifest)
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/bailout.png"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/steamvr-gesture-exit.png"
         DESTINATION assets/brand)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/docs/"
         DESTINATION docs
@@ -207,15 +207,15 @@ if(WIN32)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION . CONFIGURATIONS Debug)
 endif()
 
-if(BAILOUT_BUILD_TESTS)
+if(STEAMVR_GESTURE_EXIT_BUILD_TESTS)
     include(CTest)
-    add_executable(bailout_core_tests tests/core_tests.cpp)
-    target_link_libraries(bailout_core_tests PRIVATE bailout_core)
-    target_compile_features(bailout_core_tests PRIVATE cxx_std_20)
+    add_executable(steamvr_gesture_exit_core_tests tests/core_tests.cpp)
+    target_link_libraries(steamvr_gesture_exit_core_tests PRIVATE steamvr_gesture_exit_core)
+    target_compile_features(steamvr_gesture_exit_core_tests PRIVATE cxx_std_20)
     if(MSVC)
-        target_compile_options(bailout_core_tests PRIVATE /W4 /permissive- /utf-8)
+        target_compile_options(steamvr_gesture_exit_core_tests PRIVATE /W4 /permissive- /utf-8)
     else()
-        target_compile_options(bailout_core_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(steamvr_gesture_exit_core_tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME bailout_core_tests COMMAND bailout_core_tests)
+    add_test(NAME steamvr_gesture_exit_core_tests COMMAND steamvr_gesture_exit_core_tests)
 endif()

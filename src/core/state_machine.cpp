@@ -4,7 +4,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 bool Prerequisites::ready() const noexcept {
   return current_vr_game && hardware_available && headset_tracked && configured_hand_tracked &&
@@ -399,4 +399,4 @@ Effects FlowStateMachine::tick(const TimePoint now) {
   return effects;
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

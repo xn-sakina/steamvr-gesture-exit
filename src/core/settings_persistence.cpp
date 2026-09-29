@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 SettingsPersistenceWorker::SettingsPersistenceWorker(std::filesystem::path path)
     : store_(std::move(path)), thread_([this] { run(); }) {}
@@ -69,4 +69,4 @@ void SettingsPersistenceWorker::run() {
   }
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

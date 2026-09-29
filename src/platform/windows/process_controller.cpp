@@ -1,7 +1,7 @@
 #include "platform/windows/process_controller.hpp"
 #include <windows.h>
 #include <vector>
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 namespace {
 struct Search {
   DWORD pid;
@@ -145,4 +145,4 @@ void ProcessController::clear() {
 bool ProcessController::identity_matches() const {
   return process_ && target_ && token(static_cast<HANDLE>(process_)) == target_->creation_token;
 }
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

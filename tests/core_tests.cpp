@@ -25,7 +25,7 @@
 #include <vector>
 
 using namespace std::chrono_literals;
-using namespace bailout::core;
+using namespace steamvr_gesture_exit::core;
 
 namespace {
 
@@ -321,7 +321,7 @@ void gesture_sensitivity_changes_evidence_thresholds_not_safety_invariants() {
 }
 
 void settings_round_trip_and_recovery() {
-  const auto root = std::filesystem::temp_directory_path() / "bailout-core-settings-test";
+  const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-core-settings-test";
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
   SettingsStore store(root / "settings.json");
@@ -424,7 +424,7 @@ void settings_round_trip_and_recovery() {
 }
 
 void settings_worker_reports_durable_results_in_order() {
-  const auto root = std::filesystem::temp_directory_path() / "bailout-settings-commits-test";
+  const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-settings-commits-test";
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
   const auto path = root / "settings.json";
@@ -452,7 +452,7 @@ void settings_worker_reports_durable_results_in_order() {
 }
 
 void settings_worker_failure_preserves_last_commit_and_bounds_queue() {
-  const auto root = std::filesystem::temp_directory_path() / "bailout-settings-failure-test";
+  const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-settings-failure-test";
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
   const auto path = root / "settings.json";
@@ -491,7 +491,7 @@ void settings_worker_failure_preserves_last_commit_and_bounds_queue() {
 }
 
 void settings_worker_concurrent_stop_joins_once() {
-  const auto root = std::filesystem::temp_directory_path() / "bailout-settings-stop-test";
+  const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-settings-stop-test";
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
   const auto path = root / "settings.json";
@@ -573,7 +573,7 @@ void diagnostics_are_structured_and_privacy_bounded() {
 }
 
 void diagnostics_debug_records_follow_build_type() {
-  const auto path = std::filesystem::temp_directory_path() / "bailout-debug-filter.jsonl";
+  const auto path = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-debug-filter.jsonl";
   std::error_code ec;
   std::filesystem::remove(path, ec);
   DiagnosticLog log(path);
@@ -597,7 +597,7 @@ void diagnostics_debug_records_follow_build_type() {
 }
 
 void diagnostics_async_queue_drains_in_order() {
-  const auto path = std::filesystem::temp_directory_path() / "bailout-async-log.jsonl";
+  const auto path = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-async-log.jsonl";
   std::error_code ec;
   std::filesystem::remove(path, ec);
   DiagnosticLog log(path);
@@ -643,7 +643,7 @@ void diagnostics_async_queue_drains_in_order() {
 }
 
 void diagnostics_recover_interrupted_jsonl_tail() {
-  const auto path = std::filesystem::temp_directory_path() / "bailout-interrupted-log.jsonl";
+  const auto path = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-interrupted-log.jsonl";
   std::error_code ec;
   std::filesystem::remove(path, ec);
   {
@@ -664,7 +664,7 @@ void diagnostics_recover_interrupted_jsonl_tail() {
 }
 
 void diagnostics_destructor_joins_writer() {
-  const auto path = std::filesystem::temp_directory_path() / "bailout-log-destructor.jsonl";
+  const auto path = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-log-destructor.jsonl";
   std::error_code ec;
   std::filesystem::remove(path, ec);
   {
@@ -684,7 +684,7 @@ void diagnostics_destructor_joins_writer() {
 }
 
 void diagnostics_rotate_at_a_fixed_size() {
-  const auto root = std::filesystem::temp_directory_path() / "bailout-core-log-test";
+  const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-core-log-test";
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
   std::filesystem::create_directories(root);
@@ -756,7 +756,7 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
 }
 
 void pointer_availability_uses_tracked_controller() {
-  bailout::app::HandPose hand;
+  steamvr_gesture_exit::app::HandPose hand;
   hand.connected = true;
   hand.tracked = true;
   CHECK(!hand.pointer_available());

@@ -3,7 +3,7 @@
 #include <chrono>
 #include <optional>
 #include <string_view>
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 enum class CloseStatus {
   Idle,
   GracefulRequested,
@@ -42,4 +42,4 @@ class ProcessController {
   CloseStatus status_ = CloseStatus::Idle;
   std::string_view error_code_{};
 };
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

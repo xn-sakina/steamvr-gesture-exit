@@ -1,4 +1,4 @@
 #include "resource_ids.h"
 
-IDI_BAILOUT ICON "bailout.ico"
-IDR_BAILOUT_PNG RCDATA "bailout.png"
+IDI_STEAMVR_GESTURE_EXIT ICON "steamvr-gesture-exit.ico"
+IDR_STEAMVR_GESTURE_EXIT_PNG RCDATA "steamvr-gesture-exit.png"

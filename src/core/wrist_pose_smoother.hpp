@@ -3,7 +3,7 @@
 #include "core/types.hpp"
 #include <optional>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 struct WristPose {
   Vec3 position;
@@ -25,4 +25,4 @@ class WristPoseSmoother {
   TimePoint previous_time_{};
 };
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

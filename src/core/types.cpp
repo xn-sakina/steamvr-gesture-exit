@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 double length(const Vec3 value) noexcept {
   return std::sqrt(dot(value, value));
@@ -20,4 +20,4 @@ bool TargetIdentity::valid() const noexcept {
   return process_id != 0 && process_start_token != 0 && !executable_path.empty();
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

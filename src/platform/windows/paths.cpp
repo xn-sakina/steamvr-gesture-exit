@@ -3,12 +3,12 @@
 #include <knownfolders.h>
 #include <shlobj.h>
 #include <array>
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 std::filesystem::path data_directory() {
   PWSTR p = nullptr;
   std::filesystem::path out;
   if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &p)) && p)
-    out = std::filesystem::path(p) / L"SteamVRBailOut";
+    out = std::filesystem::path(p) / L"SteamVRGestureExit";
   if (p)
     CoTaskMemFree(p);
   return out;
@@ -24,4 +24,4 @@ std::filesystem::path executable_path() {
   DWORD n = GetModuleFileNameW(nullptr, p.data(), static_cast<DWORD>(p.size()));
   return std::filesystem::path(std::wstring(p.data(), n));
 }
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

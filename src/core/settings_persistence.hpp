@@ -12,7 +12,7 @@
 #include <thread>
 #include <vector>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 struct SettingsChange {
   Settings settings;
@@ -56,4 +56,4 @@ class SettingsPersistenceWorker {
   std::thread thread_;
 };
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

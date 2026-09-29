@@ -29,7 +29,7 @@ bool steamvr_server_running() {
 
 class RuntimeInstance {
  public:
-  RuntimeInstance() : mutex_(CreateMutexW(nullptr, FALSE, L"Local\\SteamVRBailOut.Runtime")) {
+  RuntimeInstance() : mutex_(CreateMutexW(nullptr, FALSE, L"Local\\SteamVRGestureExit.Runtime")) {
     if (mutex_) {
       const DWORD initial = WaitForSingleObject(mutex_, 0);
       if (initial == WAIT_OBJECT_0 || initial == WAIT_ABANDONED) {
@@ -72,7 +72,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   if (!instance.acquired())
     return 0;
   try {
-    bailout::app::RuntimeApp app;
+    steamvr_gesture_exit::app::RuntimeApp app;
     return app.run();
   } catch (...) {
     return 1;

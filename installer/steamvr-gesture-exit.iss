@@ -17,9 +17,9 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Kanamio
-AppPublisherURL=https://github.com/fz6m/steamvr-bail-out
-AppSupportURL=https://github.com/fz6m/steamvr-bail-out/issues
-AppUpdatesURL=https://github.com/fz6m/steamvr-bail-out/releases
+AppPublisherURL=https://github.com/fz6m/steamvr-gesture-exit
+AppSupportURL=https://github.com/fz6m/steamvr-gesture-exit/issues
+AppUpdatesURL=https://github.com/fz6m/steamvr-gesture-exit/releases
 DefaultDirName={localappdata}\Programs\SteamVR Gesture Exit
 UsePreviousAppDir=yes
 DisableDirPage=no
@@ -32,9 +32,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 OutputDir={#OutputDir}
 OutputBaseFilename=SteamVR-Gesture-Exit-{#AppVersion}-windows-x64-setup
-SetupIconFile=..\assets\brand\bailout.ico
-WizardSmallImageFile=..\assets\brand\bailout.png
-UninstallDisplayIcon={app}\bin\win64\steamvr_bail_out.exe
+SetupIconFile=..\assets\brand\steamvr-gesture-exit.ico
+WizardSmallImageFile=..\assets\brand\steamvr-gesture-exit.png
+UninstallDisplayIcon={app}\bin\win64\steamvr_gesture_exit.exe
 UninstallDisplayName={#AppName}
 UninstallFilesDir={app}\installer\uninstall
 VersionInfoVersion={#AppVersion}
@@ -86,11 +86,11 @@ Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencrypti
 Source: "transaction.ps1"; DestName: "transaction.ps1"; Flags: dontcopy noencryption
 
 [UninstallDelete]
-Type: files; Name: "{app}\bin\win64\steamvr_bail_out.exe"
+Type: files; Name: "{app}\bin\win64\steamvr_gesture_exit.exe"
 Type: files; Name: "{app}\bin\win64\openvr_api.dll"
-Type: files; Name: "{app}\manifest\steamvr_bail_out.vrmanifest"
-Type: files; Name: "{app}\assets\brand\bailout.png"
-Type: files; Name: "{app}\installer\steamvr_bail_out_cli.exe"
+Type: files; Name: "{app}\manifest\steamvr_gesture_exit.vrmanifest"
+Type: files; Name: "{app}\assets\brand\steamvr-gesture-exit.png"
+Type: files; Name: "{app}\installer\steamvr_gesture_exit_cli.exe"
 Type: files; Name: "{app}\installer\openvr_api.dll"
 Type: files; Name: "{app}\installer\transaction.ps1"
 Type: files; Name: "{app}\THIRD_PARTY_NOTICES.txt"
@@ -141,7 +141,7 @@ var
   ResultCode: Integer;
   PowerShellPath: String;
 begin
-  ResultFile := ExpandConstant('{tmp}\steamvr-bail-out-installer-result.txt');
+  ResultFile := ExpandConstant('{tmp}\steamvr-gesture-exit-installer-result.txt');
   DeleteFile(ResultFile);
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +

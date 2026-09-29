@@ -15,23 +15,23 @@ $ErrorActionPreference = "Stop"
 
 $script:ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $script:BuildDirectory = Join-Path $script:ProjectRoot "out\build\windows-x64"
-$script:PackageDirectory = Join-Path $script:ProjectRoot "out\package\steamvr-bail-out"
+$script:PackageDirectory = Join-Path $script:ProjectRoot "out\package\steamvr-gesture-exit"
 $script:PackageStagingDirectory = "$($script:PackageDirectory).staging"
 $script:PackagePreviousDirectory = "$($script:PackageDirectory).previous"
-$script:ExecutablePath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out.exe"
-$script:CliPath = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out_cli.exe"
-$script:ManifestPath = Join-Path $script:PackageDirectory "manifest\steamvr_bail_out.vrmanifest"
+$script:ExecutablePath = Join-Path $script:PackageDirectory "bin\win64\steamvr_gesture_exit.exe"
+$script:CliPath = Join-Path $script:PackageDirectory "bin\win64\steamvr_gesture_exit_cli.exe"
+$script:ManifestPath = Join-Path $script:PackageDirectory "manifest\steamvr_gesture_exit.vrmanifest"
 $script:PackageIntegrityFileName = ".package-integrity.json"
-$script:PackageIntegrityCatalogPath = Join-Path (Split-Path $script:PackageDirectory -Parent) ".steamvr-bail-out-integrity.json"
+$script:PackageIntegrityCatalogPath = Join-Path (Split-Path $script:PackageDirectory -Parent) ".steamvr-gesture-exit-integrity.json"
 $script:RuntimePackageFiles = @(
-    "bin/win64/steamvr_bail_out.exe",
+    "bin/win64/steamvr_gesture_exit.exe",
     "bin/win64/openvr_api.dll",
-    "manifest/steamvr_bail_out.vrmanifest",
-    "assets/brand/bailout.png"
+    "manifest/steamvr_gesture_exit.vrmanifest",
+    "assets/brand/steamvr-gesture-exit.png"
 )
-$script:DebugOnlyPackageFiles = @("bin/win64/steamvr_bail_out_cli.exe")
-$script:AppKey = "dev.kanamio.steamvrbailout"
-$script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
+$script:DebugOnlyPackageFiles = @("bin/win64/steamvr_gesture_exit_cli.exe")
+$script:AppKey = "dev.kanamio.steamvrgestureexit"
+$script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRGestureExit"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
 $script:RegistrationReceiptPath = Join-Path $script:UserDataDirectory "registered-manifest.txt"
 $script:PendingRegistrationReceiptPath = Join-Path $script:UserDataDirectory "registering-manifest.txt"
@@ -186,7 +186,7 @@ function Test-OwnedManifestPath([string]$Path) {
         } catch { }
     }
     # A deleted or damaged old package can only be identified by its unique manifest name.
-    return [IO.Path]::GetFileName($fullPath) -ieq "steamvr_bail_out.vrmanifest"
+    return [IO.Path]::GetFileName($fullPath) -ieq "steamvr_gesture_exit.vrmanifest"
 }
 
 function Get-OpenVrResiduals {
@@ -234,7 +234,7 @@ function Remove-OpenVrResiduals {
             $remaining = @($original | Where-Object { -not (Test-OwnedManifestPath ([string]$_)) })
             if ($remaining.Count -ne $original.Count) {
                 $config.manifest_paths = $remaining
-                $temporary = "$appConfig.steamvr-bail-out.tmp"
+                $temporary = "$appConfig.steamvr-gesture-exit.tmp"
                 try {
                     $json = $config | ConvertTo-Json -Depth 64
                     [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
@@ -411,8 +411,8 @@ function Get-PackageIntegrityRecord([string]$PackageRoot) {
 function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
     [void](Get-PackageIntegrityRecord $PackageRoot)
 
-    $executablePath = Get-PackageFilePath $PackageRoot "bin/win64/steamvr_bail_out.exe"
-    $manifestPath = Get-PackageFilePath $PackageRoot "manifest/steamvr_bail_out.vrmanifest"
+    $executablePath = Get-PackageFilePath $PackageRoot "bin/win64/steamvr_gesture_exit.exe"
+    $manifestPath = Get-PackageFilePath $PackageRoot "manifest/steamvr_gesture_exit.vrmanifest"
     try { $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json }
     catch { throw "Application manifest is not valid JSON: $manifestPath. $($_.Exception.Message)" }
     $application = @($manifest.applications) | Where-Object { $_.app_key -eq $script:AppKey } | Select-Object -First 1
@@ -421,7 +421,7 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
     if ($expectedBinary -ne [IO.Path]::GetFullPath($executablePath)) {
         throw "Manifest binary path resolves to '$expectedBinary', expected '$executablePath'."
     }
-    $expectedImage = Get-PackageFilePath $PackageRoot "assets/brand/bailout.png"
+    $expectedImage = Get-PackageFilePath $PackageRoot "assets/brand/steamvr-gesture-exit.png"
     $manifestImage = [IO.Path]::GetFullPath((Join-Path (Split-Path $manifestPath -Parent) ([string]$application.image_path)))
     if ($manifestImage -ne [IO.Path]::GetFullPath($expectedImage)) {
         throw "Manifest image path resolves to '$manifestImage', expected '$expectedImage'."
@@ -431,9 +431,9 @@ function Require-Package([string]$PackageRoot = $script:PackageDirectory) {
 function Resolve-CliPath {
     $integrity = Get-PackageIntegrityRecord $script:PackageDirectory
     if ($integrity.configuration -eq "Debug") {
-        $path = Join-Path $script:PackageDirectory "bin\win64\steamvr_bail_out_cli.exe"
+        $path = Join-Path $script:PackageDirectory "bin\win64\steamvr_gesture_exit_cli.exe"
     } else {
-        $path = Join-Path $script:BuildDirectory "Release\steamvr_bail_out_cli.exe"
+        $path = Join-Path $script:BuildDirectory "Release\steamvr_gesture_exit_cli.exe"
     }
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Registration helper is missing: $path. Run 'package -Configuration $($integrity.configuration)' first."
@@ -472,7 +472,7 @@ function Remove-RegistrationReceipts {
 
 function Get-PackagedAddOnProcesses {
     $expectedPath = [IO.Path]::GetFullPath($script:ExecutablePath)
-    foreach ($process in @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)) {
+    foreach ($process in @(Get-Process -Name "steamvr_gesture_exit" -ErrorAction SilentlyContinue)) {
         try {
             $actualPath = $process.Path
             if ($actualPath -and [IO.Path]::GetFullPath($actualPath) -ieq $expectedPath) {
@@ -492,7 +492,7 @@ function Stop-AddOn {
         if ($process.HasExited) { continue }
         try { $creationToken = $process.StartTime.ToFileTimeUtc() }
         catch { throw "Cannot identify packaged add-on PID $($process.Id); package was not modified." }
-        $eventName = "Local\SteamVRBailOut.Stop.$($process.Id).$creationToken"
+        $eventName = "Local\SteamVRGestureExit.Stop.$($process.Id).$creationToken"
         try { $stopEvent = [Threading.EventWaitHandle]::OpenExisting($eventName) }
         catch {
             if ($process.HasExited) { continue }
@@ -510,9 +510,9 @@ function Invoke-Stop-Orphans {
     if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
         throw "SteamVR is running. Close SteamVR normally before cleaning orphan add-on processes."
     }
-    $orphans = @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)
+    $orphans = @(Get-Process -Name "steamvr_gesture_exit" -ErrorAction SilentlyContinue)
     if ($orphans.Count -eq 0) {
-        Write-Host "No orphan steamvr_bail_out.exe processes found." -ForegroundColor Green
+        Write-Host "No orphan steamvr_gesture_exit.exe processes found." -ForegroundColor Green
         return
     }
     foreach ($orphan in $orphans) {
@@ -526,16 +526,16 @@ function Invoke-Stop-Orphans {
         }
         $current = Get-Process -Id $orphan.Id -ErrorAction SilentlyContinue
         if (-not $current) { continue }
-        try { $sameProcess = $current.ProcessName -eq "steamvr_bail_out" -and $current.StartTime.ToFileTimeUtc() -eq $startToken }
+        try { $sameProcess = $current.ProcessName -eq "steamvr_gesture_exit" -and $current.StartTime.ToFileTimeUtc() -eq $startToken }
         catch { $sameProcess = $false }
         if (-not $sameProcess) { throw "PID $($orphan.Id) changed identity during orphan cleanup; it was not stopped." }
         Stop-Process -Id $orphan.Id -Force -ErrorAction Stop
     }
     Start-Sleep -Milliseconds 500
-    if (Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+    if (Get-Process -Name "steamvr_gesture_exit" -ErrorAction SilentlyContinue | Select-Object -First 1) {
         throw "Some add-on processes remain. Run 'status' to inspect them."
     }
-    Write-Host "All orphan steamvr_bail_out.exe processes were stopped." -ForegroundColor Green
+    Write-Host "All orphan steamvr_gesture_exit.exe processes were stopped." -ForegroundColor Green
 }
 
 function Repair-PackageSwap {
@@ -828,7 +828,7 @@ function Invoke-Status {
     Write-Host "Manifest:          $script:ManifestPath ($(if (Test-Path -LiteralPath $script:ManifestPath) { 'present' } else { 'absent' }))"
     $steamVrRunning = [bool](Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1)
     $addOnRunning = @(Get-PackagedAddOnProcesses).Count -gt 0
-    $allAddOnProcesses = @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)
+    $allAddOnProcesses = @(Get-Process -Name "steamvr_gesture_exit" -ErrorAction SilentlyContinue)
     Write-Host "SteamVR process:   $(if ($steamVrRunning) { 'running' } else { 'stopped' })"
     Write-Host "Add-on process:    $(if ($addOnRunning) { 'running' } else { 'stopped' })"
     if ($allAddOnProcesses.Count -gt 1) {

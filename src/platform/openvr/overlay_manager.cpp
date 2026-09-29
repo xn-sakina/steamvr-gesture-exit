@@ -4,12 +4,12 @@
 #include <cmath>
 #include <filesystem>
 #include <utility>
-namespace bailout::platform::openvr {
+namespace steamvr_gesture_exit::platform::openvr {
 namespace {
-constexpr char kDashboardKey[] = "dev.kanamio.steamvrbailout.dashboard";
-constexpr char kWristKey[] = "dev.kanamio.steamvrbailout.wrist";
-constexpr char kPointerRayKey[] = "dev.kanamio.steamvrbailout.pointer-ray";
-constexpr char kHudKey[] = "dev.kanamio.steamvrbailout.hud";
+constexpr char kDashboardKey[] = "dev.kanamio.steamvrgestureexit.dashboard";
+constexpr char kWristKey[] = "dev.kanamio.steamvrgestureexit.wrist";
+constexpr char kPointerRayKey[] = "dev.kanamio.steamvrgestureexit.pointer-ray";
+constexpr char kHudKey[] = "dev.kanamio.steamvrgestureexit.hud";
 constexpr float kDashboardWidth = 1024.0f;
 // The visible dashboard content starts 24 px from the top and ends at y=432.
 // Keep the same 24 px of canvas space below the final settings row.
@@ -269,7 +269,7 @@ bool OverlayManager::update_thumbnail(const std::wstring& title, const std::wstr
   // Use the packaged PNG for the Dashboard icon without depending on D3D.
   const auto package_root =
       platform::windows::executable_path().parent_path().parent_path().parent_path();
-  const auto image_path = package_root / L"assets" / L"brand" / L"bailout.png";
+  const auto image_path = package_root / L"assets" / L"brand" / L"steamvr-gesture-exit.png";
   if (std::filesystem::is_regular_file(image_path)) {
     const auto utf8 = image_path.u8string();
     const std::string native(reinterpret_cast<const char*>(utf8.data()), utf8.size());
@@ -761,4 +761,4 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
   }
   return out;
 }
-}  // namespace bailout::platform::openvr
+}  // namespace steamvr_gesture_exit::platform::openvr

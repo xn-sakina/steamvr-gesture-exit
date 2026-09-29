@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 using Clock = std::chrono::steady_clock;
 using TimePoint = Clock::time_point;
@@ -42,4 +42,4 @@ struct TargetIdentity {
   friend bool operator==(const TargetIdentity&, const TargetIdentity&) = default;
 };
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

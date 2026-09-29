@@ -4,7 +4,7 @@
 #include <cctype>
 #include <string>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 namespace {
 
 struct TextPair {
@@ -123,4 +123,4 @@ std::string_view localize_last_exit(const LastExitStatus status,
   return {};
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
-namespace bailout::platform::openvr {
+namespace steamvr_gesture_exit::platform::openvr {
 enum class OverlayAction { Primary, Confirm, Dismiss, Cancel };
 struct WristEvents {
   std::vector<OverlayAction> actions;
@@ -98,4 +98,4 @@ class OverlayManager {
   SurfaceModel wrist_model_{};
   DashboardSurfaceModel dashboard_model_{};
 };
-}  // namespace bailout::platform::openvr
+}  // namespace steamvr_gesture_exit::platform::openvr

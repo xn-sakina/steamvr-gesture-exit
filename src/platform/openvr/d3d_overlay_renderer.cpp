@@ -12,7 +12,7 @@
 #include <array>
 #include <cmath>
 #include <map>
-namespace bailout::platform::openvr {
+namespace steamvr_gesture_exit::platform::openvr {
 using Microsoft::WRL::ComPtr;
 struct D3dOverlayRenderer::Impl {
   struct Surface {
@@ -146,7 +146,7 @@ struct D3dOverlayRenderer::Impl {
       return;
     surface.dashboard_logo_attempted = true;
     const HMODULE module = GetModuleHandleW(nullptr);
-    const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_BAILOUT_PNG), RT_RCDATA);
+    const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_STEAMVR_GESTURE_EXIT_PNG), RT_RCDATA);
     if (!resource)
       return;
     const HGLOBAL loaded = LoadResource(module, resource);
@@ -474,7 +474,7 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
     return false;
   }
   const HMODULE module = GetModuleHandleW(nullptr);
-  const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_BAILOUT_PNG), RT_RCDATA);
+  const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_STEAMVR_GESTURE_EXIT_PNG), RT_RCDATA);
   if (!resource) {
     impl_->error = "thumbnail PNG resource unavailable";
     return false;
@@ -742,4 +742,4 @@ uint64_t D3dOverlayRenderer::generation() const {
 const std::string& D3dOverlayRenderer::error() const {
   return impl_->error;
 }
-}  // namespace bailout::platform::openvr
+}  // namespace steamvr_gesture_exit::platform::openvr

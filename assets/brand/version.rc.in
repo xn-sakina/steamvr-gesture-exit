@@ -20,8 +20,8 @@ BEGIN
             VALUE "CompanyName", "Kanamio\0"
             VALUE "FileDescription", "SteamVR Gesture Exit\0"
             VALUE "FileVersion", "@PROJECT_VERSION@\0"
-            VALUE "InternalName", "steamvr_bail_out\0"
-            VALUE "OriginalFilename", "steamvr_bail_out.exe\0"
+            VALUE "InternalName", "steamvr_gesture_exit\0"
+            VALUE "OriginalFilename", "steamvr_gesture_exit.exe\0"
             VALUE "ProductName", "SteamVR Gesture Exit\0"
             VALUE "ProductVersion", "@PROJECT_VERSION@\0"
         END

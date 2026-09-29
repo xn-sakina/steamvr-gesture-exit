@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 enum class FlowState { NoActiveFlow, IdleVisible, Confirming, CountingDown, Exiting };
 enum class LastExitStatus { Never, Succeeded, Cancelled, Failed, TargetUnavailable };
@@ -145,4 +145,4 @@ class FlowStateMachine {
 [[nodiscard]] std::string_view to_string(FlowState value) noexcept;
 [[nodiscard]] std::string_view to_string(LastExitStatus value) noexcept;
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

@@ -2,7 +2,7 @@
 #include "app/runtime_interfaces.h"
 #include "openvr.h"
 #include <string>
-namespace bailout::platform::openvr {
+namespace steamvr_gesture_exit::platform::openvr {
 class OpenVrRuntime {
  public:
   bool initialize(vr::EVRApplicationType type = vr::VRApplication_Overlay);
@@ -27,4 +27,4 @@ class OpenVrRuntime {
   bool initialized_ = false;
   std::string error_;
 };
-}  // namespace bailout::platform::openvr
+}  // namespace steamvr_gesture_exit::platform::openvr

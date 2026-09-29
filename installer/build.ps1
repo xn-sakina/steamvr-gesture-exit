@@ -22,24 +22,24 @@ if (-not $SkipRuntimeBuild) {
     & (Join-Path $projectRoot "scripts\windows\dev.ps1") package -Configuration Release
 }
 
-$runtimeRoot = Join-Path $projectRoot "out\package\steamvr-bail-out"
+$runtimeRoot = Join-Path $projectRoot "out\package\steamvr-gesture-exit"
 $buildRoot = Join-Path $projectRoot "out\build\windows-x64\Release"
 $payloadRoot = Join-Path $projectRoot "out\installer\payload"
 $outputRoot = Join-Path $projectRoot "out\installer"
 $archivePath = Join-Path $outputRoot "payload.zip"
 
 $runtimeFiles = @(
-    "bin\win64\steamvr_bail_out.exe",
+    "bin\win64\steamvr_gesture_exit.exe",
     "bin\win64\openvr_api.dll",
-    "manifest\steamvr_bail_out.vrmanifest",
-    "assets\brand\bailout.png"
+    "manifest\steamvr_gesture_exit.vrmanifest",
+    "assets\brand\steamvr-gesture-exit.png"
 )
 foreach ($relative in $runtimeFiles) {
     $source = Join-Path $runtimeRoot $relative
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing release file: $source" }
 }
 
-$helperCli = Join-Path $buildRoot "steamvr_bail_out_cli.exe"
+$helperCli = Join-Path $buildRoot "steamvr_gesture_exit_cli.exe"
 $helperOpenVr = Join-Path $buildRoot "openvr_api.dll"
 foreach ($source in @($helperCli, $helperOpenVr)) {
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing installer helper: $source" }
@@ -53,7 +53,7 @@ foreach ($relative in $runtimeFiles) {
     Copy-Item -LiteralPath (Join-Path $runtimeRoot $relative) -Destination $destination -Force
 }
 New-Item -ItemType Directory -Path (Join-Path $payloadRoot "installer") -Force | Out-Null
-Copy-Item -LiteralPath $helperCli -Destination (Join-Path $payloadRoot "installer\steamvr_bail_out_cli.exe") -Force
+Copy-Item -LiteralPath $helperCli -Destination (Join-Path $payloadRoot "installer\steamvr_gesture_exit_cli.exe") -Force
 Copy-Item -LiteralPath $helperOpenVr -Destination (Join-Path $payloadRoot "installer\openvr_api.dll") -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "transaction.ps1") -Destination (Join-Path $payloadRoot "installer\transaction.ps1") -Force
 $openVrLicense = Join-Path $projectRoot "openvr\LICENSE"
@@ -105,7 +105,7 @@ if (-not $IsccPath -or -not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
 }
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
-& $IsccPath "/DAppVersion=$version" "/DPayloadArchive=$archivePath" "/DOutputDir=$outputRoot" (Join-Path $PSScriptRoot "steamvr-bail-out.iss")
+& $IsccPath "/DAppVersion=$version" "/DPayloadArchive=$archivePath" "/DOutputDir=$outputRoot" (Join-Path $PSScriptRoot "steamvr-gesture-exit.iss")
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed with exit code $LASTEXITCODE." }
 
 $installer = Join-Path $outputRoot "SteamVR-Gesture-Exit-$version-windows-x64-setup.exe"

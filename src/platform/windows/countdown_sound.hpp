@@ -1,5 +1,5 @@
 #pragma once
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 class CountdownSound {
  public:
   CountdownSound();
@@ -13,4 +13,4 @@ class CountdownSound {
   unsigned char hover_wave_[44 + 320]{};
   unsigned char select_wave_[44 + 520]{};
 };
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

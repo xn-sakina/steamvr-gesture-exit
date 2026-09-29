@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 
 struct DashboardRect {
   float left = 0;
@@ -105,4 +105,4 @@ class DashboardHoldRepeater {
   TimePoint next_repeat_{};
 };
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

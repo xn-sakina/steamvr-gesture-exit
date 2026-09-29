@@ -32,10 +32,10 @@ if [[ "$next_version" == "$current" ]]; then
     exit 1
 fi
 
-version_tmp="$(mktemp "${TMPDIR:-/tmp}/steamvr-bailout-version.XXXXXX")"
-package_tmp="$(mktemp "${TMPDIR:-/tmp}/steamvr-bailout-package.XXXXXX")"
-version_backup="$(mktemp "${TMPDIR:-/tmp}/steamvr-bailout-version-backup.XXXXXX")"
-package_backup="$(mktemp "${TMPDIR:-/tmp}/steamvr-bailout-package-backup.XXXXXX")"
+version_tmp="$(mktemp "${TMPDIR:-/tmp}/steamvr-gesture-exit-version.XXXXXX")"
+package_tmp="$(mktemp "${TMPDIR:-/tmp}/steamvr-gesture-exit-package.XXXXXX")"
+version_backup="$(mktemp "${TMPDIR:-/tmp}/steamvr-gesture-exit-version-backup.XXXXXX")"
+package_backup="$(mktemp "${TMPDIR:-/tmp}/steamvr-gesture-exit-package-backup.XXXXXX")"
 trap 'rm -f "$version_tmp" "$package_tmp" "$version_backup" "$package_backup"' EXIT
 
 printf '%s\n' "$next_version" > "$version_tmp"

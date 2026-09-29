@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace bailout::core {
+namespace steamvr_gesture_exit::core {
 namespace {
 
 constexpr std::uintmax_t kMaxLogBytes = 4 * 1024 * 1024;
@@ -287,4 +287,4 @@ bool DiagnosticLog::append_sync(const DiagnosticRecord& record, std::string* err
   return true;
 }
 
-}  // namespace bailout::core
+}  // namespace steamvr_gesture_exit::core

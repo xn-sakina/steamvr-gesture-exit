@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-namespace bailout::platform::windows {
+namespace steamvr_gesture_exit::platform::windows {
 namespace {
 template <class T>
 void put(unsigned char* p, T v) {
@@ -55,4 +55,4 @@ void CountdownSound::ui_select() {
   PlaySoundW(reinterpret_cast<LPCWSTR>(select_wave_), nullptr,
              SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
 }
-}  // namespace bailout::platform::windows
+}  // namespace steamvr_gesture_exit::platform::windows

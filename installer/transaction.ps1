@@ -14,12 +14,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$script:AppKey = "dev.kanamio.steamvrbailout"
-$script:DataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRBailOut"
+$script:AppKey = "dev.kanamio.steamvrgestureexit"
+$script:DataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRGestureExit"
 $script:StatePath = Join-Path $script:DataDirectory "installer-state.json"
 $script:JournalPath = Join-Path $script:DataDirectory "installer-transaction.json"
-$script:ManifestRelativePath = "manifest/steamvr_bail_out.vrmanifest"
-$script:ExecutableRelativePath = "bin/win64/steamvr_bail_out.exe"
+$script:ManifestRelativePath = "manifest/steamvr_gesture_exit.vrmanifest"
+$script:ExecutableRelativePath = "bin/win64/steamvr_gesture_exit.exe"
 $script:Messages = @{
     en = @{
         steamvr_missing = "SteamVR was not found. Install SteamVR first."
@@ -186,7 +186,7 @@ function Test-OwnedManifest([string]$Path, [string[]]$KnownPaths) {
         if ($known -and (Test-SamePath $Path $known)) { return $true }
     }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return [IO.Path]::GetFileName($Path) -ieq "steamvr_bail_out.vrmanifest"
+        return [IO.Path]::GetFileName($Path) -ieq "steamvr_gesture_exit.vrmanifest"
     }
     try {
         $manifest = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -237,7 +237,7 @@ function Remove-OfflineRegistration([string[]]$KnownPaths) {
                 })
                 if ($kept.Count -ne @($config.manifest_paths).Count) {
                     $config.manifest_paths = $kept
-                    $temporary = "$configPath.steamvr-bail-out.tmp"
+                    $temporary = "$configPath.steamvr-gesture-exit.tmp"
                     try {
                         $config | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $temporary -Encoding UTF8
                         Get-Content -LiteralPath $temporary -Raw -Encoding UTF8 | ConvertFrom-Json | Out-Null
@@ -276,7 +276,7 @@ function Remove-OfflineRegistration([string[]]$KnownPaths) {
 }
 
 function Stop-OwnedProcesses([string[]]$AllowedPaths) {
-    foreach ($process in @(Get-Process -Name "steamvr_bail_out" -ErrorAction SilentlyContinue)) {
+    foreach ($process in @(Get-Process -Name "steamvr_gesture_exit" -ErrorAction SilentlyContinue)) {
         $actualPath = $null
         try { $actualPath = $process.Path } catch { }
         if (-not $actualPath) { continue }
@@ -288,7 +288,7 @@ function Stop-OwnedProcesses([string[]]$AllowedPaths) {
         try { $creationToken = $process.StartTime.ToFileTimeUtc() }
         catch { throw [InvalidOperationException]::new("running_failed") }
         try {
-            $stopEvent = [Threading.EventWaitHandle]::OpenExisting("Local\SteamVRBailOut.Stop.$($process.Id).$creationToken")
+            $stopEvent = [Threading.EventWaitHandle]::OpenExisting("Local\SteamVRGestureExit.Stop.$($process.Id).$creationToken")
             try { [void]$stopEvent.Set() } finally { $stopEvent.Dispose() }
         } catch {
             if (-not $process.HasExited) { throw [InvalidOperationException]::new("running_failed") }
@@ -317,7 +317,7 @@ function Assert-Payload([string]$Root, [string]$ExpectedVersion) {
 }
 
 function Invoke-FailureInjection([string]$Point) {
-    if ($env:BAILOUT_INSTALLER_FAIL_AFTER -and $env:BAILOUT_INSTALLER_FAIL_AFTER -eq $Point) {
+    if ($env:STEAMVR_GESTURE_EXIT_INSTALLER_FAIL_AFTER -and $env:STEAMVR_GESTURE_EXIT_INSTALLER_FAIL_AFTER -eq $Point) {
         throw "Injected installer failure after $Point."
     }
 }
@@ -361,7 +361,7 @@ function Undo-Journal {
         foreach ($file in @($journal.files)) {
             $destination = Join-Path ([string]$journal.target) ([string]$file.path)
             $backup = Join-Path ([string]$journal.backup) ([string]$file.path)
-            Remove-Item -LiteralPath "$destination.bailout-new" -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "$destination.steamvr-gesture-exit-new" -Force -ErrorAction SilentlyContinue
             if ([bool]$file.existed -and (Test-Path -LiteralPath $backup -PathType Leaf)) {
                 New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
                 Copy-Item -LiteralPath $backup -Destination $destination -Force
@@ -408,12 +408,12 @@ function Invoke-Install {
     Invoke-Recover
     Assert-SteamVrInstalled
 
-    $work = Join-Path ([IO.Path]::GetTempPath()) ("steamvr-bail-out-" + [guid]::NewGuid().ToString("N"))
+    $work = Join-Path ([IO.Path]::GetTempPath()) ("steamvr-gesture-exit-" + [guid]::NewGuid().ToString("N"))
     try {
         New-Item -ItemType Directory -Path $work -Force | Out-Null
         Expand-Archive -LiteralPath $PayloadArchive -DestinationPath $work -Force
         $payload = Assert-Payload $work $Version
-        $helper = Join-Path $work "installer\steamvr_bail_out_cli.exe"
+        $helper = Join-Path $work "installer\steamvr_gesture_exit_cli.exe"
         if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw [InvalidOperationException]::new("package_invalid") }
         [void](Test-ManifestInstalled $helper)
 
@@ -452,7 +452,7 @@ function Invoke-Install {
             }
             $files.Add([ordered]@{ path = $relative; existed = $existed })
         }
-        $installedHelper = Join-Path (Get-FullPath $Target) "installer\steamvr_bail_out_cli.exe"
+        $installedHelper = Join-Path (Get-FullPath $Target) "installer\steamvr_gesture_exit_cli.exe"
         $journal = [ordered]@{
             schema = 1
             phase = "prepared"
@@ -472,12 +472,12 @@ function Invoke-Install {
             # Install the recovery helper first. The durable journal always points
             # to this copy, so a power loss after unregistering the old manifest
             # still leaves enough machinery for the next run to compensate.
-            foreach ($relative in @("installer\openvr_api.dll", "installer\steamvr_bail_out_cli.exe")) {
+            foreach ($relative in @("installer\openvr_api.dll", "installer\steamvr_gesture_exit_cli.exe")) {
                 $source = Join-Path $work $relative
                 $destination = Join-Path (Get-FullPath $Target) $relative
                 New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
-                Copy-Item -LiteralPath $source -Destination "$destination.bailout-new" -Force
-                Move-Item -LiteralPath "$destination.bailout-new" -Destination $destination -Force
+                Copy-Item -LiteralPath $source -Destination "$destination.steamvr-gesture-exit-new" -Force
+                Move-Item -LiteralPath "$destination.steamvr-gesture-exit-new" -Destination $destination -Force
             }
             $journal.phase = "unregistering"
             Write-JsonAtomic $script:JournalPath $journal
@@ -493,11 +493,11 @@ function Invoke-Install {
 
             foreach ($record in @($payload.files)) {
                 $relative = ([string]$record.path).Replace('/', '\')
-                if ($relative -in @("installer\openvr_api.dll", "installer\steamvr_bail_out_cli.exe")) { continue }
+                if ($relative -in @("installer\openvr_api.dll", "installer\steamvr_gesture_exit_cli.exe")) { continue }
                 $source = Join-Path $work $relative
                 $destination = Join-Path (Get-FullPath $Target) $relative
                 New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
-                $temporary = "$destination.bailout-new"
+                $temporary = "$destination.steamvr-gesture-exit-new"
                 Copy-Item -LiteralPath $source -Destination $temporary -Force
                 if ((Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash) {
                     throw [InvalidOperationException]::new("write_failed")
@@ -509,7 +509,7 @@ function Invoke-Install {
             Invoke-FailureInjection "files-installed"
             $journal.phase = "registering_new"
             Write-JsonAtomic $script:JournalPath $journal
-            Invoke-Helper -Cli (Join-Path (Get-FullPath $Target) "installer\steamvr_bail_out_cli.exe") -Arguments @("--register-manifest", $newManifest) | Out-Null
+            Invoke-Helper -Cli (Join-Path (Get-FullPath $Target) "installer\steamvr_gesture_exit_cli.exe") -Arguments @("--register-manifest", $newManifest) | Out-Null
             if (-not (Test-ManifestInstalled $installedHelper)) { throw [InvalidOperationException]::new("registration_failed") }
             $journal.phase = "new_registered"
             Write-JsonAtomic $script:JournalPath $journal
@@ -559,7 +559,7 @@ function Invoke-Uninstall {
     if ($state -and $state.manifest_path) { $manifest = [string]$state.manifest_path }
     $executable = Join-Path (Get-FullPath $Target) ($script:ExecutableRelativePath -replace '/', '\')
     Stop-OwnedProcesses @($executable)
-    $helper = Join-Path (Get-FullPath $Target) "installer\steamvr_bail_out_cli.exe"
+    $helper = Join-Path (Get-FullPath $Target) "installer\steamvr_gesture_exit_cli.exe"
     try {
         if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
             if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw "Installer helper is missing." }
