@@ -10,6 +10,7 @@
 
 #define AppName "SteamVR Gesture Exit"
 #define AppIdValue "{{3F4726BD-29BB-4E6D-A869-529D9145745E}"
+#define SetupMutexName "SteamVRGestureExit.Setup.3F4726BD29BB4E6DA869529D9145745E"
 
 [Setup]
 AppId={#AppIdValue}
@@ -30,6 +31,7 @@ SetupArchitecture=x64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
+SetupMutex={#SetupMutexName}
 OutputDir={#OutputDir}
 OutputBaseFilename=steamvr-gesture-exit-v{#AppVersion}-windows-x64-setup
 SetupIconFile=..\assets\brand\steamvr-gesture-exit.ico
@@ -68,18 +70,21 @@ en.TransactionStatus=Installing files and registering with SteamVR...
 en.RollbackFailed=Rollback is incomplete. Run this installer again.
 en.UninstallStatus=Removing SteamVR registration...
 en.CoordinatorFailed=Installation helper could not run. Check antivirus settings.
+en.OperationBusy=Another installation or uninstallation is already running.
 zh.VersionChange=已安装：%1%n当前安装包：%2
 zh.FreshInstall=已安装：无%n当前安装包：%1
 zh.TransactionStatus=正在安装文件并注册到 SteamVR…
 zh.RollbackFailed=回滚未完成，请再次运行此安装程序。
 zh.UninstallStatus=正在移除 SteamVR 注册…
 zh.CoordinatorFailed=无法运行安装辅助程序，请检查杀毒软件拦截。
+zh.OperationBusy=另一个安装或卸载操作正在运行。
 zhtrad.VersionChange=已安装：%1%n当前安装包：%2
 zhtrad.FreshInstall=已安装：无%n当前安装包：%1
 zhtrad.TransactionStatus=正在安装文件并注册到 SteamVR…
 zhtrad.RollbackFailed=回滚未完成，请再次运行此安装程序。
 zhtrad.UninstallStatus=正在移除 SteamVR 注册…
 zhtrad.CoordinatorFailed=无法运行安装辅助程序，请检查杀毒软件拦截。
+zhtrad.OperationBusy=另一个安装或卸载操作正在运行。
 
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
@@ -229,6 +234,13 @@ end;
 
 function InitializeUninstall: Boolean;
 begin
+  if CheckForMutexes('{#SetupMutexName}') then
+  begin
+    MsgBox(CustomMessage('OperationBusy'), mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
+  CreateMutex('{#SetupMutexName}');
   Result := True;
 end;
 

@@ -29,6 +29,9 @@ $script:Messages = @{
         registration_failed = "This app could not be registered with SteamVR."
         rollback_failed = "The operation failed. Run this installer again."
         uninstall_failed = "This app could not be removed from SteamVR."
+        operation_busy = "Another installation or uninstallation is already running."
+        steamvr_running = "Close SteamVR before uninstalling."
+        cleanup_unverified = "SteamVR cleanup could not be fully verified. No files were removed."
         unsafe_target = "Choose a dedicated installation folder."
         write_failed = "Files could not be written. Check permissions and antivirus settings."
         unexpected = "The operation failed."
@@ -42,6 +45,9 @@ $script:Messages = @{
         registration_failed = "向 SteamVR 注册本软件失败。"
         rollback_failed = "执行失败，请再次运行此安装程序。"
         uninstall_failed = "无法从 SteamVR 移除本软件。"
+        operation_busy = "另一个安装或卸载操作正在运行。"
+        steamvr_running = "请先关闭 SteamVR，再卸载本软件。"
+        cleanup_unverified = "无法完整确认 SteamVR 清理结果，未删除安装文件。"
         unsafe_target = "请选择一个独立的安装目录。"
         write_failed = "无法写入文件，请检查权限和杀毒软件拦截。"
         unexpected = "操作失败。"
@@ -194,9 +200,13 @@ function Test-OwnedManifest([string]$Path, [string[]]$KnownPaths) {
     } catch { return $false }
 }
 
-function Get-OwnedManifestPaths([string[]]$KnownPaths = @()) {
+function Get-OwnedManifestPaths(
+    [string[]]$KnownPaths = @(),
+    [AllowNull()][string[]]$Directories = $null
+) {
+    if ($null -eq $Directories) { $Directories = @(Get-OpenVrConfigDirectories) }
     $found = [Collections.Generic.List[string]]::new()
-    foreach ($directory in Get-OpenVrConfigDirectories) {
+    foreach ($directory in @($Directories)) {
         $configPath = Join-Path $directory "appconfig.json"
         if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { continue }
         $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -210,19 +220,25 @@ function Get-OwnedManifestPaths([string[]]$KnownPaths = @()) {
     return @($found)
 }
 
-function Remove-OfflineRegistration([string[]]$KnownPaths) {
+function Assert-SteamVrStopped {
     if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
-        throw "SteamVR is running."
+        throw [InvalidOperationException]::new("steamvr_running")
+    }
+}
+
+function Remove-OfflineRegistration([string[]]$KnownPaths) {
+    Assert-SteamVrStopped
+    $directories = @(Get-OpenVrConfigDirectories)
+    if ($directories.Count -eq 0) {
+        throw [InvalidOperationException]::new("cleanup_unverified")
     }
     $backupRoot = Join-Path $script:DataDirectory ("uninstall-openvr-" + [guid]::NewGuid().ToString("N"))
     $backups = [Collections.Generic.List[object]]::new()
     $succeeded = $false
     try {
         $index = 0
-        foreach ($directory in Get-OpenVrConfigDirectories) {
-            if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
-                throw "SteamVR started during cleanup."
-            }
+        foreach ($directory in $directories) {
+            Assert-SteamVrStopped
             $configPath = Join-Path $directory "appconfig.json"
             if (Test-Path -LiteralPath $configPath -PathType Leaf) {
                 $configBackup = Join-Path $backupRoot ("appconfig-$index.json")
@@ -258,11 +274,31 @@ function Remove-OfflineRegistration([string[]]$KnownPaths) {
                 Remove-Item -LiteralPath $ownedConfig -Force
             }
         }
-        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
-            throw "SteamVR started during cleanup."
+        Assert-SteamVrStopped
+        foreach ($directory in $directories) {
+            if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+                throw [InvalidOperationException]::new("cleanup_unverified")
+            }
         }
-        $remaining = @(Get-OwnedManifestPaths $KnownPaths)
-        if ($remaining.Count -ne 0) { throw "OpenVR configuration still contains this application." }
+        $verificationDirectories = @(
+            (@($directories) + @(Get-OpenVrConfigDirectories)) | Select-Object -Unique
+        )
+        if ($verificationDirectories.Count -eq 0) {
+            throw [InvalidOperationException]::new("cleanup_unverified")
+        }
+        $remainingManifests = @(Get-OwnedManifestPaths $KnownPaths $verificationDirectories)
+        $remainingAppConfigs = @(
+            foreach ($directory in $verificationDirectories) {
+                foreach ($name in @("$($script:AppKey).vrappconfig", $script:AppKey)) {
+                    $path = Join-Path (Join-Path $directory "vrappconfig") $name
+                    if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
+                }
+            }
+        )
+        Assert-SteamVrStopped
+        if ($remainingManifests.Count -ne 0 -or $remainingAppConfigs.Count -ne 0) {
+            throw [InvalidOperationException]::new("cleanup_unverified")
+        }
         $succeeded = $true
     } finally {
         if (-not $succeeded) {
@@ -550,7 +586,7 @@ function Invoke-Install {
 
 function Invoke-Commit {
     $journal = Read-Json $script:JournalPath
-    if ($null -eq $journal) { return }
+    if ($null -eq $journal) { throw "Transaction is not ready to commit." }
     if ($journal.phase -ne "pending_inno_commit") { throw "Transaction is not ready to commit." }
     $journal.phase = "committed"
     Write-JsonAtomic $script:JournalPath $journal
@@ -560,6 +596,7 @@ function Invoke-Commit {
 
 function Invoke-Uninstall {
     if (-not $Target) { throw [InvalidOperationException]::new("uninstall_failed") }
+    Assert-SteamVrStopped
     Invoke-Recover
     $state = Read-Json $script:StatePath
     if ($state -and -not (Test-SamePath ([string]$state.install_path) $Target)) {
@@ -568,27 +605,12 @@ function Invoke-Uninstall {
     $manifest = Join-Path (Get-FullPath $Target) ($script:ManifestRelativePath -replace '/', '\')
     if ($state -and $state.manifest_path) { $manifest = [string]$state.manifest_path }
     $executable = Join-Path (Get-FullPath $Target) ($script:ExecutableRelativePath -replace '/', '\')
+    Assert-SteamVrStopped
     Stop-OwnedProcesses @($executable)
-    $helper = Join-Path (Get-FullPath $Target) "installer\steamvr_gesture_exit_cli.exe"
     try {
-        if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
-            if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw "Installer helper is missing." }
-            if (Test-ManifestInstalled $helper) {
-                try {
-                    Invoke-Helper -Cli $helper -Arguments @("--unregister-manifest", $manifest) | Out-Null
-                } catch {
-                    try {
-                        Invoke-Helper -Cli $helper -Arguments @("--register-manifest", $manifest) | Out-Null
-                        Invoke-Helper -Cli $helper -Arguments @("--set-autolaunch", $script:AppKey, "true") | Out-Null
-                    } catch { }
-                    throw
-                }
-            }
-            if (Test-ManifestInstalled $helper) { throw "Registration is still active." }
-        } else {
-            Remove-OfflineRegistration @($manifest)
-        }
+        Remove-OfflineRegistration @($manifest)
     } catch {
+        if ($script:Messages.en.ContainsKey($_.Exception.Message)) { throw }
         throw [InvalidOperationException]::new("uninstall_failed", $_.Exception)
     }
 
@@ -597,7 +619,26 @@ function Invoke-Uninstall {
     try { Remove-Item -LiteralPath $script:DataDirectory -Recurse -Force -ErrorAction Stop } catch { }
 }
 
+$operationMutex = $null
+$operationMutexAcquired = $false
+$exitCode = 0
 try {
+    $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    if (-not $userSid) { throw [InvalidOperationException]::new("operation_busy") }
+    $mutexName = "Global\SteamVRGestureExit.Installer.Transaction.$userSid"
+    try {
+        $operationMutex = [Threading.Mutex]::new($false, $mutexName)
+    } catch {
+        throw [InvalidOperationException]::new("operation_busy", $_.Exception)
+    }
+    try {
+        $operationMutexAcquired = $operationMutex.WaitOne([TimeSpan]::FromSeconds(30))
+    } catch [Threading.AbandonedMutexException] {
+        $operationMutexAcquired = $true
+    }
+    if (-not $operationMutexAcquired) {
+        throw [InvalidOperationException]::new("operation_busy")
+    }
     if ($ResultFile) { Remove-Item -LiteralPath $ResultFile -Force -ErrorAction SilentlyContinue }
     switch ($Action) {
         "Install" { Invoke-Install }
@@ -607,7 +648,6 @@ try {
         "Uninstall" { Invoke-Uninstall }
     }
     Write-Result (Get-Message "ok")
-    exit 0
 } catch {
     $key = $_.Exception.Message
     if (-not $script:Messages.en.ContainsKey($key)) {
@@ -621,5 +661,9 @@ try {
     $message = Get-Message $key
     Write-Result $message
     Write-Error "$message $($_.Exception.Message)"
-    exit 1
+    $exitCode = 1
+} finally {
+    if ($operationMutexAcquired) { $operationMutex.ReleaseMutex() }
+    if ($null -ne $operationMutex) { $operationMutex.Dispose() }
 }
+exit $exitCode
