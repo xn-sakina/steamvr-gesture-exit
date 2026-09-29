@@ -340,7 +340,14 @@ function Undo-Journal {
             $known = @([string]$journal.new_manifest)
             if ($journal.old_manifest) { $known += [string]$journal.old_manifest }
             $registered = @(Get-OwnedManifestPaths $known)
-            $newMayBeRegistered = $journal.phase -in @("registering_new", "new_registered", "installed")
+            $newMayBeRegistered = $journal.phase -in @(
+                "registering_new",
+                "new_registered",
+                "pending_inno_commit",
+                # Backward compatibility for journals written by installers
+                # released before the Inno commit boundary was made explicit.
+                "installed"
+            )
             if ($newMayBeRegistered -and ((Test-ManifestInstalled $helper) -or
                 ($registered | Where-Object { Test-SamePath $_ ([string]$journal.new_manifest) }))) {
                 try { Invoke-Helper -Cli $helper -Arguments @("--unregister-manifest", [string]$journal.new_manifest) | Out-Null }
@@ -394,7 +401,7 @@ function Undo-Journal {
 function Invoke-Recover {
     if (-not (Test-Path -LiteralPath $script:JournalPath -PathType Leaf)) { return }
     $journal = Read-Json $script:JournalPath
-    if ($journal.phase -in @("installed", "committed")) {
+    if ($journal.phase -eq "committed") {
         Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $script:JournalPath -Force -ErrorAction SilentlyContinue
         return
@@ -523,7 +530,10 @@ function Invoke-Install {
             }
             Write-JsonAtomic $script:StatePath $newState
             Invoke-FailureInjection "state-written"
-            $journal.phase = "installed"
+            # The payload and SteamVR registration are ready, but Inno Setup
+            # has not created its uninstall log/ARP entry yet. Recovery must
+            # compensate this phase unless ssDone explicitly commits it.
+            $journal.phase = "pending_inno_commit"
             $journal.helper = $installedHelper
             Write-JsonAtomic $script:JournalPath $journal
         } catch {
@@ -541,7 +551,7 @@ function Invoke-Install {
 function Invoke-Commit {
     $journal = Read-Json $script:JournalPath
     if ($null -eq $journal) { return }
-    if ($journal.phase -ne "installed") { throw "Transaction is not ready to commit." }
+    if ($journal.phase -ne "pending_inno_commit") { throw "Transaction is not ready to commit." }
     $journal.phase = "committed"
     Write-JsonAtomic $script:JournalPath $journal
     Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue

@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 
+# Release packages must run on a clean supported Windows installation without
+# requiring a separately deployed Visual C++ Redistributable. Apply the static
+# MSVC runtime to every target created below; Debug keeps the matching debug CRT.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" STEAMVR_GESTURE_EXIT_VERSION)
 string(STRIP "${STEAMVR_GESTURE_EXIT_VERSION}" STEAMVR_GESTURE_EXIT_VERSION)
 if(NOT STEAMVR_GESTURE_EXIT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
