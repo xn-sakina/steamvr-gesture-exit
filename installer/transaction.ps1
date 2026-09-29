@@ -1,11 +1,16 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Install", "Commit", "Rollback", "Recover", "Uninstall")]
+    [ValidateSet("Preflight", "Install", "Commit", "Rollback", "Recover", "Uninstall")]
     [string]$Action,
     [string]$PayloadArchive,
+    [string]$PayloadManifest,
     [string]$Target,
     [string]$Version,
+    [long]$PayloadInstallSize,
+    [long]$PayloadExpandedSize,
+    [long]$PayloadArchiveSize,
+    [long]$PayloadLargestFileSize,
     [ValidateSet("en", "zh")]
     [string]$Language = "en",
     [string]$ResultFile
@@ -35,6 +40,7 @@ $script:Messages = @{
         steamvr_running = "Close SteamVR before uninstalling."
         cleanup_unverified = "SteamVR cleanup could not be fully verified. No files were removed."
         unsafe_target = "Choose a dedicated installation folder."
+        disk_space = "There is not enough free space on the destination, temporary, or rollback drive."
         write_failed = "Files could not be written. Check permissions and antivirus settings."
         unexpected = "The operation failed."
         ok = "OK"
@@ -51,6 +57,7 @@ $script:Messages = @{
         steamvr_running = "请先关闭 SteamVR，再卸载本软件。"
         cleanup_unverified = "无法完整确认 SteamVR 清理结果，未删除安装文件。"
         unsafe_target = "请选择一个独立的安装目录。"
+        disk_space = "目标盘、临时盘或回滚盘可用空间不足。"
         write_failed = "无法写入文件，请检查权限和杀毒软件拦截。"
         unexpected = "操作失败。"
         ok = "成功"
@@ -680,24 +687,140 @@ function Stop-OwnedProcesses([string[]]$AllowedPaths) {
     }
 }
 
+function Assert-PayloadManifest([object]$Manifest, [string]$ExpectedVersion) {
+    if (-not $Manifest -or $Manifest.schema -ne 1 -or $Manifest.version -ne $ExpectedVersion -or
+        @($Manifest.files).Count -eq 0) {
+        throw [InvalidOperationException]::new("package_invalid")
+    }
+    $seen = [Collections.Generic.List[string]]::new()
+    [long]$totalSize = 0
+    [long]$largestSize = 0
+    foreach ($record in @($Manifest.files)) {
+        if (-not $record.path -or $record.path.Contains("..") -or ([string]$record.path).Contains(":") -or
+            [IO.Path]::IsPathRooted([string]$record.path) -or -not $record.PSObject.Properties["size"] -or
+            [long]$record.size -lt 0) {
+            throw [InvalidOperationException]::new("package_invalid")
+        }
+        $relative = Get-NormalizedRelativePath ([string]$record.path)
+        if ($seen | Where-Object { $_ -ieq $relative }) {
+            throw [InvalidOperationException]::new("package_invalid")
+        }
+        $seen.Add($relative)
+        $totalSize = [long]($totalSize + [long]$record.size)
+        if ([long]$record.size -gt $largestSize) { $largestSize = [long]$record.size }
+    }
+    return [pscustomobject]@{
+        Manifest = $Manifest
+        TotalSize = $totalSize
+        LargestSize = $largestSize
+    }
+}
+
 function Assert-Payload([string]$Root, [string]$ExpectedVersion) {
     $manifestPath = Join-Path $Root "payload.json"
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw [InvalidOperationException]::new("package_invalid") }
-    $manifest = Read-Json $manifestPath
-    if ($manifest.schema -ne 1 -or $manifest.version -ne $ExpectedVersion -or @($manifest.files).Count -eq 0) {
-        throw [InvalidOperationException]::new("package_invalid")
-    }
-    foreach ($record in @($manifest.files)) {
-        if (-not $record.path -or $record.path.Contains("..") -or ([string]$record.path).Contains(":") -or
-            [IO.Path]::IsPathRooted([string]$record.path)) {
-            throw [InvalidOperationException]::new("package_invalid")
-        }
+    $validation = Assert-PayloadManifest (Read-Json $manifestPath) $ExpectedVersion
+    foreach ($record in @($validation.Manifest.files)) {
         $path = Join-Path $Root ([string]$record.path)
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw [InvalidOperationException]::new("package_invalid") }
+        if ([long]((Get-Item -LiteralPath $path).Length) -ne [long]$record.size) {
+            throw [InvalidOperationException]::new("package_invalid")
+        }
         $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($hash -ne ([string]$record.sha256).ToLowerInvariant()) { throw [InvalidOperationException]::new("package_invalid") }
     }
-    return $manifest
+    return $validation.Manifest
+}
+
+function Add-RequiredDiskSpace([hashtable]$Volumes, [string]$Path, [long]$Bytes, [string]$Purpose) {
+    if ($Bytes -lt 0) { throw [InvalidOperationException]::new("package_invalid") }
+    $root = [IO.Path]::GetPathRoot((Get-FullPath $Path))
+    if (-not $root) { throw [InvalidOperationException]::new("disk_space") }
+    if (-not $Volumes.ContainsKey($root)) {
+        $Volumes[$root] = [pscustomobject]@{
+            Root = $root
+            Required = 0L
+            Purposes = [Collections.Generic.List[string]]::new()
+        }
+    }
+    $Volumes[$root].Required = [long]([long]$Volumes[$root].Required + $Bytes)
+    $Volumes[$root].Purposes.Add($Purpose)
+}
+
+function Invoke-Preflight {
+    if (-not $Target -or -not $Version -or -not $PayloadManifest -or
+        $PayloadInstallSize -le 0 -or $PayloadExpandedSize -le 0 -or
+        $PayloadArchiveSize -le 0 -or $PayloadLargestFileSize -le 0) {
+        throw [InvalidOperationException]::new("package_invalid")
+    }
+    if (-not (Test-Path -LiteralPath $PayloadManifest -PathType Leaf)) {
+        throw [InvalidOperationException]::new("package_invalid")
+    }
+
+    Assert-SafeTarget $Target
+    Assert-SteamVrInstalled
+    $manifestFile = Get-Item -LiteralPath $PayloadManifest
+    $validation = Assert-PayloadManifest (Read-Json $PayloadManifest) $Version
+    if ([long]$validation.TotalSize -ne $PayloadInstallSize -or
+        [long]$validation.LargestSize -ne $PayloadLargestFileSize -or
+        [long]($PayloadInstallSize + [long]$manifestFile.Length) -ne $PayloadExpandedSize) {
+        throw [InvalidOperationException]::new("package_invalid")
+    }
+
+    $oldState = Read-Json $script:StatePath
+    $previousOwnedFiles = @(Assert-TargetOwnership $Target $validation.Manifest $oldState)
+    $backupRelativePaths = [Collections.Generic.List[string]]::new()
+    foreach ($record in @($validation.Manifest.files)) {
+        $relative = Get-NormalizedRelativePath ([string]$record.path)
+        if (-not ($backupRelativePaths | Where-Object { $_ -ieq $relative })) {
+            $backupRelativePaths.Add($relative)
+        }
+    }
+    foreach ($relativeValue in $previousOwnedFiles) {
+        $relative = Get-NormalizedRelativePath ([string]$relativeValue)
+        if (-not ($backupRelativePaths | Where-Object { $_ -ieq $relative })) {
+            $backupRelativePaths.Add($relative)
+        }
+    }
+    $backupRelativePaths.Add($script:OwnershipMarkerName)
+
+    [long]$rollbackBytes = 0
+    foreach ($relative in $backupRelativePaths) {
+        $existing = Join-Path (Get-FullPath $Target) $relative
+        if (Test-Path -LiteralPath $existing -PathType Leaf) {
+            $rollbackBytes = [long]($rollbackBytes + [long]((Get-Item -LiteralPath $existing).Length))
+        }
+    }
+    foreach ($record in @(Get-OpenVrSnapshotRecords (Join-Path $script:DataDirectory "preflight"))) {
+        if ([bool]$record.existed) {
+            $rollbackBytes = [long]($rollbackBytes + [long]((Get-Item -LiteralPath ([string]$record.path)).Length))
+        }
+    }
+    if (Test-Path -LiteralPath $script:StatePath -PathType Leaf) {
+        $rollbackBytes = [long]($rollbackBytes + [long]((Get-Item -LiteralPath $script:StatePath).Length))
+    }
+
+    # Include one MiB per role for journal envelopes, ownership metadata,
+    # directory allocation, and the small extracted coordinator files.
+    [long]$metadataReserve = 1MB
+    $volumes = @{}
+    Add-RequiredDiskSpace $volumes (Get-FullPath $Target) `
+        ([long]($PayloadInstallSize + $PayloadLargestFileSize + $metadataReserve)) "target"
+    Add-RequiredDiskSpace $volumes ([IO.Path]::GetTempPath()) `
+        ([long]($PayloadArchiveSize + $PayloadExpandedSize + $metadataReserve)) "temporary"
+    Add-RequiredDiskSpace $volumes $script:DataDirectory `
+        ([long]($rollbackBytes + $metadataReserve)) "rollback"
+
+    foreach ($volume in $volumes.Values) {
+        try {
+            $available = [long]([IO.DriveInfo]::new([string]$volume.Root).AvailableFreeSpace)
+        } catch {
+            throw [InvalidOperationException]::new("disk_space", $_.Exception)
+        }
+        if ($available -lt [long]$volume.Required) {
+            throw [InvalidOperationException]::new("disk_space")
+        }
+    }
 }
 
 function Invoke-FailureInjection([string]$Point) {
@@ -1152,6 +1275,7 @@ try {
     }
     if ($ResultFile) { Remove-Item -LiteralPath $ResultFile -Force -ErrorAction SilentlyContinue }
     switch ($Action) {
+        "Preflight" { Invoke-Preflight }
         "Install" { Invoke-Install }
         "Commit" { Invoke-Commit }
         "Rollback" { Undo-Journal }

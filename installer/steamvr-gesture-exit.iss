@@ -10,6 +10,24 @@
 #ifndef TransactionScript
   #error TransactionScript must be provided by installer/build.ps1
 #endif
+#ifndef PayloadManifest
+  #error PayloadManifest must be provided by installer/build.ps1
+#endif
+#ifndef CoordinatorRunner
+  #error CoordinatorRunner must be provided by installer/build.ps1
+#endif
+#ifndef PayloadInstallSize
+  #error PayloadInstallSize must be provided by installer/build.ps1
+#endif
+#ifndef PayloadExpandedSize
+  #error PayloadExpandedSize must be provided by installer/build.ps1
+#endif
+#ifndef PayloadArchiveSize
+  #error PayloadArchiveSize must be provided by installer/build.ps1
+#endif
+#ifndef PayloadLargestFileSize
+  #error PayloadLargestFileSize must be provided by installer/build.ps1
+#endif
 
 #define AppName "SteamVR Gesture Exit"
 #define AppIdValue "{{3F4726BD-29BB-4E6D-A869-529D9145745E}"
@@ -50,8 +68,10 @@ VersionInfoProductVersion={#AppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-CloseApplications=no
+CloseApplications=yes
 RestartApplications=no
+ExtraDiskSpaceRequired={#PayloadInstallSize}
+UninstallDisplaySize={#PayloadInstallSize}
 AllowCancelDuringInstall=yes
 DirExistsWarning=yes
 ShowLanguageDialog=no
@@ -100,6 +120,8 @@ zhtrad.OperationBusy=另一个安装或卸载操作正在运行。
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
 Source: "{#TransactionScript}"; DestName: "transaction.ps1"; Flags: dontcopy noencryption
+Source: "{#PayloadManifest}"; DestName: "payload.json"; Flags: dontcopy noencryption
+Source: "{#CoordinatorRunner}"; DestName: "coordinator_runner.exe"; Flags: dontcopy noencryption
 
 [UninstallDelete]
 Type: files; Name: "{app}\.steamvr-gesture-exit-owner.json"
@@ -108,6 +130,7 @@ Type: files; Name: "{app}\bin\win64\openvr_api.dll"
 Type: files; Name: "{app}\manifest\steamvr_gesture_exit.vrmanifest"
 Type: files; Name: "{app}\assets\brand\steamvr-gesture-exit.png"
 Type: files; Name: "{app}\installer\steamvr_gesture_exit_cli.exe"
+Type: files; Name: "{app}\installer\coordinator_runner.exe"
 Type: files; Name: "{app}\installer\openvr_api.dll"
 Type: files; Name: "{app}\installer\transaction.ps1"
 Type: files; Name: "{app}\THIRD_PARTY_NOTICES.txt"
@@ -126,7 +149,11 @@ var
   SetupCompleted: Boolean;
   UninstallPrepared: Boolean;
   TransactionScript: String;
+  CoordinatorRunner: String;
   ResultFile: String;
+
+function GetCurrentProcessId: DWORD;
+  external 'GetCurrentProcessId@kernel32.dll stdcall';
 
 function Quote(const Value: String): String;
 begin
@@ -161,7 +188,8 @@ begin
   ResultFile := ExpandConstant('{tmp}\steamvr-gesture-exit-installer-result.txt');
   DeleteFile(ResultFile);
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
-  Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+  Params := '--parent-pid ' + IntToStr(GetCurrentProcessId) + ' -- ' + Quote(PowerShellPath) +
+    ' -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     Quote(TransactionScript) + ' -Action ' + CoordinatorAction +
     ' -Language ' + CoordinatorLanguage + ' -ResultFile ' + Quote(ResultFile);
   if TargetPath <> '' then
@@ -170,13 +198,29 @@ begin
     Params := Params + ' -PayloadArchive ' + Quote(ArchivePath);
   if CoordinatorVersion <> '' then
     Params := Params + ' -Version ' + Quote(CoordinatorVersion);
+  if CoordinatorAction = 'Preflight' then
+    Params := Params + ' -PayloadManifest ' + Quote(ExpandConstant('{tmp}\payload.json')) +
+      ' -PayloadInstallSize {#PayloadInstallSize}' +
+      ' -PayloadExpandedSize {#PayloadExpandedSize}' +
+      ' -PayloadArchiveSize {#PayloadArchiveSize}' +
+      ' -PayloadLargestFileSize {#PayloadLargestFileSize}';
 
-  Result := Exec(PowerShellPath, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and
+  Result := Exec(CoordinatorRunner, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and
     (ResultCode = 0);
   if not Result then
     ErrorText := ReadResultOrDefault(CustomMessage('CoordinatorFailed'))
   else
     ErrorText := '';
+end;
+
+procedure RegisterExtraCloseApplicationsResources;
+begin
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\bin\win64\steamvr_gesture_exit.exe'));
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\bin\win64\openvr_api.dll'));
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\steamvr_gesture_exit_cli.exe'));
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\coordinator_runner.exe'));
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\openvr_api.dll'));
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\transaction.ps1'));
 end;
 
 function PreviousVersion: String;
@@ -201,8 +245,13 @@ var
 begin
   Result := '';
   ExtractTemporaryFile('transaction.ps1');
+  ExtractTemporaryFile('payload.json');
+  ExtractTemporaryFile('coordinator_runner.exe');
   TransactionScript := ExpandConstant('{tmp}\transaction.ps1');
+  CoordinatorRunner := ExpandConstant('{tmp}\coordinator_runner.exe');
   if not RunCoordinator('Recover', '', '', '', ErrorText) then
+    Result := ErrorText
+  else if not RunCoordinator('Preflight', ExpandConstant('{app}'), '', '{#AppVersion}', ErrorText) then
     Result := ErrorText;
 end;
 
@@ -265,6 +314,7 @@ begin
   UninstallPrepared := True;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('UninstallStatus');
   TransactionScript := ExpandConstant('{app}\installer\transaction.ps1');
+  CoordinatorRunner := ExpandConstant('{app}\installer\coordinator_runner.exe');
   if not RunCoordinator('Uninstall', ExpandConstant('{app}'), '', '', ErrorText) then
   begin
     MsgBox(ErrorText, mbError, MB_OK);

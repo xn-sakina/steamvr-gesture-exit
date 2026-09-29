@@ -200,6 +200,34 @@ if(WIN32)
     endif()
     target_link_libraries(steamvr_gesture_exit_cli PRIVATE openvr_api shell32 ole32)
 
+    add_executable(steamvr_gesture_exit_coordinator_runner
+        src/platform/windows/coordinator_runner.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
+    )
+    target_compile_features(steamvr_gesture_exit_coordinator_runner PRIVATE cxx_std_20)
+    target_compile_definitions(steamvr_gesture_exit_coordinator_runner PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        UNICODE
+        _UNICODE
+        STEAMVR_GESTURE_EXIT_VERSION="${PROJECT_VERSION}"
+    )
+    if(MSVC)
+        target_compile_options(steamvr_gesture_exit_coordinator_runner PRIVATE /W4 /permissive- /utf-8)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit_coordinator_runner PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(steamvr_gesture_exit_coordinator_runner PRIVATE -Wall -Wextra -Wpedantic)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit_coordinator_runner PRIVATE -Werror)
+        endif()
+    endif()
+    if(MINGW)
+        target_link_options(steamvr_gesture_exit_coordinator_runner PRIVATE -municode -static)
+    endif()
+    target_link_libraries(steamvr_gesture_exit_coordinator_runner PRIVATE shell32)
+
     add_custom_command(TARGET steamvr_gesture_exit POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${OPENVR_ROOT}/bin/win64/openvr_api.dll"

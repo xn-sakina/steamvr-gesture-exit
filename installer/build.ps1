@@ -149,7 +149,8 @@ foreach ($relative in $runtimeFiles) {
 
 $helperCli = Join-Path $buildRoot "steamvr_gesture_exit_cli.exe"
 $helperOpenVr = Join-Path $buildRoot "openvr_api.dll"
-foreach ($source in @($helperCli, $helperOpenVr)) {
+$coordinatorRunner = Join-Path $buildRoot "steamvr_gesture_exit_coordinator_runner.exe"
+foreach ($source in @($helperCli, $helperOpenVr, $coordinatorRunner)) {
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing installer helper: $source" }
 }
 
@@ -165,6 +166,7 @@ foreach ($relative in $runtimeFiles) {
 New-Item -ItemType Directory -Path (Join-Path $payloadRoot "installer") -Force | Out-Null
 Copy-Item -LiteralPath $helperCli -Destination (Join-Path $payloadRoot "installer\steamvr_gesture_exit_cli.exe") -Force
 Copy-Item -LiteralPath $helperOpenVr -Destination (Join-Path $payloadRoot "installer\openvr_api.dll") -Force
+Copy-Item -LiteralPath $coordinatorRunner -Destination (Join-Path $payloadRoot "installer\coordinator_runner.exe") -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "transaction.ps1") -Destination $transactionScript -Force
 if ($signingEnabled) {
     Set-ScriptSignature -Path $transactionScript -Certificate $certificate -TimestampUrl $TimestampServer
@@ -187,6 +189,7 @@ if ($signingEnabled) {
         (Join-Path $payloadRoot "bin\win64\steamvr_gesture_exit.exe"),
         (Join-Path $payloadRoot "bin\win64\openvr_api.dll"),
         (Join-Path $payloadRoot "installer\steamvr_gesture_exit_cli.exe"),
+        (Join-Path $payloadRoot "installer\coordinator_runner.exe"),
         (Join-Path $payloadRoot "installer\openvr_api.dll")
     )
     foreach ($path in $binaryFiles) {
@@ -204,14 +207,20 @@ foreach ($file in (Get-ChildItem -LiteralPath $payloadRoot -File -Recurse | Sort
     $relative = $file.FullName.Substring($payloadPrefix.Length).Replace('\', '/')
     $records.Add([ordered]@{
         path = $relative
+        size = [long]$file.Length
         sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     })
 }
 $manifest = [ordered]@{ schema = 1; version = $version; files = $records }
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $payloadRoot "payload.json") -Encoding UTF8
+$payloadManifestPath = Join-Path $payloadRoot "payload.json"
+$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $payloadManifestPath -Encoding UTF8
+$payloadInstallSize = [long](($records | Measure-Object -Property size -Sum).Sum)
+$payloadLargestFileSize = [long](($records | Measure-Object -Property size -Maximum).Maximum)
+$payloadExpandedSize = [long]($payloadInstallSize + (Get-Item -LiteralPath $payloadManifestPath).Length)
 
 Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal
+$payloadArchiveSize = [long](Get-Item -LiteralPath $archivePath).Length
 
 if (-not $IsccPath) {
     $command = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
@@ -240,7 +249,13 @@ $isccArguments = @(
     "/DAppVersion=$version",
     "/DPayloadArchive=$archivePath",
     "/DOutputDir=$outputRoot",
-    "/DTransactionScript=$transactionScript"
+    "/DTransactionScript=$transactionScript",
+    "/DPayloadManifest=$payloadManifestPath",
+    "/DCoordinatorRunner=$(Join-Path $payloadRoot 'installer\coordinator_runner.exe')",
+    "/DPayloadInstallSize=$payloadInstallSize",
+    "/DPayloadExpandedSize=$payloadExpandedSize",
+    "/DPayloadArchiveSize=$payloadArchiveSize",
+    "/DPayloadLargestFileSize=$payloadLargestFileSize"
 )
 if ($signingEnabled) {
     $signToolName = "SteamVrGestureExitAuthenticode"
