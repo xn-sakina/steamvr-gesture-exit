@@ -108,6 +108,6 @@ New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 & $IsccPath "/DAppVersion=$version" "/DPayloadArchive=$archivePath" "/DOutputDir=$outputRoot" (Join-Path $PSScriptRoot "steamvr-gesture-exit.iss")
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed with exit code $LASTEXITCODE." }
 
-$installer = Join-Path $outputRoot "steamvr-gesture-exit-$version-windows-x64-setup.exe"
+$installer = Join-Path $outputRoot "steamvr-gesture-exit-v$version-windows-x64-setup.exe"
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Installer output was not created: $installer" }
 Write-Host "Installer ready: $installer" -ForegroundColor Green
