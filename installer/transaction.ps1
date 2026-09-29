@@ -18,6 +18,8 @@ $script:AppKey = "dev.kanamio.steamvrgestureexit"
 $script:DataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRGestureExit"
 $script:StatePath = Join-Path $script:DataDirectory "installer-state.json"
 $script:JournalPath = Join-Path $script:DataDirectory "installer-transaction.json"
+$script:JournalBackupPath = "$($script:JournalPath).backup"
+$script:OwnershipMarkerName = ".steamvr-gesture-exit-owner.json"
 $script:ManifestRelativePath = "manifest/steamvr_gesture_exit.vrmanifest"
 $script:ExecutableRelativePath = "bin/win64/steamvr_gesture_exit.exe"
 $script:Messages = @{
@@ -85,6 +87,95 @@ function Read-Json([string]$Path) {
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function Get-TextSha256([string]$Text) {
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+        return ([BitConverter]::ToString($algorithm.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $algorithm.Dispose()
+    }
+}
+
+function Read-JournalSlots {
+    $records = [Collections.Generic.List[object]]::new()
+    $found = $false
+    foreach ($path in @($script:JournalPath, $script:JournalBackupPath)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $found = $true
+        try {
+            $value = Read-Json $path
+            if ($value.PSObject.Properties["journal_format"] -and
+                [int]$value.journal_format -eq 2 -and
+                $value.PSObject.Properties["revision"] -and
+                $value.PSObject.Properties["payload_json"] -and
+                $value.PSObject.Properties["checksum"]) {
+                $payloadJson = [string]$value.payload_json
+                if ((Get-TextSha256 $payloadJson) -ne ([string]$value.checksum).ToLowerInvariant()) {
+                    throw "Journal checksum mismatch."
+                }
+                $payload = $payloadJson | ConvertFrom-Json
+                $records.Add([pscustomobject]@{
+                    Path = $path
+                    Revision = [long]$value.revision
+                    Payload = $payload
+                })
+            } elseif ($value.PSObject.Properties["phase"]) {
+                # Journals from earlier releases had no envelope or checksum.
+                $records.Add([pscustomobject]@{ Path = $path; Revision = 0L; Payload = $value })
+            } else {
+                throw "Unrecognized journal format."
+            }
+        } catch {
+            # A damaged slot is ignored only here; Read-Journal fails
+            # conservatively when no checksum-valid slot remains.
+        }
+    }
+    return [pscustomobject]@{ Found = $found; Records = @($records) }
+}
+
+function Read-Journal {
+    $slots = Read-JournalSlots
+    if (-not $slots.Found) { return $null }
+    if (@($slots.Records).Count -eq 0) {
+        throw [InvalidOperationException]::new("rollback_failed")
+    }
+    return @($slots.Records | Sort-Object Revision -Descending)[0].Payload
+}
+
+function Write-Journal([object]$Journal) {
+    $slots = Read-JournalSlots
+    $revision = 1L
+    if (@($slots.Records).Count -ne 0) {
+        $revision = [long](@($slots.Records | Measure-Object Revision -Maximum).Maximum) + 1L
+    }
+    $payloadJson = $Journal | ConvertTo-Json -Depth 20 -Compress
+    $envelope = [ordered]@{
+        journal_format = 2
+        revision = $revision
+        payload_json = $payloadJson
+        checksum = Get-TextSha256 $payloadJson
+    }
+    # Alternating slots ensure an interrupted replacement always leaves one
+    # checksum-verified prior revision available for conservative recovery.
+    $destination = if (($revision % 2) -eq 0) { $script:JournalPath } else { $script:JournalBackupPath }
+    Write-JsonAtomic $destination $envelope
+    $written = Read-Json $destination
+    if (-not $written.PSObject.Properties["revision"] -or [long]$written.revision -ne $revision -or
+        -not $written.PSObject.Properties["payload_json"] -or [string]$written.payload_json -cne $payloadJson -or
+        -not $written.PSObject.Properties["checksum"] -or
+        (Get-TextSha256 ([string]$written.payload_json)) -ne ([string]$written.checksum).ToLowerInvariant()) {
+        throw [InvalidOperationException]::new("rollback_failed")
+    }
+}
+
+function Remove-Journal {
+    Remove-Item -LiteralPath $script:JournalPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $script:JournalBackupPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "$($script:JournalPath).tmp" -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "$($script:JournalBackupPath).tmp" -Force -ErrorAction SilentlyContinue
+}
+
 function Get-FullPath([string]$Path) {
     if (-not $Path) { return $null }
     return [IO.Path]::GetFullPath($Path)
@@ -95,6 +186,30 @@ function Test-SamePath([string]$Left, [string]$Right) {
     try { return (Get-FullPath $Left) -ieq (Get-FullPath $Right) } catch { return $false }
 }
 
+function Test-PathInside([string]$Path, [string]$Directory) {
+    if (-not $Path -or -not $Directory) { return $false }
+    try {
+        $fullPath = (Get-FullPath $Path).TrimEnd('\')
+        $fullDirectory = (Get-FullPath $Directory).TrimEnd('\')
+        return $fullPath.StartsWith($fullDirectory + "\", [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
+}
+
+function Assert-NoReparsePoint([string]$Path) {
+    $current = Get-FullPath $Path
+    while ($current) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw [InvalidOperationException]::new("unsafe_target")
+            }
+        }
+        $parent = Split-Path $current -Parent
+        if (-not $parent -or (Test-SamePath $parent $current)) { break }
+        $current = $parent
+    }
+}
+
 function Assert-SafeTarget([string]$Path) {
     $full = Get-FullPath $Path
     $root = [IO.Path]::GetPathRoot($full)
@@ -102,6 +217,131 @@ function Assert-SafeTarget([string]$Path) {
     foreach ($entry in $blocked) {
         if ($entry -and (Test-SamePath $full $entry)) { throw [InvalidOperationException]::new("unsafe_target") }
     }
+    $blockedTrees = [Collections.Generic.List[string]]::new()
+    foreach ($entry in @(
+        $env:SystemRoot,
+        $env:ProgramData,
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:CommonProgramFiles,
+        ${env:CommonProgramFiles(x86)},
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop),
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments),
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::MyMusic),
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::MyPictures),
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::MyVideos)
+    )) {
+        if ($entry) { $blockedTrees.Add([string]$entry) }
+    }
+    foreach ($entry in @($blockedTrees | Select-Object -Unique)) {
+        if ((Test-SamePath $full $entry) -or (Test-PathInside $full $entry)) {
+            throw [InvalidOperationException]::new("unsafe_target")
+        }
+    }
+    Assert-NoReparsePoint $full
+}
+
+function Get-NormalizedRelativePath([string]$Path) {
+    if (-not $Path -or [IO.Path]::IsPathRooted($Path) -or $Path.Contains("..") -or $Path.Contains(":")) {
+        throw [InvalidOperationException]::new("unsafe_target")
+    }
+    return $Path.Replace('/', '\').TrimStart('\')
+}
+
+function Get-RelativePathUnder([string]$Root, [string]$Path) {
+    $fullRoot = (Get-FullPath $Root).TrimEnd('\')
+    $fullPath = Get-FullPath $Path
+    $prefix = $fullRoot + "\"
+    if (-not $fullPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw [InvalidOperationException]::new("unsafe_target")
+    }
+    return $fullPath.Substring($prefix.Length)
+}
+
+function Test-InnoOwnedPath([string]$Relative) {
+    return $Relative -imatch '^installer\\uninstall\\unins[0-9]+\.(exe|dat|msg)$'
+}
+
+function Assert-TargetOwnership([string]$Path, [object]$Payload, [object]$OldState) {
+    $full = Get-FullPath $Path
+    if (-not (Test-Path -LiteralPath $full)) { return @() }
+    if (-not (Test-Path -LiteralPath $full -PathType Container)) {
+        throw [InvalidOperationException]::new("unsafe_target")
+    }
+    Assert-NoReparsePoint $full
+    $entries = @(Get-ChildItem -LiteralPath $full -Force)
+    if ($entries.Count -eq 0) { return @() }
+
+    $ownedFiles = [Collections.Generic.List[string]]::new()
+    $markerPath = Join-Path $full $script:OwnershipMarkerName
+    if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+        try {
+            $marker = Read-Json $markerPath
+            if ([int]$marker.schema -ne 1 -or [string]$marker.app_key -ne $script:AppKey -or
+                -not (Test-SamePath ([string]$marker.install_path) $full) -or
+                @($marker.files).Count -eq 0) {
+                throw "Invalid ownership marker."
+            }
+            foreach ($relative in @($marker.files)) {
+                $normalized = Get-NormalizedRelativePath ([string]$relative)
+                if ($normalized -ieq $script:OwnershipMarkerName -or (Test-InnoOwnedPath $normalized)) {
+                    throw "Invalid ownership marker."
+                }
+                if (-not ($ownedFiles | Where-Object { $_ -ieq $normalized })) {
+                    $ownedFiles.Add($normalized)
+                }
+            }
+        } catch {
+            throw [InvalidOperationException]::new("unsafe_target")
+        }
+    } elseif ($OldState -and $OldState.PSObject.Properties["install_path"] -and
+        (Test-SamePath ([string]$OldState.install_path) $full)) {
+        # One-time migration for installations made before ownership markers.
+        foreach ($record in @($Payload.files)) {
+            $ownedFiles.Add((Get-NormalizedRelativePath ([string]$record.path)))
+        }
+    } else {
+        throw [InvalidOperationException]::new("unsafe_target")
+    }
+
+    $allowedDirectories = [Collections.Generic.List[string]]::new()
+    $allowedDirectories.Add("installer\uninstall")
+    foreach ($relative in @($ownedFiles)) {
+        $parent = Split-Path $relative -Parent
+        while ($parent) {
+            if (-not ($allowedDirectories | Where-Object { $_ -ieq $parent })) {
+                $allowedDirectories.Add($parent)
+            }
+            $next = Split-Path $parent -Parent
+            if (-not $next -or $next -eq $parent) { break }
+            $parent = $next
+        }
+    }
+
+    $pendingDirectories = [Collections.Generic.Queue[string]]::new()
+    $pendingDirectories.Enqueue($full)
+    while ($pendingDirectories.Count -ne 0) {
+        $directory = $pendingDirectories.Dequeue()
+        foreach ($item in @(Get-ChildItem -LiteralPath $directory -Force)) {
+            # Inspect one level at a time so a junction is rejected before
+            # PowerShell has any opportunity to enumerate through it.
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw [InvalidOperationException]::new("unsafe_target")
+            }
+            $relative = Get-RelativePathUnder $full $item.FullName
+            if ($item.PSIsContainer) {
+                if (-not ($allowedDirectories | Where-Object { $_ -ieq $relative })) {
+                    throw [InvalidOperationException]::new("unsafe_target")
+                }
+                $pendingDirectories.Enqueue($item.FullName)
+            } elseif ($relative -ine $script:OwnershipMarkerName -and
+                -not ($ownedFiles | Where-Object { $_ -ieq $relative }) -and
+                -not (Test-InnoOwnedPath $relative)) {
+                throw [InvalidOperationException]::new("unsafe_target")
+            }
+        }
+    }
+    return @($ownedFiles)
 }
 
 function Invoke-Helper {
@@ -311,6 +551,104 @@ function Remove-OfflineRegistration([string[]]$KnownPaths) {
     }
 }
 
+function Get-OpenVrSnapshotRecords([string]$BackupRoot) {
+    $records = [Collections.Generic.List[object]]::new()
+    $seen = [Collections.Generic.List[string]]::new()
+    $index = 0
+    foreach ($directory in @(Get-OpenVrConfigDirectories)) {
+        foreach ($path in @(
+            (Join-Path $directory "appconfig.json"),
+            (Join-Path (Join-Path $directory "vrappconfig") "$($script:AppKey).vrappconfig"),
+            (Join-Path (Join-Path $directory "vrappconfig") $script:AppKey)
+        )) {
+            $full = Get-FullPath $path
+            if ($seen | Where-Object { $_ -ieq $full }) { continue }
+            $seen.Add($full)
+            $existed = Test-Path -LiteralPath $full -PathType Leaf
+            $records.Add([ordered]@{
+                path = $full
+                existed = $existed
+                backup = Join-Path $BackupRoot ("openvr\$index.json")
+                backup_ready = -not $existed
+                sha256 = $null
+            })
+            $index++
+        }
+    }
+    return $records
+}
+
+function Restore-OpenVrSnapshot([object]$Journal) {
+    if (-not $Journal.PSObject.Properties["openvr_files"] -or @($Journal.openvr_files).Count -eq 0) {
+        throw [InvalidOperationException]::new("cleanup_unverified")
+    }
+    Assert-SteamVrStopped
+    foreach ($record in @($Journal.openvr_files)) {
+        if (-not [bool]$record.backup_ready) {
+            throw [InvalidOperationException]::new("rollback_failed")
+        }
+        $path = [string]$record.path
+        if ([bool]$record.existed) {
+            $backup = [string]$record.backup
+            if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+                    ([string]$record.sha256).ToLowerInvariant()) {
+                throw [InvalidOperationException]::new("rollback_failed")
+            }
+            New-Item -ItemType Directory -Path (Split-Path $path -Parent) -Force | Out-Null
+            $temporary = "$path.steamvr-gesture-exit-restore"
+            try {
+                Copy-Item -LiteralPath $backup -Destination $temporary -Force
+                Move-Item -LiteralPath $temporary -Destination $path -Force
+            } finally {
+                Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Assert-SteamVrStopped
+}
+
+function Add-OfflineManifest([string]$ManifestPath) {
+    if (-not $ManifestPath -or -not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
+        throw [InvalidOperationException]::new("rollback_failed")
+    }
+    Assert-SteamVrStopped
+    $directories = @(Get-OpenVrConfigDirectories)
+    foreach ($directory in $directories) {
+        $configPath = Join-Path $directory "appconfig.json"
+        if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { continue }
+        $config = Read-Json $configPath
+        $paths = @()
+        if ($config.PSObject.Properties["manifest_paths"]) { $paths = @($config.manifest_paths) }
+        if (-not ($paths | Where-Object { Test-SamePath ([string]$_) $ManifestPath })) {
+            $paths += (Get-FullPath $ManifestPath)
+            if ($config.PSObject.Properties["manifest_paths"]) {
+                $config.manifest_paths = $paths
+            } else {
+                $config | Add-Member -NotePropertyName manifest_paths -NotePropertyValue $paths
+            }
+            Write-JsonAtomic $configPath $config
+        }
+        Assert-SteamVrStopped
+        return
+    }
+    throw [InvalidOperationException]::new("cleanup_unverified")
+}
+
+function Invoke-OfflineRollback([object]$Journal) {
+    if ($Journal.PSObject.Properties["openvr_files"] -and @($Journal.openvr_files).Count -ne 0) {
+        Restore-OpenVrSnapshot $Journal
+        return
+    }
+
+    # Compatibility path for an interrupted transaction from an older
+    # installer that did not persist an OpenVR snapshot.
+    Remove-OfflineRegistration @([string]$Journal.new_manifest)
+    if ($Journal.old_manifest) { Add-OfflineManifest ([string]$Journal.old_manifest) }
+}
+
 function Stop-OwnedProcesses([string[]]$AllowedPaths) {
     foreach ($process in @(Get-Process -Name "steamvr_gesture_exit" -ErrorAction SilentlyContinue)) {
         $actualPath = $null
@@ -341,7 +679,8 @@ function Assert-Payload([string]$Root, [string]$ExpectedVersion) {
         throw [InvalidOperationException]::new("package_invalid")
     }
     foreach ($record in @($manifest.files)) {
-        if (-not $record.path -or $record.path.Contains("..") -or [IO.Path]::IsPathRooted([string]$record.path)) {
+        if (-not $record.path -or $record.path.Contains("..") -or ([string]$record.path).Contains(":") -or
+            [IO.Path]::IsPathRooted([string]$record.path)) {
             throw [InvalidOperationException]::new("package_invalid")
         }
         $path = Join-Path $Root ([string]$record.path)
@@ -367,82 +706,136 @@ function Restore-State([object]$OldState) {
 }
 
 function Undo-Journal {
-    $journal = Read-Json $script:JournalPath
+    $journal = Read-Journal
     if ($null -eq $journal) { return }
+    if ($journal.phase -in @("committed", "rolled_back")) {
+        Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Journal
+        return
+    }
     $errors = [Collections.Generic.List[string]]::new()
-    $helper = [string]$journal.helper
-    try {
-        if (Test-Path -LiteralPath $helper -PathType Leaf) {
-            $known = @([string]$journal.new_manifest)
-            if ($journal.old_manifest) { $known += [string]$journal.old_manifest }
-            $registered = @(Get-OwnedManifestPaths $known)
-            $newMayBeRegistered = $journal.phase -in @(
-                "registering_new",
-                "new_registered",
-                "pending_inno_commit",
-                # Backward compatibility for journals written by installers
-                # released before the Inno commit boundary was made explicit.
-                "installed"
-            )
-            if ($newMayBeRegistered -and ((Test-ManifestInstalled $helper) -or
-                ($registered | Where-Object { Test-SamePath $_ ([string]$journal.new_manifest) }))) {
-                try { Invoke-Helper -Cli $helper -Arguments @("--unregister-manifest", [string]$journal.new_manifest) | Out-Null }
-                catch { $errors.Add($_.Exception.Message) }
-            }
+    $registrationMayHaveChanged = $journal.phase -in @(
+        "unregistering",
+        "old_unregistered",
+        "files_installed",
+        "registering_new",
+        "new_registered",
+        "pending_inno_commit",
+        # Backward compatibility for journals written before the explicit
+        # Inno commit boundary and before durable backup preparation.
+        "installed"
+    )
+    if ($registrationMayHaveChanged) {
+        $helperSucceeded = $false
+        $helperCandidates = [Collections.Generic.List[string]]::new()
+        if ($journal.helper) { $helperCandidates.Add([string]$journal.helper) }
+        $backupHelper = Join-Path ([string]$journal.backup) "installer\steamvr_gesture_exit_cli.exe"
+        if (-not ($helperCandidates | Where-Object { Test-SamePath $_ $backupHelper })) {
+            $helperCandidates.Add($backupHelper)
         }
-    } catch { $errors.Add($_.Exception.Message) }
+        foreach ($helper in $helperCandidates) {
+            if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { continue }
+            try {
+                $newMayBeRegistered = $journal.phase -in @(
+                    "registering_new", "new_registered", "pending_inno_commit", "installed"
+                )
+                $registeredNewPath = $false
+                if ($newMayBeRegistered) {
+                    $registeredNewPath = @(Get-OwnedManifestPaths @([string]$journal.new_manifest) | Where-Object {
+                        Test-SamePath $_ ([string]$journal.new_manifest)
+                    }).Count -ne 0
+                }
+                if ($newMayBeRegistered -and ((Test-ManifestInstalled $helper) -or $registeredNewPath)) {
+                    Invoke-Helper -Cli $helper -Arguments @("--unregister-manifest", [string]$journal.new_manifest) | Out-Null
+                }
+                if ($journal.old_manifest -and
+                    (Test-Path -LiteralPath ([string]$journal.old_manifest) -PathType Leaf)) {
+                    Invoke-Helper -Cli $helper -Arguments @("--register-manifest", [string]$journal.old_manifest) | Out-Null
+                    Invoke-Helper -Cli $helper -Arguments @("--set-autolaunch", $script:AppKey, "true") | Out-Null
+                }
+                $helperSucceeded = $true
+                break
+            } catch { }
+        }
+        if (-not $helperSucceeded) {
+            try { Invoke-OfflineRollback $journal }
+            catch { $errors.Add($_.Exception.Message) }
+        }
+    }
 
     try {
-        if ($journal.old_manifest -and (Test-Path -LiteralPath ([string]$journal.old_manifest) -PathType Leaf) -and
-            (Test-Path -LiteralPath $helper -PathType Leaf)) {
-            Invoke-Helper -Cli $helper -Arguments @("--register-manifest", [string]$journal.old_manifest) | Out-Null
-            Invoke-Helper -Cli $helper -Arguments @("--set-autolaunch", $script:AppKey, "true") | Out-Null
-        }
-    } catch { $errors.Add($_.Exception.Message) }
-
-    try {
-        foreach ($file in @($journal.files)) {
-            $destination = Join-Path ([string]$journal.target) ([string]$file.path)
-            $backup = Join-Path ([string]$journal.backup) ([string]$file.path)
-            Remove-Item -LiteralPath "$destination.steamvr-gesture-exit-new" -Force -ErrorAction SilentlyContinue
-            if ([bool]$file.existed -and (Test-Path -LiteralPath $backup -PathType Leaf)) {
-                New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
-                Copy-Item -LiteralPath $backup -Destination $destination -Force
-            } else {
-                Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+        $backupPreparationOnly = $journal.phase -eq "preparing_backup"
+        if (-not $backupPreparationOnly) {
+            foreach ($file in @($journal.files)) {
+                $destination = Join-Path ([string]$journal.target) ([string]$file.path)
+                $backup = Join-Path ([string]$journal.backup) ([string]$file.path)
+                Remove-Item -LiteralPath "$destination.steamvr-gesture-exit-new" -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath "$destination.tmp" -Force -ErrorAction SilentlyContinue
+                if ([bool]$file.existed) {
+                    $ready = -not $file.PSObject.Properties["backup_ready"] -or [bool]$file.backup_ready
+                    if (-not $ready -or -not (Test-Path -LiteralPath $backup -PathType Leaf)) {
+                        throw [InvalidOperationException]::new("rollback_failed")
+                    }
+                    if ($file.PSObject.Properties["sha256"] -and $file.sha256 -and
+                        (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+                            ([string]$file.sha256).ToLowerInvariant()) {
+                        throw [InvalidOperationException]::new("rollback_failed")
+                    }
+                    New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
+                    Copy-Item -LiteralPath $backup -Destination $destination -Force
+                } else {
+                    Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+                }
             }
-        }
-        $ownedDirectories = @($journal.files | ForEach-Object {
-            Split-Path (Join-Path ([string]$journal.target) ([string]$_.path)) -Parent
-        } | Sort-Object { $_.Length } -Descending -Unique)
-        foreach ($directory in $ownedDirectories) {
-            if ((Test-Path -LiteralPath $directory -PathType Container) -and
-                @((Get-ChildItem -LiteralPath $directory -Force)).Count -eq 0) {
-                Remove-Item -LiteralPath $directory -Force -ErrorAction SilentlyContinue
+            $ownedDirectories = @($journal.files | ForEach-Object {
+                Split-Path (Join-Path ([string]$journal.target) ([string]$_.path)) -Parent
+            } | Sort-Object { $_.Length } -Descending -Unique)
+            foreach ($directory in $ownedDirectories) {
+                if ((Test-Path -LiteralPath $directory -PathType Container) -and
+                    @((Get-ChildItem -LiteralPath $directory -Force)).Count -eq 0) {
+                    Remove-Item -LiteralPath $directory -Force -ErrorAction SilentlyContinue
+                }
             }
-        }
-        if (-not [bool]$journal.target_existed -and
-            (Test-Path -LiteralPath ([string]$journal.target) -PathType Container) -and
-            @((Get-ChildItem -LiteralPath ([string]$journal.target) -Force)).Count -eq 0) {
-            Remove-Item -LiteralPath ([string]$journal.target) -Force -ErrorAction SilentlyContinue
+            if (-not [bool]$journal.target_existed -and
+                (Test-Path -LiteralPath ([string]$journal.target) -PathType Container) -and
+                @((Get-ChildItem -LiteralPath ([string]$journal.target) -Force)).Count -eq 0) {
+                Remove-Item -LiteralPath ([string]$journal.target) -Force -ErrorAction SilentlyContinue
+            }
         }
     } catch { $errors.Add($_.Exception.Message) }
 
     try { Restore-State $journal.old_state } catch { $errors.Add($_.Exception.Message) }
     if ($errors.Count -ne 0) { throw ($errors -join " ") }
+    $journal.phase = "rolled_back"
+    Write-Journal $journal
     Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $script:JournalPath -Force -ErrorAction SilentlyContinue
+    Remove-Journal
+}
+
+function Remove-OrphanedRollbackDirectories {
+    if ((Test-Path -LiteralPath $script:JournalPath -PathType Leaf) -or
+        (Test-Path -LiteralPath $script:JournalBackupPath -PathType Leaf)) { return }
+    foreach ($directory in @(Get-ChildItem -LiteralPath $script:DataDirectory -Directory -Filter "installer-rollback-*" -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-Recover {
-    if (-not (Test-Path -LiteralPath $script:JournalPath -PathType Leaf)) { return }
-    $journal = Read-Json $script:JournalPath
-    if ($journal.phase -eq "committed") {
+    if (-not (Test-Path -LiteralPath $script:JournalPath -PathType Leaf) -and
+        -not (Test-Path -LiteralPath $script:JournalBackupPath -PathType Leaf)) {
+        Remove-Journal
+        Remove-OrphanedRollbackDirectories
+        return
+    }
+    $journal = Read-Journal
+    if ($journal.phase -in @("committed", "rolled_back")) {
         Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $script:JournalPath -Force -ErrorAction SilentlyContinue
+        Remove-Journal
+        Remove-OrphanedRollbackDirectories
         return
     }
     Undo-Journal
+    Remove-OrphanedRollbackDirectories
 }
 
 function Invoke-Install {
@@ -461,6 +854,7 @@ function Invoke-Install {
         [void](Test-ManifestInstalled $helper)
 
         $oldState = Read-Json $script:StatePath
+        $previousOwnedFiles = @(Assert-TargetOwnership $Target $payload $oldState)
         $oldManifest = $null
         $oldInstall = $null
         if ($oldState) {
@@ -484,21 +878,46 @@ function Invoke-Install {
 
         $backup = Join-Path $script:DataDirectory ("installer-rollback-" + [guid]::NewGuid().ToString("N"))
         $files = [Collections.Generic.List[object]]::new()
+        $payloadRelativePaths = [Collections.Generic.List[string]]::new()
         foreach ($record in @($payload.files)) {
-            $relative = ([string]$record.path).Replace('/', '\')
+            $relative = Get-NormalizedRelativePath ([string]$record.path)
+            $payloadRelativePaths.Add($relative)
             $destination = Join-Path (Get-FullPath $Target) $relative
             $existed = Test-Path -LiteralPath $destination -PathType Leaf
-            if ($existed) {
-                $backupPath = Join-Path $backup $relative
-                New-Item -ItemType Directory -Path (Split-Path $backupPath -Parent) -Force | Out-Null
-                Copy-Item -LiteralPath $destination -Destination $backupPath -Force
-            }
-            $files.Add([ordered]@{ path = $relative; existed = $existed })
+            $files.Add([ordered]@{
+                path = $relative
+                existed = $existed
+                backup_ready = -not $existed
+                sha256 = $null
+                remove_on_install = $false
+            })
         }
+        foreach ($relative in $previousOwnedFiles) {
+            if ($payloadRelativePaths | Where-Object { $_ -ieq $relative }) { continue }
+            $destination = Join-Path (Get-FullPath $Target) $relative
+            $existed = Test-Path -LiteralPath $destination -PathType Leaf
+            $files.Add([ordered]@{
+                path = $relative
+                existed = $existed
+                backup_ready = -not $existed
+                sha256 = $null
+                remove_on_install = $true
+            })
+        }
+        $markerPath = Join-Path (Get-FullPath $Target) $script:OwnershipMarkerName
+        $markerExisted = Test-Path -LiteralPath $markerPath -PathType Leaf
+        $files.Add([ordered]@{
+            path = $script:OwnershipMarkerName
+            existed = $markerExisted
+            backup_ready = -not $markerExisted
+            sha256 = $null
+            remove_on_install = $false
+        })
+        $openVrFiles = Get-OpenVrSnapshotRecords $backup
         $installedHelper = Join-Path (Get-FullPath $Target) "installer\steamvr_gesture_exit_cli.exe"
         $journal = [ordered]@{
-            schema = 1
-            phase = "prepared"
+            schema = 2
+            phase = "preparing_backup"
             target = Get-FullPath $Target
             target_existed = Test-Path -LiteralPath (Get-FullPath $Target) -PathType Container
             backup = $backup
@@ -507,10 +926,41 @@ function Invoke-Install {
             old_manifest = $oldManifest
             new_manifest = $newManifest
             files = $files
+            openvr_files = $openVrFiles
         }
-        Write-JsonAtomic $script:JournalPath $journal
+        # Persist every intended backup before creating it. A kill at any point
+        # therefore leaves no unreferenced rollback directory.
+        Write-Journal $journal
 
         try {
+            foreach ($file in @($journal.files)) {
+                if (-not [bool]$file.existed) { continue }
+                $source = Join-Path ([string]$journal.target) ([string]$file.path)
+                $backupPath = Join-Path ([string]$journal.backup) ([string]$file.path)
+                New-Item -ItemType Directory -Path (Split-Path $backupPath -Parent) -Force | Out-Null
+                Copy-Item -LiteralPath $source -Destination $backupPath -Force
+                $hash = (Get-FileHash -LiteralPath $backupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($hash -ne (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()) {
+                    throw [InvalidOperationException]::new("rollback_failed")
+                }
+                $file.sha256 = $hash
+                $file.backup_ready = $true
+                Write-Journal $journal
+            }
+            foreach ($file in @($journal.openvr_files)) {
+                if (-not [bool]$file.existed) { continue }
+                New-Item -ItemType Directory -Path (Split-Path ([string]$file.backup) -Parent) -Force | Out-Null
+                Copy-Item -LiteralPath ([string]$file.path) -Destination ([string]$file.backup) -Force
+                $hash = (Get-FileHash -LiteralPath ([string]$file.backup) -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($hash -ne (Get-FileHash -LiteralPath ([string]$file.path) -Algorithm SHA256).Hash.ToLowerInvariant()) {
+                    throw [InvalidOperationException]::new("rollback_failed")
+                }
+                $file.sha256 = $hash
+                $file.backup_ready = $true
+                Write-Journal $journal
+            }
+            $journal.phase = "prepared"
+            Write-Journal $journal
             Invoke-FailureInjection "journal"
             # Install the recovery helper first. The durable journal always points
             # to this copy, so a power loss after unregistering the old manifest
@@ -523,12 +973,12 @@ function Invoke-Install {
                 Move-Item -LiteralPath "$destination.steamvr-gesture-exit-new" -Destination $destination -Force
             }
             $journal.phase = "unregistering"
-            Write-JsonAtomic $script:JournalPath $journal
+            Write-Journal $journal
             if (Test-ManifestInstalled $helper) {
                 Invoke-Helper -Cli $helper -Arguments @("--unregister-manifest", $oldManifest) | Out-Null
             }
             $journal.phase = "old_unregistered"
-            Write-JsonAtomic $script:JournalPath $journal
+            Write-Journal $journal
             Invoke-FailureInjection "old-unregistered"
             $allowedExecutables = @((Join-Path (Get-FullPath $Target) ($script:ExecutableRelativePath -replace '/', '\')))
             if ($oldInstall) { $allowedExecutables += Join-Path $oldInstall ($script:ExecutableRelativePath -replace '/', '\') }
@@ -547,15 +997,51 @@ function Invoke-Install {
                 }
                 Move-Item -LiteralPath $temporary -Destination $destination -Force
             }
+            foreach ($file in @($journal.files)) {
+                if ($file.PSObject.Properties["remove_on_install"] -and [bool]$file.remove_on_install) {
+                    $obsoletePath = Join-Path ([string]$journal.target) ([string]$file.path)
+                    if (Test-Path -LiteralPath $obsoletePath -PathType Leaf) {
+                        Remove-Item -LiteralPath $obsoletePath -Force -ErrorAction Stop
+                    }
+                }
+            }
+            $obsoleteDirectories = [Collections.Generic.List[string]]::new()
+            foreach ($file in @($journal.files)) {
+                if (-not $file.PSObject.Properties["remove_on_install"] -or -not [bool]$file.remove_on_install) {
+                    continue
+                }
+                $directory = Split-Path (Join-Path ([string]$journal.target) ([string]$file.path)) -Parent
+                while ($directory -and -not (Test-SamePath $directory ([string]$journal.target))) {
+                    if (-not ($obsoleteDirectories | Where-Object { Test-SamePath $_ $directory })) {
+                        $obsoleteDirectories.Add($directory)
+                    }
+                    $directory = Split-Path $directory -Parent
+                }
+            }
+            foreach ($directory in @($obsoleteDirectories | Sort-Object { $_.Length } -Descending)) {
+                if ((Test-Path -LiteralPath $directory -PathType Container) -and
+                    @((Get-ChildItem -LiteralPath $directory -Force)).Count -eq 0) {
+                    Remove-Item -LiteralPath $directory -Force -ErrorAction Stop
+                }
+            }
+            $ownershipMarker = [ordered]@{
+                schema = 1
+                app_key = $script:AppKey
+                install_path = Get-FullPath $Target
+                files = @($payload.files | ForEach-Object {
+                    Get-NormalizedRelativePath ([string]$_.path)
+                } | Sort-Object -Unique)
+            }
+            Write-JsonAtomic $markerPath $ownershipMarker
             $journal.phase = "files_installed"
-            Write-JsonAtomic $script:JournalPath $journal
+            Write-Journal $journal
             Invoke-FailureInjection "files-installed"
             $journal.phase = "registering_new"
-            Write-JsonAtomic $script:JournalPath $journal
+            Write-Journal $journal
             Invoke-Helper -Cli (Join-Path (Get-FullPath $Target) "installer\steamvr_gesture_exit_cli.exe") -Arguments @("--register-manifest", $newManifest) | Out-Null
             if (-not (Test-ManifestInstalled $installedHelper)) { throw [InvalidOperationException]::new("registration_failed") }
             $journal.phase = "new_registered"
-            Write-JsonAtomic $script:JournalPath $journal
+            Write-Journal $journal
             Invoke-FailureInjection "new-registered"
 
             $newState = [ordered]@{
@@ -563,6 +1049,7 @@ function Invoke-Install {
                 version = $Version
                 install_path = Get-FullPath $Target
                 manifest_path = $newManifest
+                ownership_marker = $markerPath
             }
             Write-JsonAtomic $script:StatePath $newState
             Invoke-FailureInjection "state-written"
@@ -571,7 +1058,7 @@ function Invoke-Install {
             # compensate this phase unless ssDone explicitly commits it.
             $journal.phase = "pending_inno_commit"
             $journal.helper = $installedHelper
-            Write-JsonAtomic $script:JournalPath $journal
+            Write-Journal $journal
         } catch {
             $installError = $_
             try { Undo-Journal } catch {
@@ -585,13 +1072,14 @@ function Invoke-Install {
 }
 
 function Invoke-Commit {
-    $journal = Read-Json $script:JournalPath
+    $journal = Read-Journal
     if ($null -eq $journal) { throw "Transaction is not ready to commit." }
     if ($journal.phase -ne "pending_inno_commit") { throw "Transaction is not ready to commit." }
     $journal.phase = "committed"
-    Write-JsonAtomic $script:JournalPath $journal
+    Write-Journal $journal
     Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $script:JournalPath -Force -ErrorAction SilentlyContinue
+    Remove-Journal
+    Remove-OrphanedRollbackDirectories
 }
 
 function Invoke-Uninstall {
@@ -601,6 +1089,20 @@ function Invoke-Uninstall {
     $state = Read-Json $script:StatePath
     if ($state -and -not (Test-SamePath ([string]$state.install_path) $Target)) {
         return
+    }
+    $markerPath = Join-Path (Get-FullPath $Target) $script:OwnershipMarkerName
+    if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+        try {
+            $marker = Read-Json $markerPath
+            if ([int]$marker.schema -ne 1 -or [string]$marker.app_key -ne $script:AppKey -or
+                -not (Test-SamePath ([string]$marker.install_path) $Target)) {
+                throw "Invalid ownership marker."
+            }
+        } catch {
+            throw [InvalidOperationException]::new("unsafe_target")
+        }
+    } elseif (-not $state -or -not (Test-SamePath ([string]$state.install_path) $Target)) {
+        throw [InvalidOperationException]::new("unsafe_target")
     }
     $manifest = Join-Path (Get-FullPath $Target) ($script:ManifestRelativePath -replace '/', '\')
     if ($state -and $state.manifest_path) { $manifest = [string]$state.manifest_path }
@@ -615,7 +1117,7 @@ function Invoke-Uninstall {
     }
 
     Remove-Item -LiteralPath $script:StatePath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $script:JournalPath -Force -ErrorAction SilentlyContinue
+    Remove-Journal
     try { Remove-Item -LiteralPath $script:DataDirectory -Recurse -Force -ErrorAction Stop } catch { }
 }
 

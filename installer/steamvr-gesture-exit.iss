@@ -50,7 +50,7 @@ WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
 AllowCancelDuringInstall=yes
-DirExistsWarning=no
+DirExistsWarning=yes
 ShowLanguageDialog=no
 LanguageDetectionMethod=uilanguage
 
@@ -91,6 +91,7 @@ Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencrypti
 Source: "transaction.ps1"; DestName: "transaction.ps1"; Flags: dontcopy noencryption
 
 [UninstallDelete]
+Type: files; Name: "{app}\.steamvr-gesture-exit-owner.json"
 Type: files; Name: "{app}\bin\win64\steamvr_gesture_exit.exe"
 Type: files; Name: "{app}\bin\win64\openvr_api.dll"
 Type: files; Name: "{app}\manifest\steamvr_gesture_exit.vrmanifest"
