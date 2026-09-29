@@ -18,6 +18,12 @@ if ($packageVersion -ne $version) {
     throw "VERSION ($version) and package.json ($packageVersion) do not match."
 }
 
+$innoVersionPath = Join-Path $PSScriptRoot "INNO_SETUP_VERSION"
+$requiredInnoVersion = (Get-Content -LiteralPath $innoVersionPath -Raw).Trim()
+if ($requiredInnoVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "INNO_SETUP_VERSION must contain X.Y.Z."
+}
+
 if (-not $SkipRuntimeBuild) {
     & (Join-Path $projectRoot "scripts\windows\dev.ps1") package -Configuration Release
 }
@@ -59,6 +65,9 @@ Copy-Item -LiteralPath $helperCli -Destination (Join-Path $payloadRoot "installe
 Copy-Item -LiteralPath $helperOpenVr -Destination (Join-Path $payloadRoot "installer\openvr_api.dll") -Force
 Copy-Item -LiteralPath $coordinatorRunner -Destination (Join-Path $payloadRoot "installer\coordinator_runner.exe") -Force
 Copy-Item -LiteralPath $transactionScript -Destination (Join-Path $payloadRoot "installer\transaction.ps1") -Force
+$projectLicense = Join-Path $projectRoot "LICENSE"
+if (-not (Test-Path -LiteralPath $projectLicense -PathType Leaf)) { throw "Missing project license: $projectLicense" }
+Copy-Item -LiteralPath $projectLicense -Destination (Join-Path $payloadRoot "LICENSE") -Force
 $openVrLicense = Join-Path $projectRoot "openvr\LICENSE"
 if (-not (Test-Path -LiteralPath $openVrLicense -PathType Leaf)) { throw "Missing OpenVR license: $openVrLicense" }
 @(
@@ -110,7 +119,13 @@ if (-not $IsccPath) {
     }
 }
 if (-not $IsccPath -or -not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
-    throw "ISCC.exe was not found. Install Inno Setup 7 or pass -IsccPath."
+    throw "ISCC.exe was not found. Install Inno Setup $requiredInnoVersion or pass -IsccPath."
+}
+
+$isccVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($IsccPath)
+$actualInnoVersion = "$($isccVersionInfo.FileMajorPart).$($isccVersionInfo.FileMinorPart).$($isccVersionInfo.FileBuildPart)"
+if ($actualInnoVersion -ne $requiredInnoVersion) {
+    throw "ISCC.exe version $actualInnoVersion does not match required Inno Setup version $requiredInnoVersion."
 }
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
