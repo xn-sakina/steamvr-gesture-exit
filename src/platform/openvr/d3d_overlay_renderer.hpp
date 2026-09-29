@@ -48,7 +48,7 @@ struct DashboardStatusDisplay {
   bool operator==(const DashboardStatusDisplay&) const = default;
 };
 struct DashboardSurfaceModel {
-  std::wstring settings_title, diagnostics_title, help_title, notice;
+  std::wstring settings_title, diagnostics_title, help_title, notice, version_tag;
   DashboardNoticeTone notice_tone = DashboardNoticeTone::Success;
   core::DashboardTab active_tab = core::DashboardTab::Settings;
   std::optional<core::DashboardTab> hovered_tab;

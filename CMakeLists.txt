@@ -128,6 +128,7 @@ if(WIN32)
         WIN32_LEAN_AND_MEAN
         UNICODE
         _UNICODE
+        STEAMVR_GESTURE_EXIT_VERSION="${PROJECT_VERSION}"
     )
     if(MSVC)
         target_compile_options(steamvr_gesture_exit PRIVATE /W4 /permissive- /utf-8)

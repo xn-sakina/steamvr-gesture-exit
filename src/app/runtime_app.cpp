@@ -483,6 +483,7 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   model.settings_title = text(core::StringId::SettingsTitle);
   model.diagnostics_title = text(core::StringId::DiagnosticsTitle);
   model.help_title = text(core::StringId::QuickGuide);
+  model.version_tag = widen("v" STEAMVR_GESTURE_EXIT_VERSION);
   if (save_notice_success_ && now < save_notice_until_) {
     model.notice = text(*save_notice_success_ ? core::StringId::SettingsSaved
                                               : core::StringId::SettingsSaveFailed);

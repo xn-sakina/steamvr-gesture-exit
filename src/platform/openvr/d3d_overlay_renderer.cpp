@@ -31,7 +31,7 @@ struct D3dOverlayRenderer::Impl {
   ComPtr<ID2D1Factory> d2d;
   ComPtr<IDWriteFactory> write;
   ComPtr<IDWriteTextFormat> title, body, button, dashboard_tab, dashboard_button, label, help_text,
-      step_number, small_text_format, countdown_number;
+      step_number, small_text_format, version_tag, countdown_number;
   ComPtr<ID2D1StrokeStyle> round_stroke;
   std::map<std::string, Surface> surfaces;
   std::string error;
@@ -227,6 +227,9 @@ bool D3dOverlayRenderer::initialize() {
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14, L"",
                                  &impl_->small_text_format);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12, L"",
+                                 &impl_->version_tag);
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 76, L"",
                                  &impl_->countdown_number);
   D2D1_STROKE_STYLE_PROPERTIES stroke_properties = D2D1::StrokeStyleProperties();
@@ -235,7 +238,8 @@ bool D3dOverlayRenderer::initialize() {
   (void)impl_->d2d->CreateStrokeStyle(stroke_properties, nullptr, 0, &impl_->round_stroke);
   if (!impl_->title || !impl_->body || !impl_->button || !impl_->dashboard_tab ||
       !impl_->dashboard_button || !impl_->label || !impl_->help_text || !impl_->step_number ||
-      !impl_->small_text_format || !impl_->countdown_number || !impl_->round_stroke) {
+      !impl_->small_text_format || !impl_->version_tag || !impl_->countdown_number ||
+      !impl_->round_stroke) {
     impl_->error = "CreateTextFormat failed";
     return false;
   }
@@ -253,6 +257,8 @@ bool D3dOverlayRenderer::initialize() {
   impl_->help_text->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->step_number->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   impl_->step_number->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+  impl_->version_tag->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  impl_->version_tag->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   return true;
 }
 bool D3dOverlayRenderer::create_surface(const std::string& id, uint32_t w, uint32_t h) {
@@ -720,6 +726,13 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
       t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
                    impl_->help_text.Get(), D2D1::RectF(132, top + 4, 948, top + 104), white.Get());
     }
+  }
+  if (!m.version_tag.empty()) {
+    const auto badge = D2D1::RoundedRect(D2D1::RectF(890, 433, 972, 447), 7.0f, 7.0f);
+    t->FillRoundedRectangle(badge, active_tab.Get());
+    t->DrawRoundedRectangle(badge, hover.Get(), 1.0f);
+    t->DrawTextW(m.version_tag.c_str(), static_cast<UINT32>(m.version_tag.size()),
+                 impl_->version_tag.Get(), badge.rect, muted.Get());
   }
   const auto result = t->EndDraw();
   if (FAILED(result)) {
