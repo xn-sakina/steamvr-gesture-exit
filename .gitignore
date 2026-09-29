@@ -3,4 +3,9 @@
 node_modules/
 /openvr
 /out
-/prompts
+/.agents/
+/docs/windows-development.md
+/docs/windows-distribution.md
+/docs/test-plan/
+/prompts/
+/DEVELOPMENT.md
