@@ -546,7 +546,7 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize_last_exit(LastExitStatus::Cancelled, Language::ChineseSimplified) == "已取消");
   CHECK(localize_last_exit(LastExitStatus::Failed, Language::ChineseSimplified) == "失败");
   CHECK(localize_last_exit(LastExitStatus::TargetUnavailable, Language::ChineseSimplified) ==
-        "游戏已关闭或切换");
+        "游戏已关闭或被切换");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::English) == "Succeeded");
 }
 

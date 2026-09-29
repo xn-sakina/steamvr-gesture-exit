@@ -53,8 +53,8 @@ constexpr std::array<TextPair, 62> strings{{
     {"English", "English"},
     {"Chinese", "中文"},
     {"Found", "已找到"},
-    {"Identifying the current game…", "正在识别当前游戏…"},
-    {"Unable to read the game currently running in SteamVR.", "无法读取 SteamVR 正在运行的游戏。"},
+    {"Identifying the current game...", "正在识别当前游戏..."},
+    {"Unable to retrieve the game currently running in SteamVR.", "无法获取 SteamVR 正在运行的游戏。"},
     {"No VR game is currently running.", "当前没有打开 VR 游戏。"},
     {"Current VR game not found.", "未找到当前 VR 游戏。"},
     {"The current app is not a VR game.", "当前打开的不是 VR 游戏。"},
@@ -65,7 +65,7 @@ constexpr std::array<TextPair, 62> strings{{
     {"The game has closed or could not be found.", "游戏已关闭或无法找到。"},
     {"You do not have permission to close this game.", "没有权限关闭这个游戏程序。"},
     {"Unable to confirm whether the game is still running.", "无法确认游戏是否仍在运行。"},
-    {"Unable to verify the game's location.", "无法确认游戏程序位置。"},
+    {"Unable to locate the game's executable file.", "无法找到游戏程序的文件位置。"},
     {"This game cannot be exited.", "这个游戏程序无法退出。"},
     {"SteamVR Gesture Exit", "SteamVR手势退出"},
     {"Wave to Show the Exit Button", "挥手唤出退出按钮"},
@@ -75,7 +75,7 @@ constexpr std::array<TextPair, 62> strings{{
     {"Succeeded", "成功"},
     {"Cancelled", "已取消"},
     {"Failed", "失败"},
-    {"Game Closed or Switched", "游戏已关闭或切换"},
+    {"Game Closed or Switched Away", "游戏已关闭或被切换"},
 }};
 static_assert(strings.size() == static_cast<std::size_t>(StringId::LastExitTargetUnavailable) + 1);
 
