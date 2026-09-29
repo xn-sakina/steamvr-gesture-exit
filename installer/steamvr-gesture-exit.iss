@@ -76,14 +76,6 @@ AllowCancelDuringInstall=yes
 DirExistsWarning=yes
 ShowLanguageDialog=no
 LanguageDetectionMethod=uilanguage
-#ifdef SignToolName
-SignTool={#SignToolName}
-SignedUninstaller=yes
-SignToolRetryCount=3
-SignToolRetryDelay=5000
-#else
-SignedUninstaller=no
-#endif
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
