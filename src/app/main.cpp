@@ -59,7 +59,9 @@ class RuntimeInstance {
   }
   RuntimeInstance(const RuntimeInstance&) = delete;
   RuntimeInstance& operator=(const RuntimeInstance&) = delete;
-  bool acquired() const { return acquired_; }
+  bool acquired() const {
+    return acquired_;
+  }
 
  private:
   HANDLE mutex_ = nullptr;

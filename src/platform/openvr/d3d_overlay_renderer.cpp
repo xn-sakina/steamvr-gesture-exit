@@ -146,7 +146,8 @@ struct D3dOverlayRenderer::Impl {
       return;
     surface.dashboard_logo_attempted = true;
     const HMODULE module = GetModuleHandleW(nullptr);
-    const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_STEAMVR_GESTURE_EXIT_PNG), RT_RCDATA);
+    const HRSRC resource =
+        FindResourceW(module, MAKEINTRESOURCEW(IDR_STEAMVR_GESTURE_EXIT_PNG), RT_RCDATA);
     if (!resource)
       return;
     const HGLOBAL loaded = LoadResource(module, resource);
@@ -474,7 +475,8 @@ bool D3dOverlayRenderer::render_thumbnail(const std::string& id, const std::wstr
     return false;
   }
   const HMODULE module = GetModuleHandleW(nullptr);
-  const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(IDR_STEAMVR_GESTURE_EXIT_PNG), RT_RCDATA);
+  const HRSRC resource =
+      FindResourceW(module, MAKEINTRESOURCEW(IDR_STEAMVR_GESTURE_EXIT_PNG), RT_RCDATA);
   if (!resource) {
     impl_->error = "thumbnail PNG resource unavailable";
     return false;

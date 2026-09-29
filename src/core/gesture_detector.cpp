@@ -41,23 +41,40 @@ GestureConfig gesture_config(const GestureSensitivity sensitivity) noexcept {
 
 std::string_view to_string(GestureDecision decision) noexcept {
   switch (decision) {
-    case GestureDecision::Reset: return "reset";
-    case GestureDecision::HandUntracked: return "hand_untracked";
-    case GestureDecision::TooClose: return "too_close";
-    case GestureDecision::TooFar: return "too_far";
-    case GestureDecision::BehindHead: return "behind_head";
-    case GestureDecision::WaitingForSamples: return "waiting_for_samples";
-    case GestureDecision::InsufficientStroke: return "insufficient_stroke";
-    case GestureDecision::InsufficientReversals: return "insufficient_reversals";
-    case GestureDecision::TooBrief: return "too_brief";
-    case GestureDecision::StrokeTooFast: return "stroke_too_fast";
-    case GestureDecision::StrokeTooSlow: return "stroke_too_slow";
-    case GestureDecision::InputActive: return "input_active";
-    case GestureDecision::AbruptMotion: return "abrupt_motion";
-    case GestureDecision::NonLateralMotion: return "non_lateral_motion";
-    case GestureDecision::UnstablePath: return "unstable_path";
-    case GestureDecision::IrregularMotion: return "irregular_motion";
-    case GestureDecision::Recognized: return "recognized";
+    case GestureDecision::Reset:
+      return "reset";
+    case GestureDecision::HandUntracked:
+      return "hand_untracked";
+    case GestureDecision::TooClose:
+      return "too_close";
+    case GestureDecision::TooFar:
+      return "too_far";
+    case GestureDecision::BehindHead:
+      return "behind_head";
+    case GestureDecision::WaitingForSamples:
+      return "waiting_for_samples";
+    case GestureDecision::InsufficientStroke:
+      return "insufficient_stroke";
+    case GestureDecision::InsufficientReversals:
+      return "insufficient_reversals";
+    case GestureDecision::TooBrief:
+      return "too_brief";
+    case GestureDecision::StrokeTooFast:
+      return "stroke_too_fast";
+    case GestureDecision::StrokeTooSlow:
+      return "stroke_too_slow";
+    case GestureDecision::InputActive:
+      return "input_active";
+    case GestureDecision::AbruptMotion:
+      return "abrupt_motion";
+    case GestureDecision::NonLateralMotion:
+      return "non_lateral_motion";
+    case GestureDecision::UnstablePath:
+      return "unstable_path";
+    case GestureDecision::IrregularMotion:
+      return "irregular_motion";
+    case GestureDecision::Recognized:
+      return "recognized";
   }
   return "reset";
 }
@@ -68,19 +85,14 @@ GestureDetector::GestureDetector(GestureConfig config) : config_(config) {
       config_.minimum_stroke_duration <= std::chrono::milliseconds::zero() ||
       config_.maximum_stroke_duration <= std::chrono::milliseconds::zero() ||
       config_.maximum_stroke_duration <= config_.minimum_stroke_duration ||
-      config_.minimum_stroke_metres <= 0.0 ||
-      config_.minimum_total_lateral_travel_metres <= 0.0 ||
-      config_.maximum_orthogonal_path_ratio <= 0.0 ||
-      config_.minimum_stroke_efficiency <= 0.0 ||
-      config_.minimum_stroke_efficiency >= 1.0 ||
-      config_.maximum_stroke_length_ratio <= 1.0 ||
-      config_.maximum_stroke_timing_ratio <= 1.0 ||
-      config_.maximum_endpoint_drift_ratio <= 0.0 ||
+      config_.minimum_stroke_metres <= 0.0 || config_.minimum_total_lateral_travel_metres <= 0.0 ||
+      config_.maximum_orthogonal_path_ratio <= 0.0 || config_.minimum_stroke_efficiency <= 0.0 ||
+      config_.minimum_stroke_efficiency >= 1.0 || config_.maximum_stroke_length_ratio <= 1.0 ||
+      config_.maximum_stroke_timing_ratio <= 1.0 || config_.maximum_endpoint_drift_ratio <= 0.0 ||
       config_.maximum_endpoint_drift_metres <= 0.0 ||
       config_.maximum_instantaneous_speed_metres_per_second <= 0.0 ||
       config_.minimum_confidence <= 0.0 || config_.minimum_confidence > 1.0 ||
-      config_.required_reversals < 1 ||
-      config_.minimum_head_distance_metres <= 0.0 ||
+      config_.required_reversals < 1 || config_.minimum_head_distance_metres <= 0.0 ||
       config_.maximum_head_distance_metres <= config_.minimum_head_distance_metres ||
       config_.maximum_behind_head_metres < 0.0) {
     throw std::invalid_argument("invalid farewell gesture configuration");
@@ -129,7 +141,8 @@ bool GestureDetector::update(const GestureSample& sample) {
   }
   diagnostic_.sample_count = samples_.size();
   diagnostic_.span_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
-      samples_.back().time - samples_.front().time).count());
+                                             samples_.back().time - samples_.front().time)
+                                             .count());
   if (!motion_matches()) {
     return false;
   }

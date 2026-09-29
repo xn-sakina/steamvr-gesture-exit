@@ -58,13 +58,14 @@ DashboardRect dashboard_timeout_value_rect() noexcept {
   return button_rect(3, 1, 3);
 }
 
-std::optional<DashboardPoint> dashboard_mouse_to_pixels(
-    const float x, const float y, const float mouse_width, const float mouse_height,
-    const float texture_width, const float texture_height) noexcept {
+std::optional<DashboardPoint> dashboard_mouse_to_pixels(const float x, const float y,
+                                                        const float mouse_width,
+                                                        const float mouse_height,
+                                                        const float texture_width,
+                                                        const float texture_height) noexcept {
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(mouse_width) ||
-      !std::isfinite(mouse_height) || mouse_width <= 0 || mouse_height <= 0 ||
-      texture_width <= 0 || texture_height <= 0 || x < 0 || y < 0 || x > mouse_width ||
-      y > mouse_height)
+      !std::isfinite(mouse_height) || mouse_width <= 0 || mouse_height <= 0 || texture_width <= 0 ||
+      texture_height <= 0 || x < 0 || y < 0 || x > mouse_width || y > mouse_height)
     return std::nullopt;
   // OpenVR mouse events use the lower-left origin; Direct2D button bounds use
   // the upper-left origin. The mouse scale is independent of the overlay's

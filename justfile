@@ -10,6 +10,10 @@ test:
     cmake --build --preset host --parallel
     ctest --preset host
 
+format:
+    cmake --preset host
+    cmake --build --preset host --target format
+
 build-dev:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/dev.ps1 package -Configuration Debug
 

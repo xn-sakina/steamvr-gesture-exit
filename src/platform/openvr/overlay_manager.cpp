@@ -176,8 +176,8 @@ bool OverlayManager::initialize() {
     shutdown();
     return false;
   }
-  result = overlays_->CreateOverlay(kPointerRayKey, "SteamVR Gesture Exit Pointer Ray",
-                                    &pointer_ray_);
+  result =
+      overlays_->CreateOverlay(kPointerRayKey, "SteamVR Gesture Exit Pointer Ray", &pointer_ray_);
   if (result != vr::VROverlayError_None) {
     fail("CreateOverlay(pointer ray)", result);
     shutdown();
@@ -322,8 +322,7 @@ bool OverlayManager::submit(vr::VROverlayHandle_t h, const std::string& id, cons
   renderer_.flush();
   return result == vr::VROverlayError_None || fail("SetOverlayTexture", result);
 }
-bool OverlayManager::show_pointer_ray(const app::HandPose& hand,
-                                      const app::Vec3& headset_position,
+bool OverlayManager::show_pointer_ray(const app::HandPose& hand, const app::Vec3& headset_position,
                                       const vr::HmdVector3_t& target) {
   if (pointer_ray_ == vr::k_ulOverlayHandleInvalid)
     return fail("pointer ray overlay unavailable");
@@ -352,10 +351,9 @@ bool OverlayManager::show_pointer_ray(const app::HandPose& hand,
   z_axis = normalized(z_axis);
   const Float3 x_axis = normalized(cross(y_axis, z_axis));
   z_axis = normalized(cross(x_axis, y_axis));
-  const vr::HmdMatrix34_t transform =
-      {{{x_axis.x, y_axis.x, z_axis.x, centre.x},
-        {x_axis.y, y_axis.y, z_axis.y, centre.y},
-        {x_axis.z, y_axis.z, z_axis.z, centre.z}}};
+  const vr::HmdMatrix34_t transform = {{{x_axis.x, y_axis.x, z_axis.x, centre.x},
+                                        {x_axis.y, y_axis.y, z_axis.y, centre.y},
+                                        {x_axis.z, y_axis.z, z_axis.z, centre.z}}};
   const float width = segment_length * static_cast<float>(kPointerRayTextureWidth) /
                       static_cast<float>(kPointerRayTextureHeight);
   auto result = overlays_->SetOverlayWidthInMeters(pointer_ray_, width);
@@ -566,9 +564,9 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
                                ? show_pointer_ray(hand, headset_position, pointer_target)
                                : hide_pointer_ray();
 
-  const auto next_pointer_device =
-      pointer_enabled && hand.pointer_available() ? hand.device_index
-                                                  : vr::k_unTrackedDeviceIndexInvalid;
+  const auto next_pointer_device = pointer_enabled && hand.pointer_available()
+                                       ? hand.device_index
+                                       : vr::k_unTrackedDeviceIndexInvalid;
   if (pointer_device_ != next_pointer_device) {
     pointer_device_ = next_pointer_device;
     trigger_state_primed_ = false;

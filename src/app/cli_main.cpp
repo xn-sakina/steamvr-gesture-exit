@@ -33,15 +33,15 @@ int application_command(int argc, wchar_t** argv) {
     return 0;
   }
   if (command == L"--diagnostics") {
-    std::wcout << L"settings=" << steamvr_gesture_exit::platform::windows::settings_path() << L"\nlogs="
-               << steamvr_gesture_exit::platform::windows::log_directory() << L"\nexecutable="
-               << steamvr_gesture_exit::platform::windows::executable_path() << L"\n";
+    std::wcout << L"settings=" << steamvr_gesture_exit::platform::windows::settings_path()
+               << L"\nlogs=" << steamvr_gesture_exit::platform::windows::log_directory()
+               << L"\nexecutable=" << steamvr_gesture_exit::platform::windows::executable_path()
+               << L"\n";
     return 0;
   }
   const bool manifest_command =
       command == L"--register-manifest" || command == L"--unregister-manifest";
-  const bool status_command =
-      command == L"--manifest-status" || command == L"--autolaunch-status";
+  const bool status_command = command == L"--manifest-status" || command == L"--autolaunch-status";
   const bool autolaunch_command = command == L"--set-autolaunch";
   if (!manifest_command && !status_command && !autolaunch_command) {
     std::cerr << "unknown command\n";

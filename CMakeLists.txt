@@ -22,6 +22,14 @@ option(STEAMVR_GESTURE_EXIT_BUILD_TESTS "Build portable core tests" ON)
 option(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 
 find_program(STEAMVR_GESTURE_EXIT_CLANG_FORMAT NAMES clang-format clang-format-20 clang-format-19 clang-format-18 clang-format-17)
+if(NOT STEAMVR_GESTURE_EXIT_CLANG_FORMAT AND APPLE)
+    execute_process(
+        COMMAND xcrun --find clang-format
+        OUTPUT_VARIABLE STEAMVR_GESTURE_EXIT_CLANG_FORMAT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
 if(STEAMVR_GESTURE_EXIT_CLANG_FORMAT)
     file(GLOB_RECURSE STEAMVR_GESTURE_EXIT_FORMAT_FILES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
@@ -200,11 +208,6 @@ if(WIN32)
         DESTINATION manifest)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/steamvr-gesture-exit.png"
         DESTINATION assets/brand)
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/docs/"
-        DESTINATION docs
-        CONFIGURATIONS Debug
-        FILES_MATCHING PATTERN "*.md")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION . CONFIGURATIONS Debug)
 endif()
 
 if(STEAMVR_GESTURE_EXIT_BUILD_TESTS)

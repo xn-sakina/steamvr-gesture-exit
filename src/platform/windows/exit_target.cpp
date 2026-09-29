@@ -196,7 +196,7 @@ TargetValidation ExitTargetResolver::revalidate(const app::RuntimeTarget& t) con
       lower(p.path) != lower(t.executable_path))
     return TargetValidation::Mismatch;
   return app_key_matches_target(t.app_key, t.pid) ? TargetValidation::Matching
-                                                   : TargetValidation::Mismatch;
+                                                  : TargetValidation::Mismatch;
 }
 bool ExitTargetResolver::auto_launch_enabled(const char* app_key) const {
   std::scoped_lock lock(applications_mutex_);
@@ -219,8 +219,8 @@ bool ExitTargetResolver::app_key_matches_target(const std::string& raw,
   if (!applications_ || !expected_pid)
     return false;
   std::array<char, vr::k_unMaxApplicationKeyLength> mapped_key{};
-  if (applications_->GetApplicationKeyByProcessId(
-          expected_pid, mapped_key.data(), static_cast<uint32_t>(mapped_key.size())) !=
+  if (applications_->GetApplicationKeyByProcessId(expected_pid, mapped_key.data(),
+                                                  static_cast<uint32_t>(mapped_key.size())) !=
           vr::VRApplicationError_None ||
       raw != mapped_key.data())
     return false;

@@ -89,8 +89,9 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
   Json::Value root(Json::objectValue);
   root["timestamp"] = std::string(timestamp_utc);
   root["event"] = std::string(to_string(record.event));
-  root["level"] = record.debug_only ? "debug"
-                  : record.event == DiagnosticEventType::Error ? "error" : "info";
+  root["level"] = record.debug_only                            ? "debug"
+                  : record.event == DiagnosticEventType::Error ? "error"
+                                                               : "info";
   const auto field = [&](std::string_view name, std::string_view value) {
     if (!value.empty())
       root[std::string(name)] = std::string(value);
@@ -118,7 +119,9 @@ std::string serialize_diagnostic_record(const DiagnosticRecord& record,
 }
 
 DiagnosticLog::DiagnosticLog(std::filesystem::path path) : path_(std::move(path)) {}
-DiagnosticLog::~DiagnosticLog() { stop_async(); }
+DiagnosticLog::~DiagnosticLog() {
+  stop_async();
+}
 
 void DiagnosticLog::start_async() {
   std::unique_lock lock(queue_mutex_);

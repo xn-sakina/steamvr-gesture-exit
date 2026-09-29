@@ -97,8 +97,12 @@ class GestureDetector {
 
   [[nodiscard]] bool update(const GestureSample& sample);
   void reset() noexcept;
-  [[nodiscard]] const GestureDiagnostic& diagnostic() const noexcept { return diagnostic_; }
-  [[nodiscard]] const GestureConfig& config() const noexcept { return config_; }
+  [[nodiscard]] const GestureDiagnostic& diagnostic() const noexcept {
+    return diagnostic_;
+  }
+  [[nodiscard]] const GestureConfig& config() const noexcept {
+    return config_;
+  }
 
  private:
   [[nodiscard]] bool pose_is_eligible(const GestureSample& sample) noexcept;

@@ -7,7 +7,9 @@ namespace steamvr_gesture_exit::core {
 SettingsPersistenceWorker::SettingsPersistenceWorker(std::filesystem::path path)
     : store_(std::move(path)), thread_([this] { run(); }) {}
 
-SettingsPersistenceWorker::~SettingsPersistenceWorker() { stop(); }
+SettingsPersistenceWorker::~SettingsPersistenceWorker() {
+  stop();
+}
 
 bool SettingsPersistenceWorker::enqueue(SettingsChange change) {
   {

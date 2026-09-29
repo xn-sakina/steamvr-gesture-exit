@@ -485,10 +485,9 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   model.help_title = text(core::StringId::QuickGuide);
   if (save_notice_success_ && now < save_notice_until_) {
     model.notice = text(*save_notice_success_ ? core::StringId::SettingsSaved
-                                             : core::StringId::SettingsSaveFailed);
-    model.notice_tone = *save_notice_success_
-                            ? platform::openvr::DashboardNoticeTone::Success
-                            : platform::openvr::DashboardNoticeTone::Error;
+                                              : core::StringId::SettingsSaveFailed);
+    model.notice_tone = *save_notice_success_ ? platform::openvr::DashboardNoticeTone::Success
+                                              : platform::openvr::DashboardNoticeTone::Error;
   }
   model.settings = {
       {core::DashboardSettingRow::ConfiguredHand, text(core::StringId::ConfiguredHand), L""},
@@ -1380,8 +1379,8 @@ int RuntimeApp::run() {
     }
     const auto state = flow_->state();
     const auto wrist_events = overlays_->poll_wrist_events(
-        opposite, frame.headset_position, !dashboard_visible,
-        state == core::FlowState::Confirming, state == core::FlowState::CountingDown);
+        opposite, frame.headset_position, !dashboard_visible, state == core::FlowState::Confirming,
+        state == core::FlowState::CountingDown);
     if (!overlays_->error().empty())
       abort_overlay_flow(now, frame);
     else if (!dashboard_visible) {

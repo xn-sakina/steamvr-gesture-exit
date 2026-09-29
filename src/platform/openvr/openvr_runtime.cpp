@@ -49,8 +49,8 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
   const auto& pose = poses[i];
   out.pose_valid = pose.bPoseIsValid;
   out.tracking_result = static_cast<int>(pose.eTrackingResult);
-  out.tracked = out.connected && pose.bPoseIsValid &&
-                pose.eTrackingResult == vr::TrackingResult_Running_OK;
+  out.tracked =
+      out.connected && pose.bPoseIsValid && pose.eTrackingResult == vr::TrackingResult_Running_OK;
   if (out.tracked) {
     out.position = position(pose.mDeviceToAbsoluteTracking);
     out.forward = axis(pose.mDeviceToAbsoluteTracking, 2, -1);
@@ -61,9 +61,9 @@ app::HandPose OpenVrRuntime::sample_hand(vr::ETrackedControllerRole role,
     // such as VRChat may interpret as an AFK transition.
     vr::VRControllerState_t state{};
     out.trigger_available = s->GetControllerState(i, &state, sizeof(state));
-    out.trigger_pressed = out.trigger_available &&
-                          (state.ulButtonPressed &
-                           vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0;
+    out.trigger_pressed =
+        out.trigger_available &&
+        (state.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0;
     if (out.trigger_available) {
       out.input_active = state.ulButtonPressed != 0;
       for (const auto& controller_axis : state.rAxis) {
@@ -89,8 +89,8 @@ app::TrackingFrame OpenVrRuntime::sample_tracking() const {
     auto& h = p[vr::k_unTrackedDeviceIndex_Hmd];
     f.headset_pose_valid = h.bPoseIsValid;
     f.headset_tracking_result = static_cast<int>(h.eTrackingResult);
-    f.headset_tracked = f.headset_connected && h.bPoseIsValid &&
-                        h.eTrackingResult == vr::TrackingResult_Running_OK;
+    f.headset_tracked =
+        f.headset_connected && h.bPoseIsValid && h.eTrackingResult == vr::TrackingResult_Running_OK;
     if (f.headset_tracked) {
       f.headset_position = position(h.mDeviceToAbsoluteTracking);
       f.headset_forward = axis(h.mDeviceToAbsoluteTracking, 2, -1);

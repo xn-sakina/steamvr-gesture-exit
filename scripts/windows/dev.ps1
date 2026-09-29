@@ -21,7 +21,6 @@ $script:PackagePreviousDirectory = "$($script:PackageDirectory).previous"
 $script:ExecutablePath = Join-Path $script:PackageDirectory "bin\win64\steamvr_gesture_exit.exe"
 $script:CliPath = Join-Path $script:PackageDirectory "bin\win64\steamvr_gesture_exit_cli.exe"
 $script:ManifestPath = Join-Path $script:PackageDirectory "manifest\steamvr_gesture_exit.vrmanifest"
-$script:PackageIntegrityFileName = ".package-integrity.json"
 $script:PackageIntegrityCatalogPath = Join-Path (Split-Path $script:PackageDirectory -Parent) ".steamvr-gesture-exit-integrity.json"
 $script:RuntimePackageFiles = @(
     "bin/win64/steamvr_gesture_exit.exe",
@@ -322,26 +321,16 @@ function Write-PackageIntegrity([string]$PackageRoot) {
         created_utc = [DateTime]::UtcNow.ToString("o")
         files = $files
     }
-    if ($Configuration -eq "Release") {
-        $records = @()
-        if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
-            $catalog = Get-Content -LiteralPath $script:PackageIntegrityCatalogPath -Raw | ConvertFrom-Json
-            if ($catalog.schema_version -ne 1) { throw "Package integrity catalog has an unsupported schema." }
-            $records = @($catalog.records)
-        }
-        Write-PackageIntegrityCatalog @($records + $integrity)
-    } else {
-        $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
-        $integrity | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $integrityPath -Encoding UTF8
+    $records = @()
+    if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
+        $catalog = Get-Content -LiteralPath $script:PackageIntegrityCatalogPath -Raw | ConvertFrom-Json
+        if ($catalog.schema_version -ne 1) { throw "Package integrity catalog has an unsupported schema." }
+        $records = @($catalog.records)
     }
+    Write-PackageIntegrityCatalog @($records + $integrity)
 }
 
 function Get-PackageIntegrityRecords([string]$PackageRoot) {
-    $integrityPath = Join-Path $PackageRoot $script:PackageIntegrityFileName
-    if (Test-Path -LiteralPath $integrityPath -PathType Leaf) {
-        Get-Content -LiteralPath $integrityPath -Raw | ConvertFrom-Json
-        return
-    }
     if (-not (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf)) {
         throw "Package integrity record is missing for $PackageRoot. Run 'package' first."
     }
@@ -385,13 +374,11 @@ function Assert-PackageIntegrity([string]$PackageRoot, [object]$Integrity) {
             throw "Package file does not match build '$packageId': $filePath. Run 'package' again."
         }
     }
-    if ($integrity.configuration -eq "Release") {
-        $actualFiles = @(Get-ChildItem -LiteralPath $PackageRoot -Recurse -File | ForEach-Object {
-            $_.FullName.Substring($PackageRoot.Length).TrimStart('\') -replace '\\', '/'
-        })
-        if (@(Compare-Object $requiredFiles $actualFiles).Count -ne 0) {
-            throw "Release package contains files outside the required runtime payload: $PackageRoot"
-        }
+    $actualFiles = @(Get-ChildItem -LiteralPath $PackageRoot -Recurse -File | ForEach-Object {
+        $_.FullName.Substring($PackageRoot.Length).TrimStart('\') -replace '\\', '/'
+    })
+    if (@(Compare-Object $requiredFiles $actualFiles).Count -ne 0) {
+        throw "Package contains files outside the required payload: $PackageRoot"
     }
 }
 
@@ -625,11 +612,7 @@ function Publish-Package {
     }
     if (Test-Path -LiteralPath $script:PackageIntegrityCatalogPath -PathType Leaf) {
         $currentIntegrity = Get-PackageIntegrityRecord $script:PackageDirectory
-        if ($currentIntegrity.configuration -eq "Release") {
-            Write-PackageIntegrityCatalog @($currentIntegrity)
-        } else {
-            Remove-Item -LiteralPath $script:PackageIntegrityCatalogPath -Force
-        }
+        Write-PackageIntegrityCatalog @($currentIntegrity)
     }
 }
 
