@@ -84,7 +84,6 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [LangOptions]
-DialogFontSize=10
 en.LanguageName=English
 zh.LanguageName=简体中文
 zh.LanguageID=$0804
@@ -266,6 +265,8 @@ begin
   else
     VersionText := FmtMessage(CustomMessage('VersionChange'), [PreviousVersion, '{#AppVersion}']);
   WizardForm.WelcomeLabel2.Caption := VersionText;
+  WizardForm.WelcomeLabel2.Font.Size := WizardForm.WelcomeLabel2.Font.Size + 1;
+  WizardForm.AdjustLabelHeight(WizardForm.WelcomeLabel2);
 
   IssueFeedbackText := TNewMemo.Create(WizardForm);
   IssueFeedbackText.Parent := WizardForm.PreparingLabel.Parent;
