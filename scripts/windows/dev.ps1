@@ -30,7 +30,10 @@ $script:RuntimePackageFiles = @(
     "manifest/steamvr_gesture_exit.vrmanifest",
     "assets/brand/steamvr-gesture-exit.png"
 )
-$script:DebugOnlyPackageFiles = @("bin/win64/steamvr_gesture_exit_cli.exe")
+$script:DebugOnlyPackageFiles = @(
+    "bin/win64/steamvr_gesture_exit_cli.exe",
+    "bin/win64/steamvr_gesture_exit_appconfig_editor.exe"
+)
 $script:AppKey = "dev.kanamio.steamvrgestureexit"
 $script:UserDataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRGestureExit"
 $script:LogDirectory = Join-Path $script:UserDataDirectory "logs"
@@ -221,35 +224,18 @@ function Remove-OpenVrResiduals {
     if ($directories.Count -eq 0) {
         throw "No OpenVR configuration directory could be located; clean stopped before deleting the package."
     }
+    $editor = Resolve-AppConfigEditorPath
     foreach ($directory in $directories) {
         if (Get-Process -Name "vrserver" -ErrorAction SilentlyContinue | Select-Object -First 1) {
             throw "SteamVR started during clean; no further config files were changed."
         }
         $appConfig = Join-Path $directory "appconfig.json"
         if (Test-Path -LiteralPath $appConfig -PathType Leaf) {
-            try { $config = Get-Content -LiteralPath $appConfig -Raw -Encoding UTF8 | ConvertFrom-Json }
-            catch { throw "Cannot clean OpenVR app config '$appConfig': $($_.Exception.Message)" }
-            if (-not $config) { throw "OpenVR app config is empty: $appConfig" }
-            $original = @()
-            if ($config.PSObject.Properties["manifest_paths"]) { $original = @($config.manifest_paths) }
-            $remaining = @($original | Where-Object { -not (Test-OwnedManifestPath ([string]$_)) })
-            if ($remaining.Count -ne $original.Count) {
-                $config.manifest_paths = $remaining
-                $temporary = "$appConfig.steamvr-gesture-exit.tmp"
-                try {
-                    $json = $config | ConvertTo-Json -Depth 64
-                    [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
-                    $check = Get-Content -LiteralPath $temporary -Raw -Encoding UTF8 | ConvertFrom-Json
-                    if (@($check.manifest_paths).Count -ne $remaining.Count) {
-                        throw "OpenVR app config verification failed: $appConfig"
-                    }
-                    # PowerShell converts $null to an empty string for .NET string parameters.
-                    [IO.File]::Replace($temporary, $appConfig, [NullString]::Value)
-                    Write-Host "Removed $($original.Count - $remaining.Count) owned manifest path(s) from $appConfig"
-                } finally {
-                    Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
-                }
+            $output = @(& $editor "--remove-owned" $appConfig $script:AppKey $script:ManifestPath 2>&1)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Cannot clean OpenVR app config '$appConfig': $(($output | Out-String).Trim())"
             }
+            Write-Host "Updated $appConfig ($(($output | Out-String).Trim()))"
         }
         foreach ($name in @("$($script:AppKey).vrappconfig", $script:AppKey)) {
             $path = Join-Path (Join-Path $directory "vrappconfig") $name
@@ -428,6 +414,15 @@ function Resolve-CliPath {
         throw "Registration helper is missing: $path. Run 'package -Configuration $($integrity.configuration)' first."
     }
     return $path
+}
+
+function Resolve-AppConfigEditorPath {
+    $packaged = Join-Path $script:PackageDirectory "bin\win64\steamvr_gesture_exit_appconfig_editor.exe"
+    $built = Join-Path $script:BuildDirectory "$Configuration\steamvr_gesture_exit_appconfig_editor.exe"
+    foreach ($path in @($packaged, $built)) {
+        if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
+    }
+    throw "OpenVR app config editor is missing. Run 'build -Configuration $Configuration' first."
 }
 
 function Get-ReceiptValue([string]$Path) {

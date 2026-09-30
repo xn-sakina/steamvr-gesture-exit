@@ -109,7 +109,8 @@ foreach ($relative in $runtimeFiles) {
 $helperCli = Join-Path $buildRoot "steamvr_gesture_exit_cli.exe"
 $helperOpenVr = Join-Path $buildRoot "openvr_api.dll"
 $coordinatorRunner = Join-Path $buildRoot "steamvr_gesture_exit_coordinator_runner.exe"
-foreach ($source in @($helperCli, $helperOpenVr, $coordinatorRunner)) {
+$appConfigEditor = Join-Path $buildRoot "steamvr_gesture_exit_appconfig_editor.exe"
+foreach ($source in @($helperCli, $helperOpenVr, $coordinatorRunner, $appConfigEditor)) {
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing installer helper: $source" }
 }
 
@@ -125,6 +126,7 @@ Copy-Item -LiteralPath $helperCli -Destination (Join-Path $payloadRoot "installe
 Copy-Item -LiteralPath $helperOpenVr -Destination (Join-Path $payloadRoot "installer\openvr_api.dll") -Force
 Copy-Item -LiteralPath $coordinatorRunner -Destination (Join-Path $payloadRoot "installer\coordinator_runner.exe") -Force
 Copy-Item -LiteralPath $transactionScript -Destination (Join-Path $payloadRoot "installer\transaction.ps1") -Force
+Copy-Item -LiteralPath $appConfigEditor -Destination (Join-Path $payloadRoot "installer\steamvr_gesture_exit_appconfig_editor.exe") -Force
 $projectLicense = Join-Path $projectRoot "LICENSE"
 if (-not (Test-Path -LiteralPath $projectLicense -PathType Leaf)) { throw "Missing project license: $projectLicense" }
 Copy-Item -LiteralPath $projectLicense -Destination (Join-Path $payloadRoot "LICENSE") -Force
@@ -226,6 +228,7 @@ $isccArguments = @(
     "/DTransactionScript=$transactionScript",
     "/DPayloadManifest=$payloadManifestPath",
     "/DCoordinatorRunner=$(Join-Path $payloadRoot 'installer\coordinator_runner.exe')",
+    "/DAppConfigEditor=$appConfigEditor",
     "/DPayloadInstallSize=$payloadInstallSize",
     "/DPayloadExpandedSize=$payloadExpandedSize",
     "/DPayloadArchiveSize=$payloadArchiveSize",

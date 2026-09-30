@@ -22,6 +22,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $script:AppKey = "dev.kanamio.steamvrgestureexit"
+$script:AppConfigEditorPath = Join-Path $PSScriptRoot "steamvr_gesture_exit_appconfig_editor.exe"
 $script:DataDirectory = Join-Path $env:LOCALAPPDATA "SteamVRGestureExit"
 $script:StatePath = Join-Path $script:DataDirectory "installer-state.json"
 $script:JournalPath = Join-Path $script:DataDirectory "installer-transaction.json"
@@ -509,6 +510,20 @@ function Assert-SteamVrStopped {
     }
 }
 
+function Invoke-AppConfigEditor([string]$ConfigPath, [string[]]$KnownPaths) {
+    if (-not (Test-Path -LiteralPath $script:AppConfigEditorPath -PathType Leaf)) {
+        throw [InvalidOperationException]::new("cleanup_unverified")
+    }
+    $arguments = [Collections.Generic.List[string]]::new()
+    foreach ($value in @("--remove-owned", $ConfigPath, $script:AppKey)) {
+        $arguments.Add($value)
+    }
+    foreach ($knownPath in $KnownPaths) {
+        if ($knownPath) { $arguments.Add($knownPath) }
+    }
+    [void](Invoke-Helper -Cli $script:AppConfigEditorPath -Arguments @($arguments))
+}
+
 function Remove-OfflineRegistration([string[]]$KnownPaths) {
     Assert-SteamVrStopped
     $directories = @(Get-OpenVrConfigDirectories)
@@ -530,21 +545,7 @@ function Remove-OfflineRegistration([string[]]$KnownPaths) {
                 $backups.Add([ordered]@{ original = $configPath; backup = $configBackup })
                 $index++
 
-                $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                $kept = @($config.manifest_paths | Where-Object {
-                    -not (Test-OwnedManifest ([string]$_) $KnownPaths)
-                })
-                if ($kept.Count -ne @($config.manifest_paths).Count) {
-                    $config.manifest_paths = $kept
-                    $temporary = "$configPath.steamvr-gesture-exit.tmp"
-                    try {
-                        $config | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $temporary -Encoding UTF8
-                        Get-Content -LiteralPath $temporary -Raw -Encoding UTF8 | ConvertFrom-Json | Out-Null
-                        Move-Item -LiteralPath $temporary -Destination $configPath -Force
-                    } finally {
-                        Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
-                    }
-                }
+                Invoke-AppConfigEditor $configPath $KnownPaths
             }
             foreach ($name in @("$($script:AppKey).vrappconfig", $script:AppKey)) {
                 $ownedConfig = Join-Path (Join-Path $directory "vrappconfig") $name
@@ -662,18 +663,9 @@ function Add-OfflineManifest([string]$ManifestPath) {
     foreach ($directory in $directories) {
         $configPath = Join-Path $directory "appconfig.json"
         if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { continue }
-        $config = Read-Json $configPath
-        $paths = @()
-        if ($config.PSObject.Properties["manifest_paths"]) { $paths = @($config.manifest_paths) }
-        if (-not ($paths | Where-Object { Test-SamePath ([string]$_) $ManifestPath })) {
-            $paths += (Get-FullPath $ManifestPath)
-            if ($config.PSObject.Properties["manifest_paths"]) {
-                $config.manifest_paths = $paths
-            } else {
-                $config | Add-Member -NotePropertyName manifest_paths -NotePropertyValue $paths
-            }
-            Write-JsonAtomic $configPath $config
-        }
+        [void](Invoke-Helper -Cli $script:AppConfigEditorPath -Arguments @(
+            "--add", $configPath, (Get-FullPath $ManifestPath)
+        ))
         Assert-SteamVrStopped
         return
     }

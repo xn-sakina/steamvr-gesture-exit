@@ -62,6 +62,24 @@ endif()
 add_library(steamvr_gesture_exit_jsoncpp STATIC openvr/src/jsoncpp.cpp)
 target_include_directories(steamvr_gesture_exit_jsoncpp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/openvr/src")
 
+add_library(steamvr_gesture_exit_appconfig STATIC
+    src/platform/openvr/appconfig_editor.cpp
+)
+target_include_directories(steamvr_gesture_exit_appconfig PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(steamvr_gesture_exit_appconfig PUBLIC cxx_std_20)
+target_link_libraries(steamvr_gesture_exit_appconfig PRIVATE steamvr_gesture_exit_jsoncpp)
+if(MSVC)
+    target_compile_options(steamvr_gesture_exit_appconfig PRIVATE /W4 /permissive- /utf-8)
+    if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+        target_compile_options(steamvr_gesture_exit_appconfig PRIVATE /WX)
+    endif()
+else()
+    target_compile_options(steamvr_gesture_exit_appconfig PRIVATE -Wall -Wextra -Wpedantic)
+    if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+        target_compile_options(steamvr_gesture_exit_appconfig PRIVATE -Werror)
+    endif()
+endif()
+
 add_library(steamvr_gesture_exit_core STATIC
     src/core/types.cpp
     src/core/gesture_detector.cpp
@@ -200,6 +218,39 @@ if(WIN32)
     endif()
     target_link_libraries(steamvr_gesture_exit_cli PRIVATE openvr_api shell32 ole32)
 
+    add_executable(steamvr_gesture_exit_appconfig_editor
+        src/platform/windows/appconfig_editor_main.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
+    )
+    target_include_directories(steamvr_gesture_exit_appconfig_editor PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_compile_features(steamvr_gesture_exit_appconfig_editor PRIVATE cxx_std_20)
+    target_compile_definitions(steamvr_gesture_exit_appconfig_editor PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        UNICODE
+        _UNICODE
+        STEAMVR_GESTURE_EXIT_VERSION="${PROJECT_VERSION}"
+    )
+    if(MSVC)
+        target_compile_options(steamvr_gesture_exit_appconfig_editor PRIVATE /W4 /permissive- /utf-8)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit_appconfig_editor PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(steamvr_gesture_exit_appconfig_editor PRIVATE -Wall -Wextra -Wpedantic)
+        if(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS)
+            target_compile_options(steamvr_gesture_exit_appconfig_editor PRIVATE -Werror)
+        endif()
+    endif()
+    if(MINGW)
+        target_link_options(steamvr_gesture_exit_appconfig_editor PRIVATE -municode -static)
+    endif()
+    target_link_libraries(steamvr_gesture_exit_appconfig_editor PRIVATE
+        steamvr_gesture_exit_appconfig
+    )
+
     add_executable(steamvr_gesture_exit_coordinator_runner
         src/platform/windows/coordinator_runner.cpp
         "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc"
@@ -237,6 +288,7 @@ if(WIN32)
 
     install(TARGETS steamvr_gesture_exit RUNTIME DESTINATION bin/win64)
     install(TARGETS steamvr_gesture_exit_cli RUNTIME DESTINATION bin/win64 CONFIGURATIONS Debug)
+    install(TARGETS steamvr_gesture_exit_appconfig_editor RUNTIME DESTINATION bin/win64 CONFIGURATIONS Debug)
     install(FILES "${OPENVR_ROOT}/bin/win64/openvr_api.dll" DESTINATION bin/win64)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/manifest/steamvr_gesture_exit.vrmanifest"
         DESTINATION manifest)

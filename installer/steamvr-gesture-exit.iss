@@ -16,6 +16,9 @@
 #ifndef CoordinatorRunner
   #error CoordinatorRunner must be provided by installer/build.ps1
 #endif
+#ifndef AppConfigEditor
+  #error AppConfigEditor must be provided by installer/build.ps1
+#endif
 #ifndef PayloadInstallSize
   #error PayloadInstallSize must be provided by installer/build.ps1
 #endif
@@ -126,6 +129,7 @@ Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencrypti
 Source: "{#TransactionScript}"; DestName: "transaction.ps1"; Flags: dontcopy noencryption
 Source: "{#PayloadManifest}"; DestName: "payload.json"; Flags: dontcopy noencryption
 Source: "{#CoordinatorRunner}"; DestName: "coordinator_runner.exe"; Flags: dontcopy noencryption
+Source: "{#AppConfigEditor}"; DestName: "steamvr_gesture_exit_appconfig_editor.exe"; Flags: dontcopy noencryption
 
 [UninstallDelete]
 Type: files; Name: "{app}\.steamvr-gesture-exit-owner.json"
@@ -137,6 +141,7 @@ Type: files; Name: "{app}\installer\steamvr_gesture_exit_cli.exe"
 Type: files; Name: "{app}\installer\coordinator_runner.exe"
 Type: files; Name: "{app}\installer\openvr_api.dll"
 Type: files; Name: "{app}\installer\transaction.ps1"
+Type: files; Name: "{app}\installer\steamvr_gesture_exit_appconfig_editor.exe"
 Type: files; Name: "{app}\LICENSE"
 Type: files; Name: "{app}\THIRD_PARTY_NOTICES.txt"
 Type: dirifempty; Name: "{app}\bin\win64"
@@ -252,6 +257,7 @@ begin
   RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\coordinator_runner.exe'));
   RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\openvr_api.dll'));
   RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\transaction.ps1'));
+  RegisterExtraCloseApplicationsResource(ExpandConstant('{app}\installer\steamvr_gesture_exit_appconfig_editor.exe'));
 end;
 
 function PreviousVersion: String;
@@ -358,6 +364,7 @@ begin
     ExtractTemporaryFile('transaction.ps1');
     ExtractTemporaryFile('payload.json');
     ExtractTemporaryFile('coordinator_runner.exe');
+    ExtractTemporaryFile('steamvr_gesture_exit_appconfig_editor.exe');
     TransactionScript := ExpandConstant('{tmp}\transaction.ps1');
     CoordinatorRunner := ExpandConstant('{tmp}\coordinator_runner.exe');
     UpdateInstallProgress(CustomMessage('PreflightStatus'), 1, 4);
