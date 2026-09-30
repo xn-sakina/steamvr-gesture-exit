@@ -44,7 +44,7 @@ std::optional<std::filesystem::path> path_from_utf8(std::string_view value) {
 #ifdef _WIN32
   if (value.empty())
     return std::filesystem::path{};
-  if (value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+  if (value.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
     return std::nullopt;
   const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
                                          static_cast<int>(value.size()), nullptr, 0);
