@@ -148,32 +148,6 @@ Type: dirifempty; Name: "{app}\installer"
 Type: dirifempty; Name: "{app}"
 
 [Code]
-type
-  TPopupLogFont = record
-    Height: LongInt;
-    Width: LongInt;
-    Escapement: LongInt;
-    Orientation: LongInt;
-    Weight: LongInt;
-    Italic: Byte;
-    Underline: Byte;
-    StrikeOut: Byte;
-    CharSet: Byte;
-    OutPrecision: Byte;
-    ClipPrecision: Byte;
-    Quality: Byte;
-    PitchAndFamily: Byte;
-    FaceName: array[0..31] of Char;
-  end;
-
-const
-  WH_CBT = 5;
-  HCBT_ACTIVATE = 5;
-  WM_SETFONT = $0030;
-  WM_GETFONT = $0031;
-  PopupButtonsYesNo = 1;
-  PopupButtonsOK = 2;
-
 var
   TransactionStarted: Boolean;
   SetupCompleted: Boolean;
@@ -184,149 +158,9 @@ var
   InstallProgressPage: TOutputProgressWizardPage;
   IssueFeedbackText: TNewMemo;
   OpenIssuesButton: TNewButton;
-  PopupTextHook: THandle;
-  PopupTextFont: THandle;
-  ExpectedPopupButtons: Integer;
 
 function GetCurrentProcessId: DWORD;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
-function GetCurrentThreadId: DWORD;
-  external 'GetCurrentThreadId@kernel32.dll stdcall';
-function SetWindowsHookExW(IdHook: Integer; HookProc: NativeInt;
-  ModuleHandle: THandle; ThreadId: DWORD): THandle;
-  external 'SetWindowsHookExW@user32.dll stdcall';
-function UnhookWindowsHookEx(Hook: THandle): Boolean;
-  external 'UnhookWindowsHookEx@user32.dll stdcall';
-function CallNextHookEx(Hook: THandle; Code: Integer;
-  WParam, LParam: NativeInt): NativeInt;
-  external 'CallNextHookEx@user32.dll stdcall';
-function GetDlgItem(Dialog: HWND; ItemId: Integer): HWND;
-  external 'GetDlgItem@user32.dll stdcall';
-function SendMessageW(Window: HWND; Message: UINT;
-  WParam, LParam: NativeInt): NativeInt;
-  external 'SendMessageW@user32.dll stdcall';
-function EnumChildWindows(Parent: HWND; Callback: NativeInt;
-  LParam: NativeInt): Boolean;
-  external 'EnumChildWindows@user32.dll stdcall';
-function GetClassNameW(Window: HWND; var ClassName: String;
-  MaxCount: Integer): Integer;
-  external 'GetClassNameW@user32.dll stdcall';
-function GetWindowTextLengthW(Window: HWND): Integer;
-  external 'GetWindowTextLengthW@user32.dll stdcall';
-function GetDpiForWindow(Window: HWND): UINT;
-  external 'GetDpiForWindow@user32.dll stdcall';
-function GetObjectW(Font: THandle; BufferSize: Integer;
-  var LogFont: TPopupLogFont): Integer;
-  external 'GetObjectW@gdi32.dll stdcall';
-function CreateFontIndirectW(const LogFont: TPopupLogFont): THandle;
-  external 'CreateFontIndirectW@gdi32.dll stdcall';
-function DeleteObject(ObjectHandle: THandle): Boolean;
-  external 'DeleteObject@gdi32.dll stdcall';
-function MulDiv(Number, Numerator, Denominator: Integer): Integer;
-  external 'MulDiv@kernel32.dll stdcall';
-
-function EnlargePopupText(Window: HWND): Boolean;
-var
-  CurrentFont: THandle;
-  FontData: TPopupLogFont;
-  PixelDelta: Integer;
-begin
-  Result := False;
-  CurrentFont := THandle(SendMessageW(Window, WM_GETFONT, 0, 0));
-  if CurrentFont = 0 then
-    Exit;
-  if GetObjectW(CurrentFont, SizeOf(FontData), FontData) = 0 then
-    Exit;
-
-  PixelDelta := MulDiv(1, GetDpiForWindow(Window), 72);
-  if PixelDelta < 1 then
-    PixelDelta := 1;
-  if FontData.Height < 0 then
-    FontData.Height := FontData.Height - PixelDelta
-  else
-    FontData.Height := FontData.Height + PixelDelta;
-
-  if PopupTextFont = 0 then
-    PopupTextFont := CreateFontIndirectW(FontData);
-  if PopupTextFont <> 0 then
-  begin
-    SendMessageW(Window, WM_SETFONT, PopupTextFont, 1);
-    Result := True;
-  end;
-end;
-
-function PopupChildProc(Window: HWND; LParam: NativeInt): Boolean;
-var
-  ClassName: String;
-  ClassNameLength: Integer;
-begin
-  Result := True;
-  SetLength(ClassName, 32);
-  ClassNameLength := GetClassNameW(Window, ClassName, 32);
-  if ClassNameLength = 0 then
-    Exit;
-  SetLength(ClassName, ClassNameLength);
-  if (CompareText(ClassName, 'Static') = 0) and
-    (GetWindowTextLengthW(Window) > 0) then
-    EnlargePopupText(Window);
-end;
-
-procedure ReleasePopupTextHook;
-begin
-  if PopupTextHook <> 0 then
-  begin
-    UnhookWindowsHookEx(PopupTextHook);
-    PopupTextHook := 0;
-  end;
-end;
-
-procedure ReleasePopupTextFont;
-begin
-  if PopupTextFont <> 0 then
-  begin
-    DeleteObject(PopupTextFont);
-    PopupTextFont := 0;
-  end;
-end;
-
-function PopupTextHookProc(Code: Integer;
-  WParam, LParam: NativeInt): NativeInt;
-var
-  Dialog: HWND;
-  TargetDialogFound: Boolean;
-begin
-  if Code = HCBT_ACTIVATE then
-  begin
-    Dialog := HWND(WParam);
-    TargetDialogFound :=
-      ((ExpectedPopupButtons = PopupButtonsYesNo) and
-       (GetDlgItem(Dialog, IDYES) <> 0) and
-       (GetDlgItem(Dialog, IDNO) <> 0)) or
-      ((ExpectedPopupButtons = PopupButtonsOK) and
-       (GetDlgItem(Dialog, IDOK) <> 0));
-
-    if TargetDialogFound then
-    begin
-      EnumChildWindows(Dialog, CreateCallback(@PopupChildProc), 0);
-      ReleasePopupTextHook;
-    end;
-  end;
-
-  Result := CallNextHookEx(0, Code, WParam, LParam);
-end;
-
-procedure ArmPopupTextHook(const PopupButtons: Integer);
-begin
-  ReleasePopupTextHook;
-  ReleasePopupTextFont;
-  ExpectedPopupButtons := PopupButtons;
-  PopupTextHook := SetWindowsHookExW(
-    WH_CBT, CreateCallback(@PopupTextHookProc), 0,
-    GetCurrentThreadId);
-
-  if PopupTextHook = 0 then
-    Log('Could not install the popup text font hook.');
-end;
 
 function Quote(const Value: String): String;
 begin
@@ -579,8 +413,6 @@ procedure DeinitializeSetup;
 var
   ErrorText: String;
 begin
-  ReleasePopupTextHook;
-  ReleasePopupTextFont;
   if TransactionStarted and (not SetupCompleted) and (TransactionScript <> '') then
   begin
     if not RunCoordinator('Rollback', ExpandConstant('{app}'), '', '', ErrorText) then
@@ -591,13 +423,6 @@ end;
 procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
   SetPreviousData(PreviousDataKey, 'Version', '{#AppVersion}');
-end;
-
-procedure CancelButtonClick(CurPageID: Integer;
-  var Cancel, Confirm: Boolean);
-begin
-  if Confirm then
-    ArmPopupTextHook(PopupButtonsYesNo);
 end;
 
 function InitializeUninstall: Boolean;
@@ -616,18 +441,6 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ErrorText: String;
 begin
-  if CurUninstallStep = usPostUninstall then
-  begin
-    if not UninstallSilent then
-      ArmPopupTextHook(PopupButtonsOK);
-    Exit;
-  end;
-  if CurUninstallStep = usDone then
-  begin
-    ReleasePopupTextHook;
-    ReleasePopupTextFont;
-    Exit;
-  end;
   if (CurUninstallStep <> usUninstall) or UninstallPrepared then
     Exit;
   UninstallPrepared := True;

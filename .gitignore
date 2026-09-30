@@ -9,3 +9,4 @@ node_modules/
 /docs/test-plan/
 /prompts/
 /DEVELOPMENT.md
+/installer/cleanup-orphans.ps1
