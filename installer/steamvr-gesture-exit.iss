@@ -56,7 +56,11 @@ SetupMutex={#SetupMutexName}
 OutputDir={#OutputDir}
 OutputBaseFilename=steamvr-gesture-exit-v{#AppVersion}-windows-x64-setup
 SetupIconFile=..\assets\brand\steamvr-gesture-exit.ico
-WizardSmallImageFile=..\assets\brand\steamvr-gesture-exit.png
+WizardBackImageFile=..\assets\brand\steamvr-gesture-exit-wizard-background.png
+WizardBackImageOpacity=96
+WizardImageFile=
+WizardSmallImageFile=
+WizardImageStretch=yes
 UninstallDisplayIcon={app}\bin\win64\steamvr_gesture_exit.exe
 UninstallDisplayName={#AppName}
 UninstallFilesDir={app}\installer\uninstall
@@ -229,7 +233,7 @@ begin
     VersionText := FmtMessage(CustomMessage('FreshInstall'), ['{#AppVersion}'])
   else
     VersionText := FmtMessage(CustomMessage('VersionChange'), [PreviousVersion, '{#AppVersion}']);
-  WizardForm.WelcomeLabel2.Caption := WizardForm.WelcomeLabel2.Caption + #13#10#13#10 + VersionText;
+  WizardForm.WelcomeLabel2.Caption := VersionText;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
