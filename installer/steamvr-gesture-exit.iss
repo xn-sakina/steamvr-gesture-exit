@@ -42,6 +42,7 @@ AppPublisher=Kanamio
 AppPublisherURL=https://github.com/xn-sakina/steamvr-gesture-exit
 AppSupportURL=https://github.com/xn-sakina/steamvr-gesture-exit/issues
 AppUpdatesURL=https://github.com/xn-sakina/steamvr-gesture-exit/releases
+AppComments={cm:AppDescription}
 DefaultDirName={userpf}\SteamVR Gesture Exit
 UsePreviousAppDir=yes
 DisableDirPage=no
@@ -74,20 +75,22 @@ ExtraDiskSpaceRequired={#PayloadInstallSize}
 UninstallDisplaySize={#PayloadInstallSize}
 AllowCancelDuringInstall=yes
 DirExistsWarning=yes
-ShowLanguageDialog=no
+ShowLanguageDialog=yes
 LanguageDetectionMethod=uilanguage
+UsePreviousLanguage=no
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-Name: "zhtrad"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [LangOptions]
 DialogFontSize=10
-zhtrad.LanguageName=中文
-zhtrad.LanguageID=$0404
+en.LanguageName=English
+zh.LanguageName=中文
+zh.LanguageID=$0804
 
 [CustomMessages]
+en.AppDescription=Exit the current VR game with a farewell gesture while keeping SteamVR running.
 en.VersionChange=Installed version: %1%nVersion to install: %2
 en.FreshInstall=Version to install: %1
 en.ProgressTitle=Installing SteamVR Gesture Exit
@@ -97,7 +100,10 @@ en.TransactionStatus=Installing files and registering with SteamVR...
 en.RollbackFailed=The operation did not complete. Run this installer again.
 en.UninstallStatus=Removing this app from SteamVR...
 en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by antivirus software.
+en.IssueFeedback=If installation still fails, report it on GitHub Issues: https://github.com/xn-sakina/steamvr-gesture-exit/issues
+en.OpenIssues=Open Issues
 en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
+zh.AppDescription=通过告别手势退出当前 VR 游戏，同时保持 SteamVR 运行。
 zh.VersionChange=已安装版本：%1%n将安装版本：%2
 zh.FreshInstall=将安装版本：%1
 zh.ProgressTitle=正在安装 SteamVR Gesture Exit
@@ -107,17 +113,9 @@ zh.TransactionStatus=正在安装文件并注册到 SteamVR…
 zh.RollbackFailed=操作未完成，请再次运行此安装程序。
 zh.UninstallStatus=正在从 SteamVR 移除本软件…
 zh.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
+zh.IssueFeedback=如果仍然安装失败，请到 GitHub Issues 反馈：https://github.com/xn-sakina/steamvr-gesture-exit/issues
+zh.OpenIssues=打开 Issues
 zh.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
-zhtrad.VersionChange=已安装版本：%1%n将安装版本：%2
-zhtrad.FreshInstall=将安装版本：%1
-zhtrad.ProgressTitle=正在安装 SteamVR Gesture Exit
-zhtrad.ProgressDescription=安裝程式正在檢查系統並安裝本軟體，請稍候。
-zhtrad.PreflightStatus=正在檢查安裝環境…
-zhtrad.TransactionStatus=正在安装文件并注册到 SteamVR…
-zhtrad.RollbackFailed=操作未完成，请再次运行此安装程序。
-zhtrad.UninstallStatus=正在从 SteamVR 移除本软件…
-zhtrad.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
-zhtrad.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
 
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
@@ -155,6 +153,8 @@ var
   CoordinatorRunner: String;
   ResultFile: String;
   InstallProgressPage: TOutputProgressWizardPage;
+  IssueFeedbackText: TNewMemo;
+  OpenIssuesButton: TNewButton;
 
 function GetCurrentProcessId: DWORD;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
@@ -166,10 +166,33 @@ end;
 
 function CoordinatorLanguage: String;
 begin
-  if (ActiveLanguage = 'zh') or (ActiveLanguage = 'zhtrad') then
+  if ActiveLanguage = 'zh' then
     Result := 'zh'
   else
     Result := 'en';
+end;
+
+procedure OpenIssuesButtonClick(Sender: TObject);
+var
+  ErrorCode: Integer;
+begin
+  if not ShellExec('open', 'https://github.com/xn-sakina/steamvr-gesture-exit/issues',
+    '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode) then
+    Log('Could not open GitHub Issues. Error code: ' + IntToStr(ErrorCode));
+end;
+
+procedure HideIssueFeedback;
+begin
+  IssueFeedbackText.Visible := False;
+  OpenIssuesButton.Visible := False;
+end;
+
+procedure ShowIssueFeedback;
+begin
+  IssueFeedbackText.Text := CustomMessage('IssueFeedback');
+  OpenIssuesButton.Caption := CustomMessage('OpenIssues');
+  IssueFeedbackText.Visible := True;
+  OpenIssuesButton.Visible := True;
 end;
 
 function ReadResultOrDefault(const DefaultText: String): String;
@@ -243,6 +266,26 @@ begin
   else
     VersionText := FmtMessage(CustomMessage('VersionChange'), [PreviousVersion, '{#AppVersion}']);
   WizardForm.WelcomeLabel2.Caption := VersionText;
+
+  IssueFeedbackText := TNewMemo.Create(WizardForm);
+  IssueFeedbackText.Parent := WizardForm.PreparingLabel.Parent;
+  IssueFeedbackText.Left := WizardForm.PreparingLabel.Left;
+  IssueFeedbackText.Top := WizardForm.PreparingLabel.Parent.Height - ScaleY(62);
+  IssueFeedbackText.Width := WizardForm.PreparingLabel.Width - ScaleX(104);
+  IssueFeedbackText.Height := ScaleY(52);
+  IssueFeedbackText.ReadOnly := True;
+  IssueFeedbackText.ScrollBars := ssNone;
+  IssueFeedbackText.WordWrap := True;
+  IssueFeedbackText.HideSelection := False;
+
+  OpenIssuesButton := TNewButton.Create(WizardForm);
+  OpenIssuesButton.Parent := WizardForm.PreparingLabel.Parent;
+  OpenIssuesButton.Left := IssueFeedbackText.Left + IssueFeedbackText.Width + ScaleX(8);
+  OpenIssuesButton.Top := IssueFeedbackText.Top;
+  OpenIssuesButton.Width := ScaleX(96);
+  OpenIssuesButton.Height := ScaleY(30);
+  OpenIssuesButton.OnClick := @OpenIssuesButtonClick;
+  HideIssueFeedback;
 end;
 
 procedure ShowInstallProgress(const StatusText: String; const Position, Maximum: Integer);
@@ -275,6 +318,7 @@ var
   ErrorText: String;
 begin
   Result := '';
+  HideIssueFeedback;
   ShowInstallProgress(CustomMessage('PreflightStatus'), 0, 4);
   try
     ExtractTemporaryFile('transaction.ps1');
@@ -296,6 +340,13 @@ begin
   finally
     HideInstallProgress;
   end;
+  if Result <> '' then
+  begin
+    if WizardSilent then
+      Result := Result + #13#10#13#10 + CustomMessage('IssueFeedback')
+    else
+      ShowIssueFeedback;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -311,7 +362,7 @@ begin
       ArchivePath := ExpandConstant('{tmp}\payload.zip');
       TransactionStarted := True;
       if not RunCoordinator('Install', ExpandConstant('{app}'), ArchivePath, '{#AppVersion}', ErrorText) then
-        RaiseException(ErrorText);
+        RaiseException(ErrorText + #13#10#13#10 + CustomMessage('IssueFeedback'));
       UpdateInstallProgress(CustomMessage('TransactionStatus'), 4, 4);
     finally
       HideInstallProgress;
