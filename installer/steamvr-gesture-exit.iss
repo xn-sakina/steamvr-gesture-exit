@@ -32,6 +32,7 @@
 #define AppName "SteamVR Gesture Exit"
 #define AppIdValue "{{3F4726BD-29BB-4E6D-A869-529D9145745E}"
 #define SetupMutexName "SteamVRGestureExit.Setup.3F4726BD29BB4E6DA869529D9145745E"
+#include "..\assets\brand\product_strings.inc"
 
 [Setup]
 AppId={#AppIdValue}
@@ -93,7 +94,7 @@ en.ExitSetupMessage=Setup is not complete. Exit Setup now?
 zh.ExitSetupMessage=安装尚未完成，确定现在退出吗？
 
 [CustomMessages]
-en.AppDescription=A SteamVR add-on for exiting the current VR game with a gesture.
+en.AppDescription={#AppDescriptionEnglish}
 en.InstalledVersionLabel=Installed version:
 en.InstallVersionLabel=Version to install:
 en.ProgressTitle=Installing SteamVR Gesture Exit
@@ -106,7 +107,7 @@ en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by 
 en.IssueFeedback=If installation still fails, you can report it on GitHub: https://github.com/xn-sakina/steamvr-gesture-exit/issues
 en.OpenIssues=Open feedback page
 en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
-zh.AppDescription=通过手势退出当前 VR 游戏的 SteamVR 插件。
+zh.AppDescription={#AppDescriptionChinese}
 zh.InstalledVersionLabel=已安装版本：
 zh.InstallVersionLabel=将安装版本：
 zh.ProgressTitle=正在安装 SteamVR Gesture Exit
