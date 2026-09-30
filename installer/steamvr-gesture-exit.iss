@@ -88,10 +88,14 @@ en.LanguageName=English
 zh.LanguageName=简体中文
 zh.LanguageID=$0804
 
+[Messages]
+en.ExitSetupMessage=Setup is not complete. Exit Setup now?
+zh.ExitSetupMessage=安装尚未完成，确定现在退出吗？
+
 [CustomMessages]
 en.AppDescription=A SteamVR add-on for exiting the current VR game with a gesture.
-en.VersionChange=Installed version: %1%nVersion to install: %2
-en.FreshInstall=Version to install: %1
+en.InstalledVersionLabel=Installed version:
+en.InstallVersionLabel=Version to install:
 en.ProgressTitle=Installing SteamVR Gesture Exit
 en.ProgressDescription=Please wait while Setup checks your system and installs the app.
 en.PreflightStatus=Checking the installation environment...
@@ -102,16 +106,9 @@ en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by 
 en.IssueFeedback=If installation still fails, you can report it on GitHub: https://github.com/xn-sakina/steamvr-gesture-exit/issues
 en.OpenIssues=Open feedback page
 en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
-en.CancelTitle=Exit Setup
-en.CancelMessage=Setup is not complete. If you exit now, the program will not be installed.%n%nYou may run Setup again at another time to complete the installation.%n%nExit Setup now?
-en.ButtonYes=Yes
-en.ButtonNo=No
-en.ButtonOK=OK
-en.UninstallCompleteTitle=SteamVR Gesture Exit Uninstall
-en.UninstallComplete=SteamVR Gesture Exit was successfully removed from your computer.
 zh.AppDescription=通过手势退出当前 VR 游戏的 SteamVR 插件。
-zh.VersionChange=已安装版本：%1%n将安装版本：%2
-zh.FreshInstall=将安装版本：%1
+zh.InstalledVersionLabel=已安装版本：
+zh.InstallVersionLabel=将安装版本：
 zh.ProgressTitle=正在安装 SteamVR Gesture Exit
 zh.ProgressDescription=安装程序正在检查系统并安装本软件，请稍候。
 zh.PreflightStatus=正在检查安装环境…
@@ -122,13 +119,6 @@ zh.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
 zh.IssueFeedback=如果仍然安装失败，可以到 GitHub 反馈：https://github.com/xn-sakina/steamvr-gesture-exit/issues
 zh.OpenIssues=打开反馈网页
 zh.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
-zh.CancelTitle=退出安装程序
-zh.CancelMessage=安装程序尚未完成。如果现在退出，将不会安装该程序。%n%n您之后可以再次运行安装程序完成安装。%n%n现在退出安装程序吗？
-zh.ButtonYes=是
-zh.ButtonNo=否
-zh.ButtonOK=确定
-zh.UninstallCompleteTitle=SteamVR Gesture Exit 卸载
-zh.UninstallComplete=已顺利从您的计算机中移除 SteamVR Gesture Exit。
 
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
@@ -158,10 +148,31 @@ Type: dirifempty; Name: "{app}\installer"
 Type: dirifempty; Name: "{app}"
 
 [Code]
+type
+  TPopupLogFont = record
+    Height: LongInt;
+    Width: LongInt;
+    Escapement: LongInt;
+    Orientation: LongInt;
+    Weight: LongInt;
+    Italic: Byte;
+    Underline: Byte;
+    StrikeOut: Byte;
+    CharSet: Byte;
+    OutPrecision: Byte;
+    ClipPrecision: Byte;
+    Quality: Byte;
+    PitchAndFamily: Byte;
+    FaceName: array[0..31] of Char;
+  end;
+
 const
   WH_CBT = 5;
   HCBT_ACTIVATE = 5;
-  WM_COMMAND = $0111;
+  WM_SETFONT = $0030;
+  WM_GETFONT = $0031;
+  PopupButtonsYesNo = 1;
+  PopupButtonsOK = 2;
 
 var
   TransactionStarted: Boolean;
@@ -173,8 +184,9 @@ var
   InstallProgressPage: TOutputProgressWizardPage;
   IssueFeedbackText: TNewMemo;
   OpenIssuesButton: TNewButton;
-  UninstallSuccessHook: THandle;
-  ShowUninstallSuccessDialog: Boolean;
+  PopupTextHook: THandle;
+  PopupTextFont: THandle;
+  ExpectedPopupButtons: Integer;
 
 function GetCurrentProcessId: DWORD;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
@@ -190,13 +202,94 @@ function CallNextHookEx(Hook: THandle; Code: Integer;
   external 'CallNextHookEx@user32.dll stdcall';
 function GetDlgItem(Dialog: HWND; ItemId: Integer): HWND;
   external 'GetDlgItem@user32.dll stdcall';
-function PostMessageW(Window: HWND; Message: UINT;
+function SendMessageW(Window: HWND; Message: UINT;
   WParam, LParam: NativeInt): NativeInt;
-  external 'PostMessageW@user32.dll stdcall';
-function ShowWindow(Window: HWND; Command: Integer): Boolean;
-  external 'ShowWindow@user32.dll stdcall';
+  external 'SendMessageW@user32.dll stdcall';
+function EnumChildWindows(Parent: HWND; Callback: NativeInt;
+  LParam: NativeInt): Boolean;
+  external 'EnumChildWindows@user32.dll stdcall';
+function GetClassNameW(Window: HWND; var ClassName: String;
+  MaxCount: Integer): Integer;
+  external 'GetClassNameW@user32.dll stdcall';
+function GetWindowTextLengthW(Window: HWND): Integer;
+  external 'GetWindowTextLengthW@user32.dll stdcall';
+function GetDpiForWindow(Window: HWND): UINT;
+  external 'GetDpiForWindow@user32.dll stdcall';
+function GetObjectW(Font: THandle; BufferSize: Integer;
+  var LogFont: TPopupLogFont): Integer;
+  external 'GetObjectW@gdi32.dll stdcall';
+function CreateFontIndirectW(const LogFont: TPopupLogFont): THandle;
+  external 'CreateFontIndirectW@gdi32.dll stdcall';
+function DeleteObject(ObjectHandle: THandle): Boolean;
+  external 'DeleteObject@gdi32.dll stdcall';
+function MulDiv(Number, Numerator, Denominator: Integer): Integer;
+  external 'MulDiv@kernel32.dll stdcall';
 
-function UninstallSuccessHookProc(Code: Integer;
+function EnlargePopupText(Window: HWND): Boolean;
+var
+  CurrentFont: THandle;
+  FontData: TPopupLogFont;
+  PixelDelta: Integer;
+begin
+  Result := False;
+  CurrentFont := THandle(SendMessageW(Window, WM_GETFONT, 0, 0));
+  if CurrentFont = 0 then
+    Exit;
+  if GetObjectW(CurrentFont, SizeOf(FontData), FontData) = 0 then
+    Exit;
+
+  PixelDelta := MulDiv(1, GetDpiForWindow(Window), 72);
+  if PixelDelta < 1 then
+    PixelDelta := 1;
+  if FontData.Height < 0 then
+    FontData.Height := FontData.Height - PixelDelta
+  else
+    FontData.Height := FontData.Height + PixelDelta;
+
+  if PopupTextFont = 0 then
+    PopupTextFont := CreateFontIndirectW(FontData);
+  if PopupTextFont <> 0 then
+  begin
+    SendMessageW(Window, WM_SETFONT, PopupTextFont, 1);
+    Result := True;
+  end;
+end;
+
+function PopupChildProc(Window: HWND; LParam: NativeInt): Boolean;
+var
+  ClassName: String;
+  ClassNameLength: Integer;
+begin
+  Result := True;
+  SetLength(ClassName, 32);
+  ClassNameLength := GetClassNameW(Window, ClassName, 32);
+  if ClassNameLength = 0 then
+    Exit;
+  SetLength(ClassName, ClassNameLength);
+  if (CompareText(ClassName, 'Static') = 0) and
+    (GetWindowTextLengthW(Window) > 0) then
+    EnlargePopupText(Window);
+end;
+
+procedure ReleasePopupTextHook;
+begin
+  if PopupTextHook <> 0 then
+  begin
+    UnhookWindowsHookEx(PopupTextHook);
+    PopupTextHook := 0;
+  end;
+end;
+
+procedure ReleasePopupTextFont;
+begin
+  if PopupTextFont <> 0 then
+  begin
+    DeleteObject(PopupTextFont);
+    PopupTextFont := 0;
+  end;
+end;
+
+function PopupTextHookProc(Code: Integer;
   WParam, LParam: NativeInt): NativeInt;
 var
   Dialog: HWND;
@@ -205,48 +298,34 @@ begin
   if Code = HCBT_ACTIVATE then
   begin
     Dialog := HWND(WParam);
-    TargetDialogFound := False;
-    if GetDlgItem(Dialog, IDOK) <> 0 then
-    begin
-      TargetDialogFound := True;
-      ShowUninstallSuccessDialog := True;
-      ShowWindow(Dialog, SW_HIDE);
-      PostMessageW(Dialog, WM_COMMAND, IDOK, 0);
-    end;
+    TargetDialogFound :=
+      ((ExpectedPopupButtons = PopupButtonsYesNo) and
+       (GetDlgItem(Dialog, IDYES) <> 0) and
+       (GetDlgItem(Dialog, IDNO) <> 0)) or
+      ((ExpectedPopupButtons = PopupButtonsOK) and
+       (GetDlgItem(Dialog, IDOK) <> 0));
 
-    if (GetDlgItem(Dialog, IDYES) <> 0) and
-      (GetDlgItem(Dialog, IDNO) <> 0) then
-      TargetDialogFound := True;
-
-    if TargetDialogFound and (UninstallSuccessHook <> 0) then
+    if TargetDialogFound then
     begin
-      UnhookWindowsHookEx(UninstallSuccessHook);
-      UninstallSuccessHook := 0;
+      EnumChildWindows(Dialog, CreateCallback(@PopupChildProc), 0);
+      ReleasePopupTextHook;
     end;
   end;
 
   Result := CallNextHookEx(0, Code, WParam, LParam);
 end;
 
-procedure ArmUninstallSuccessReplacement;
+procedure ArmPopupTextHook(const PopupButtons: Integer);
 begin
-  ShowUninstallSuccessDialog := False;
-  if UninstallSuccessHook = 0 then
-    UninstallSuccessHook := SetWindowsHookExW(
-      WH_CBT, CreateCallback(@UninstallSuccessHookProc), 0,
-      GetCurrentThreadId);
+  ReleasePopupTextHook;
+  ReleasePopupTextFont;
+  ExpectedPopupButtons := PopupButtons;
+  PopupTextHook := SetWindowsHookExW(
+    WH_CBT, CreateCallback(@PopupTextHookProc), 0,
+    GetCurrentThreadId);
 
-  if UninstallSuccessHook = 0 then
-    Log('Could not install the uninstall-success replacement hook.');
-end;
-
-procedure ReleaseUninstallSuccessReplacement;
-begin
-  if UninstallSuccessHook <> 0 then
-  begin
-    UnhookWindowsHookEx(UninstallSuccessHook);
-    UninstallSuccessHook := 0;
-  end;
+  if PopupTextHook = 0 then
+    Log('Could not install the popup text font hook.');
 end;
 
 function Quote(const Value: String): String;
@@ -345,19 +424,47 @@ begin
   Result := GetPreviousData('Version', '');
 end;
 
+procedure AddWelcomeVersionRow(const Top: Integer;
+  const LabelText, VersionText: String);
+var
+  LabelControl: TNewStaticText;
+  VersionControl: TNewStaticText;
+begin
+  LabelControl := TNewStaticText.Create(WizardForm);
+  LabelControl.Parent := WizardForm.WelcomePage;
+  LabelControl.AutoSize := True;
+  LabelControl.Left := WizardForm.WelcomeLabel2.Left;
+  LabelControl.Top := Top;
+  LabelControl.Caption := LabelText;
+  LabelControl.Font.Size := WizardForm.WelcomeLabel2.Font.Size + 1;
+
+  VersionControl := TNewStaticText.Create(WizardForm);
+  VersionControl.Parent := WizardForm.WelcomePage;
+  VersionControl.AutoSize := True;
+  VersionControl.Left := LabelControl.Left + LabelControl.Width + ScaleX(4);
+  VersionControl.Top := Top;
+  VersionControl.Caption := VersionText;
+  VersionControl.Font.Size := LabelControl.Font.Size;
+end;
+
 procedure InitializeWizard;
 var
-  VersionText: String;
+  InstalledVersion: String;
+  VersionTop: Integer;
 begin
   InstallProgressPage := CreateOutputProgressPage(
     CustomMessage('ProgressTitle'), CustomMessage('ProgressDescription'));
-  if PreviousVersion = '' then
-    VersionText := FmtMessage(CustomMessage('FreshInstall'), ['{#AppVersion}'])
-  else
-    VersionText := FmtMessage(CustomMessage('VersionChange'), [PreviousVersion, '{#AppVersion}']);
-  WizardForm.WelcomeLabel2.Caption := VersionText;
-  WizardForm.WelcomeLabel2.Font.Size := WizardForm.WelcomeLabel2.Font.Size + 1;
-  WizardForm.AdjustLabelHeight(WizardForm.WelcomeLabel2);
+  InstalledVersion := PreviousVersion;
+  VersionTop := WizardForm.WelcomeLabel2.Top;
+  WizardForm.WelcomeLabel2.Visible := False;
+  if InstalledVersion <> '' then
+  begin
+    AddWelcomeVersionRow(VersionTop,
+      CustomMessage('InstalledVersionLabel'), InstalledVersion);
+    VersionTop := VersionTop + ScaleY(24);
+  end;
+  AddWelcomeVersionRow(VersionTop,
+    CustomMessage('InstallVersionLabel'), '{#AppVersion}');
 
   IssueFeedbackText := TNewMemo.Create(WizardForm);
   IssueFeedbackText.Parent := WizardForm.PreparingLabel.Parent;
@@ -472,6 +579,8 @@ procedure DeinitializeSetup;
 var
   ErrorText: String;
 begin
+  ReleasePopupTextHook;
+  ReleasePopupTextFont;
   if TransactionStarted and (not SetupCompleted) and (TransactionScript <> '') then
   begin
     if not RunCoordinator('Rollback', ExpandConstant('{app}'), '', '', ErrorText) then
@@ -484,85 +593,11 @@ begin
   SetPreviousData(PreviousDataKey, 'Version', '{#AppVersion}');
 end;
 
-function ShowLargeTextDialog(const DialogCaption, MessageText,
-  PrimaryButtonCaption, SecondaryButtonCaption: String;
-  Confirmation: Boolean): Boolean;
-var
-  Dialog: TSetupForm;
-  MessageLabel: TNewStaticText;
-  PrimaryButton: TNewButton;
-  SecondaryButton: TNewButton;
-  ButtonWidth: Integer;
-  DialogResult: Integer;
-begin
-  Dialog := CreateCustomForm(ScaleX(420), ScaleY(190), False, False);
-  try
-    Dialog.Caption := DialogCaption;
-
-    MessageLabel := TNewStaticText.Create(Dialog);
-    MessageLabel.Parent := Dialog;
-    MessageLabel.AutoSize := False;
-    MessageLabel.Left := ScaleX(20);
-    MessageLabel.Top := ScaleY(20);
-    MessageLabel.Width := Dialog.ClientWidth - ScaleX(40);
-    MessageLabel.WordWrap := True;
-    MessageLabel.Caption := MessageText;
-    MessageLabel.Font.Size := MessageLabel.Font.Size + 1;
-    MessageLabel.AdjustHeight;
-
-    PrimaryButton := TNewButton.Create(Dialog);
-    PrimaryButton.Parent := Dialog;
-    PrimaryButton.Caption := PrimaryButtonCaption;
-    PrimaryButton.Top := Dialog.ClientHeight - ScaleY(43);
-    PrimaryButton.Height := ScaleY(23);
-
-    if Confirmation then
-    begin
-      SecondaryButton := TNewButton.Create(Dialog);
-      SecondaryButton.Parent := Dialog;
-      SecondaryButton.Caption := SecondaryButtonCaption;
-      SecondaryButton.Top := PrimaryButton.Top;
-      SecondaryButton.Height := PrimaryButton.Height;
-      ButtonWidth := Dialog.CalculateButtonWidth([PrimaryButton.Caption, SecondaryButton.Caption]);
-      SecondaryButton.Width := ButtonWidth;
-      SecondaryButton.Left := Dialog.ClientWidth - ScaleX(20) - ButtonWidth;
-      SecondaryButton.ModalResult := mrNo;
-      SecondaryButton.Default := True;
-      SecondaryButton.Cancel := True;
-
-      PrimaryButton.Width := ButtonWidth;
-      PrimaryButton.Left := SecondaryButton.Left - ScaleX(8) - ButtonWidth;
-      PrimaryButton.ModalResult := mrYes;
-    end
-    else
-    begin
-      ButtonWidth := Dialog.CalculateButtonWidth([PrimaryButton.Caption]);
-      PrimaryButton.Width := ButtonWidth;
-      PrimaryButton.Left := Dialog.ClientWidth - ScaleX(20) - ButtonWidth;
-      PrimaryButton.ModalResult := mrOk;
-      PrimaryButton.Default := True;
-      PrimaryButton.Cancel := True;
-    end;
-
-    if not IsUninstaller then
-      Dialog.FlipAndCenterIfNeeded(True, WizardForm, False);
-    DialogResult := Dialog.ShowModal;
-    Result := DialogResult = mrYes;
-  finally
-    Dialog.Free;
-  end;
-end;
-
 procedure CancelButtonClick(CurPageID: Integer;
   var Cancel, Confirm: Boolean);
 begin
-  if not Confirm then
-    Exit;
-
-  Confirm := False;
-  Cancel := ShowLargeTextDialog(
-    CustomMessage('CancelTitle'), CustomMessage('CancelMessage'),
-    CustomMessage('ButtonYes'), CustomMessage('ButtonNo'), True);
+  if Confirm then
+    ArmPopupTextHook(PopupButtonsYesNo);
 end;
 
 function InitializeUninstall: Boolean;
@@ -584,20 +619,13 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     if not UninstallSilent then
-      ArmUninstallSuccessReplacement;
+      ArmPopupTextHook(PopupButtonsOK);
     Exit;
   end;
   if CurUninstallStep = usDone then
   begin
-    ReleaseUninstallSuccessReplacement;
-    if ShowUninstallSuccessDialog then
-    begin
-      ShowLargeTextDialog(
-        CustomMessage('UninstallCompleteTitle'),
-        CustomMessage('UninstallComplete'),
-        CustomMessage('ButtonOK'), '', False);
-      ShowUninstallSuccessDialog := False;
-    end;
+    ReleasePopupTextHook;
+    ReleasePopupTextFont;
     Exit;
   end;
   if (CurUninstallStep <> usUninstall) or UninstallPrepared then
