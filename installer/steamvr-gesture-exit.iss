@@ -42,7 +42,7 @@ AppPublisher=Kanamio
 AppPublisherURL=https://github.com/xn-sakina/steamvr-gesture-exit
 AppSupportURL=https://github.com/xn-sakina/steamvr-gesture-exit/issues
 AppUpdatesURL=https://github.com/xn-sakina/steamvr-gesture-exit/releases
-DefaultDirName={localappdata}\Programs\SteamVR Gesture Exit
+DefaultDirName={userpf}\SteamVR Gesture Exit
 UsePreviousAppDir=yes
 DisableDirPage=no
 DisableProgramGroupPage=yes
@@ -87,27 +87,27 @@ zhtrad.LanguageName=中文
 zhtrad.LanguageID=$0404
 
 [CustomMessages]
-en.VersionChange=Installed: %1%nCurrent installer: %2
-en.FreshInstall=Installed: none%nCurrent installer: %1
+en.VersionChange=Installed version: %1%nVersion to install: %2
+en.FreshInstall=Version to install: %1
 en.TransactionStatus=Installing files and registering with SteamVR...
-en.RollbackFailed=Rollback is incomplete. Run this installer again.
-en.UninstallStatus=Removing SteamVR registration...
-en.CoordinatorFailed=Installation helper could not run. Check antivirus settings.
-en.OperationBusy=Another installation or uninstallation is already running.
-zh.VersionChange=已安装：%1%n当前安装包：%2
-zh.FreshInstall=已安装：无%n当前安装包：%1
+en.RollbackFailed=The operation did not complete. Run this installer again.
+en.UninstallStatus=Removing this app from SteamVR...
+en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by antivirus software.
+en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
+zh.VersionChange=已安装版本：%1%n将安装版本：%2
+zh.FreshInstall=将安装版本：%1
 zh.TransactionStatus=正在安装文件并注册到 SteamVR…
-zh.RollbackFailed=回滚未完成，请再次运行此安装程序。
-zh.UninstallStatus=正在移除 SteamVR 注册…
-zh.CoordinatorFailed=无法运行安装辅助程序，请检查杀毒软件拦截。
-zh.OperationBusy=另一个安装或卸载操作正在运行。
-zhtrad.VersionChange=已安装：%1%n当前安装包：%2
-zhtrad.FreshInstall=已安装：无%n当前安装包：%1
+zh.RollbackFailed=操作未完成，请再次运行此安装程序。
+zh.UninstallStatus=正在从 SteamVR 移除本软件…
+zh.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
+zh.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
+zhtrad.VersionChange=已安装版本：%1%n将安装版本：%2
+zhtrad.FreshInstall=将安装版本：%1
 zhtrad.TransactionStatus=正在安装文件并注册到 SteamVR…
-zhtrad.RollbackFailed=回滚未完成，请再次运行此安装程序。
-zhtrad.UninstallStatus=正在移除 SteamVR 注册…
-zhtrad.CoordinatorFailed=无法运行安装辅助程序，请检查杀毒软件拦截。
-zhtrad.OperationBusy=另一个安装或卸载操作正在运行。
+zhtrad.RollbackFailed=操作未完成，请再次运行此安装程序。
+zhtrad.UninstallStatus=正在从 SteamVR 移除本软件…
+zhtrad.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
+zhtrad.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
 
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
