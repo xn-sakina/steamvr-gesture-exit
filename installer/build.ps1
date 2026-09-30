@@ -33,6 +33,22 @@ function New-ZipArchive([string]$SourceDirectory, [string]$DestinationPath) {
     )
 }
 
+function Get-InnoCompilerVersion([string]$Path) {
+    $output = @(& $Path --version 2>&1)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "ISCC.exe failed to report its version (exit code $exitCode): $Path"
+    }
+
+    $versionLines = @($output | ForEach-Object { ([string]$_).Trim() } | Where-Object {
+        $_ -match '^\d+\.\d+\.\d+$'
+    })
+    if ($versionLines.Count -ne 1) {
+        throw "ISCC.exe returned an unrecognized version: $($output -join ' ')"
+    }
+    return $versionLines[0]
+}
+
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot "VERSION") -Raw).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') {
@@ -49,6 +65,8 @@ $requiredInnoVersion = (Get-Content -LiteralPath $innoVersionPath -Raw).Trim()
 if ($requiredInnoVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "INNO_SETUP_VERSION must contain X.Y.Z."
 }
+$innoReleaseTag = $requiredInnoVersion.Replace('.', '_')
+$innoReleaseUrl = "https://github.com/jrsoftware/issrc/releases/tag/is-$innoReleaseTag"
 
 if (-not $SkipRuntimeBuild) {
     & (Join-Path $projectRoot "scripts\windows\dev.ps1") package -Configuration Release
@@ -130,33 +148,59 @@ Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
 New-ZipArchive $payloadRoot $archivePath
 $payloadArchiveSize = [long](Get-Item -LiteralPath $archivePath).Length
 
-if (-not $IsccPath) {
+$requestedIsccPath = $IsccPath
+$isccCandidates = [Collections.Generic.List[string]]::new()
+if ($requestedIsccPath) {
+    $isccCandidates.Add($requestedIsccPath)
+} else {
     $command = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
-    if ($command) { $IsccPath = $command.Source }
-}
-if (-not $IsccPath) {
-    $isccCandidates = [Collections.Generic.List[string]]::new()
+    if ($command) { $isccCandidates.Add($command.Source) }
     if ($env:ProgramFiles) { $isccCandidates.Add((Join-Path $env:ProgramFiles "Inno Setup 7\ISCC.exe")) }
     if ($env:LOCALAPPDATA) { $isccCandidates.Add((Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 7\ISCC.exe")) }
     if (${env:ProgramFiles(x86)}) {
         $isccCandidates.Add((Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7\ISCC.exe"))
     }
-    foreach ($candidate in $isccCandidates) {
-        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-            $IsccPath = $candidate
-            break
-        }
-    }
-}
-if (-not $IsccPath -or -not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
-    throw "ISCC.exe was not found. Install Inno Setup $requiredInnoVersion or pass -IsccPath."
 }
 
-$isccVersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($IsccPath)
-$actualInnoVersion = "$($isccVersionInfo.FileMajorPart).$($isccVersionInfo.FileMinorPart).$($isccVersionInfo.FileBuildPart)"
-if ($actualInnoVersion -ne $requiredInnoVersion) {
-    throw "ISCC.exe version $actualInnoVersion does not match required Inno Setup version $requiredInnoVersion."
+$IsccPath = $null
+$foundCompilers = [Collections.Generic.List[string]]::new()
+foreach ($candidate in ($isccCandidates | Select-Object -Unique)) {
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+    try {
+        $candidateVersion = Get-InnoCompilerVersion $candidate
+    } catch {
+        if ($requestedIsccPath) { throw }
+        $foundCompilers.Add("$candidate (version unavailable)")
+        continue
+    }
+    if ($candidateVersion -eq $requiredInnoVersion) {
+        $IsccPath = $candidate
+        break
+    }
+    if ($requestedIsccPath) {
+        throw @"
+ISCC.exe version $candidateVersion does not match required Inno Setup version $requiredInnoVersion.
+Download and install the required version from:
+$innoReleaseUrl
+"@
+    }
+    $foundCompilers.Add("$candidate ($candidateVersion)")
 }
+if (-not $IsccPath) {
+    if ($foundCompilers.Count -gt 0) {
+        throw @"
+Inno Setup $requiredInnoVersion was not found. Other compilers: $($foundCompilers -join '; ').
+Download and install the required version from:
+$innoReleaseUrl
+"@
+    }
+    throw @"
+ISCC.exe was not found. Install Inno Setup $requiredInnoVersion or pass -IsccPath.
+Download the required version from:
+$innoReleaseUrl
+"@
+}
+Write-Host "Using Inno Setup $requiredInnoVersion`: $IsccPath"
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $isccArguments = @(
