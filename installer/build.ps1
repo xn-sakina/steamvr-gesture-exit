@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 
 [CmdletBinding()]
 param(
@@ -20,6 +20,13 @@ function Get-FileSha256([string]$Path) {
         }
     } finally {
         $algorithm.Dispose()
+    }
+}
+
+function Assert-Utf8Bom([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+        throw "Windows PowerShell source must be UTF-8 with BOM: $Path"
     }
 }
 
@@ -50,6 +57,12 @@ function Get-InnoCompilerVersion([string]$Path) {
 }
 
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$transactionScript = Join-Path $PSScriptRoot "transaction.ps1"
+$windowsDevScript = Join-Path $projectRoot "scripts\windows\dev.ps1"
+foreach ($powershellScript in @($PSCommandPath, $transactionScript, $windowsDevScript)) {
+    Assert-Utf8Bom $powershellScript
+}
+
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot "VERSION") -Raw).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') {
     throw "VERSION must contain X.Y.Z."
@@ -69,7 +82,7 @@ $innoReleaseTag = $requiredInnoVersion.Replace('.', '_')
 $innoReleaseUrl = "https://github.com/jrsoftware/issrc/releases/tag/is-$innoReleaseTag"
 
 if (-not $SkipRuntimeBuild) {
-    & (Join-Path $projectRoot "scripts\windows\dev.ps1") package -Configuration Release
+    & $windowsDevScript package -Configuration Release
 }
 
 $runtimeRoot = Join-Path $projectRoot "out\package\steamvr-gesture-exit"
@@ -77,7 +90,6 @@ $buildRoot = Join-Path $projectRoot "out\build\windows-x64\Release"
 $payloadRoot = Join-Path $projectRoot "out\installer\payload"
 $outputRoot = Join-Path $projectRoot "out\installer"
 $archivePath = Join-Path $outputRoot "payload.zip"
-$transactionScript = Join-Path $PSScriptRoot "transaction.ps1"
 
 $runtimeFiles = @(
     "bin\win64\steamvr_gesture_exit.exe",
