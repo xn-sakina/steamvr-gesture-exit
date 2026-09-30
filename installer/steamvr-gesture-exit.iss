@@ -86,11 +86,11 @@ Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 [LangOptions]
 DialogFontSize=10
 en.LanguageName=English
-zh.LanguageName=中文
+zh.LanguageName=简体中文
 zh.LanguageID=$0804
 
 [CustomMessages]
-en.AppDescription=Exit the current VR game with a farewell gesture while keeping SteamVR running.
+en.AppDescription=A SteamVR add-on for exiting the current VR game with a gesture.
 en.VersionChange=Installed version: %1%nVersion to install: %2
 en.FreshInstall=Version to install: %1
 en.ProgressTitle=Installing SteamVR Gesture Exit
@@ -100,10 +100,10 @@ en.TransactionStatus=Installing files and registering with SteamVR...
 en.RollbackFailed=The operation did not complete. Run this installer again.
 en.UninstallStatus=Removing this app from SteamVR...
 en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by antivirus software.
-en.IssueFeedback=If installation still fails, report it on GitHub Issues: https://github.com/xn-sakina/steamvr-gesture-exit/issues
-en.OpenIssues=Open Issues
+en.IssueFeedback=If installation still fails, you can report it on GitHub: https://github.com/xn-sakina/steamvr-gesture-exit/issues
+en.OpenIssues=Open feedback page
 en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
-zh.AppDescription=通过告别手势退出当前 VR 游戏，同时保持 SteamVR 运行。
+zh.AppDescription=通过手势退出当前 VR 游戏的 SteamVR 插件。
 zh.VersionChange=已安装版本：%1%n将安装版本：%2
 zh.FreshInstall=将安装版本：%1
 zh.ProgressTitle=正在安装 SteamVR Gesture Exit
@@ -113,8 +113,8 @@ zh.TransactionStatus=正在安装文件并注册到 SteamVR…
 zh.RollbackFailed=操作未完成，请再次运行此安装程序。
 zh.UninstallStatus=正在从 SteamVR 移除本软件…
 zh.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
-zh.IssueFeedback=如果仍然安装失败，请到 GitHub Issues 反馈：https://github.com/xn-sakina/steamvr-gesture-exit/issues
-zh.OpenIssues=打开 Issues
+zh.IssueFeedback=如果仍然安装失败，可以到 GitHub 反馈：https://github.com/xn-sakina/steamvr-gesture-exit/issues
+zh.OpenIssues=打开反馈网页
 zh.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
 
 [Files]
