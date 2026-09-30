@@ -80,6 +80,11 @@ if ($requiredInnoVersion -notmatch '^\d+\.\d+\.\d+$') {
 }
 $innoReleaseTag = $requiredInnoVersion.Replace('.', '_')
 $innoReleaseUrl = "https://github.com/jrsoftware/issrc/releases/tag/is-$innoReleaseTag"
+$outputRoot = Join-Path $projectRoot "out\installer"
+$installer = Join-Path $outputRoot "steamvr-gesture-exit-v$version-windows-x64-setup.exe"
+
+# Never leave a same-version installer from an earlier build looking current.
+Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
 
 if (-not $SkipRuntimeBuild) {
     & $windowsDevScript package -Configuration Release
@@ -88,7 +93,6 @@ if (-not $SkipRuntimeBuild) {
 $runtimeRoot = Join-Path $projectRoot "out\package\steamvr-gesture-exit"
 $buildRoot = Join-Path $projectRoot "out\build\windows-x64\Release"
 $payloadRoot = Join-Path $projectRoot "out\installer\payload"
-$outputRoot = Join-Path $projectRoot "out\installer"
 $archivePath = Join-Path $outputRoot "payload.zip"
 
 $runtimeFiles = @(
@@ -231,6 +235,5 @@ $isccArguments += (Join-Path $PSScriptRoot "steamvr-gesture-exit.iss")
 & $IsccPath @isccArguments
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed with exit code $LASTEXITCODE." }
 
-$installer = Join-Path $outputRoot "steamvr-gesture-exit-v$version-windows-x64-setup.exe"
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Installer output was not created: $installer" }
 Write-Host "Installer ready: $installer" -ForegroundColor Green
