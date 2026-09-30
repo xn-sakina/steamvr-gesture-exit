@@ -523,8 +523,7 @@ begin
       SecondaryButton.Caption := SecondaryButtonCaption;
       SecondaryButton.Top := PrimaryButton.Top;
       SecondaryButton.Height := PrimaryButton.Height;
-      ButtonWidth := Dialog.CalculateButtonWidth(
-        [PrimaryButton.Caption, SecondaryButton.Caption]);
+      ButtonWidth := Dialog.CalculateButtonWidth([PrimaryButton.Caption, SecondaryButton.Caption]);
       SecondaryButton.Width := ButtonWidth;
       SecondaryButton.Left := Dialog.ClientWidth - ScaleX(20) - ButtonWidth;
       SecondaryButton.ModalResult := mrNo;
