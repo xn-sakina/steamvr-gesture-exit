@@ -83,12 +83,16 @@ Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "zhtrad"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [LangOptions]
+DialogFontSize=10
 zhtrad.LanguageName=中文
 zhtrad.LanguageID=$0404
 
 [CustomMessages]
 en.VersionChange=Installed version: %1%nVersion to install: %2
 en.FreshInstall=Version to install: %1
+en.ProgressTitle=Installing SteamVR Gesture Exit
+en.ProgressDescription=Please wait while Setup checks your system and installs the app.
+en.PreflightStatus=Checking the installation environment...
 en.TransactionStatus=Installing files and registering with SteamVR...
 en.RollbackFailed=The operation did not complete. Run this installer again.
 en.UninstallStatus=Removing this app from SteamVR...
@@ -96,6 +100,9 @@ en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by 
 en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
 zh.VersionChange=已安装版本：%1%n将安装版本：%2
 zh.FreshInstall=将安装版本：%1
+zh.ProgressTitle=正在安装 SteamVR Gesture Exit
+zh.ProgressDescription=安装程序正在检查系统并安装本软件，请稍候。
+zh.PreflightStatus=正在检查安装环境…
 zh.TransactionStatus=正在安装文件并注册到 SteamVR…
 zh.RollbackFailed=操作未完成，请再次运行此安装程序。
 zh.UninstallStatus=正在从 SteamVR 移除本软件…
@@ -103,6 +110,9 @@ zh.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
 zh.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
 zhtrad.VersionChange=已安装版本：%1%n将安装版本：%2
 zhtrad.FreshInstall=将安装版本：%1
+zhtrad.ProgressTitle=正在安装 SteamVR Gesture Exit
+zhtrad.ProgressDescription=安裝程式正在檢查系統並安裝本軟體，請稍候。
+zhtrad.PreflightStatus=正在檢查安裝環境…
 zhtrad.TransactionStatus=正在安装文件并注册到 SteamVR…
 zhtrad.RollbackFailed=操作未完成，请再次运行此安装程序。
 zhtrad.UninstallStatus=正在从 SteamVR 移除本软件…
@@ -144,6 +154,7 @@ var
   TransactionScript: String;
   CoordinatorRunner: String;
   ResultFile: String;
+  InstallProgressPage: TOutputProgressWizardPage;
 
 function GetCurrentProcessId: DWORD;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
@@ -225,6 +236,8 @@ procedure InitializeWizard;
 var
   VersionText: String;
 begin
+  InstallProgressPage := CreateOutputProgressPage(
+    CustomMessage('ProgressTitle'), CustomMessage('ProgressDescription'));
   if PreviousVersion = '' then
     VersionText := FmtMessage(CustomMessage('FreshInstall'), ['{#AppVersion}'])
   else
@@ -232,20 +245,57 @@ begin
   WizardForm.WelcomeLabel2.Caption := VersionText;
 end;
 
+procedure ShowInstallProgress(const StatusText: String; const Position, Maximum: Integer);
+begin
+  if WizardSilent then
+    Exit;
+  InstallProgressPage.SetText(StatusText, '');
+  InstallProgressPage.SetProgress(Position, Maximum);
+  InstallProgressPage.Show;
+  WizardForm.Update;
+end;
+
+procedure UpdateInstallProgress(const StatusText: String; const Position, Maximum: Integer);
+begin
+  if WizardSilent then
+    Exit;
+  InstallProgressPage.SetText(StatusText, '');
+  InstallProgressPage.SetProgress(Position, Maximum);
+  WizardForm.Update;
+end;
+
+procedure HideInstallProgress;
+begin
+  if not WizardSilent then
+    InstallProgressPage.Hide;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ErrorText: String;
 begin
   Result := '';
-  ExtractTemporaryFile('transaction.ps1');
-  ExtractTemporaryFile('payload.json');
-  ExtractTemporaryFile('coordinator_runner.exe');
-  TransactionScript := ExpandConstant('{tmp}\transaction.ps1');
-  CoordinatorRunner := ExpandConstant('{tmp}\coordinator_runner.exe');
-  if not RunCoordinator('Recover', '', '', '', ErrorText) then
-    Result := ErrorText
-  else if not RunCoordinator('Preflight', ExpandConstant('{app}'), '', '{#AppVersion}', ErrorText) then
-    Result := ErrorText;
+  ShowInstallProgress(CustomMessage('PreflightStatus'), 0, 4);
+  try
+    ExtractTemporaryFile('transaction.ps1');
+    ExtractTemporaryFile('payload.json');
+    ExtractTemporaryFile('coordinator_runner.exe');
+    TransactionScript := ExpandConstant('{tmp}\transaction.ps1');
+    CoordinatorRunner := ExpandConstant('{tmp}\coordinator_runner.exe');
+    UpdateInstallProgress(CustomMessage('PreflightStatus'), 1, 4);
+    if not RunCoordinator('Recover', '', '', '', ErrorText) then
+      Result := ErrorText
+    else
+    begin
+      UpdateInstallProgress(CustomMessage('PreflightStatus'), 2, 4);
+      if not RunCoordinator('Preflight', ExpandConstant('{app}'), '', '{#AppVersion}', ErrorText) then
+        Result := ErrorText
+      else
+        UpdateInstallProgress(CustomMessage('PreflightStatus'), 3, 4);
+    end;
+  finally
+    HideInstallProgress;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -255,12 +305,17 @@ var
 begin
   if CurStep = ssInstall then
   begin
-    WizardForm.StatusLabel.Caption := CustomMessage('TransactionStatus');
-    ExtractTemporaryFile('payload.zip');
-    ArchivePath := ExpandConstant('{tmp}\payload.zip');
-    TransactionStarted := True;
-    if not RunCoordinator('Install', ExpandConstant('{app}'), ArchivePath, '{#AppVersion}', ErrorText) then
-      RaiseException(ErrorText);
+    ShowInstallProgress(CustomMessage('TransactionStatus'), 3, 4);
+    try
+      ExtractTemporaryFile('payload.zip');
+      ArchivePath := ExpandConstant('{tmp}\payload.zip');
+      TransactionStarted := True;
+      if not RunCoordinator('Install', ExpandConstant('{app}'), ArchivePath, '{#AppVersion}', ErrorText) then
+        RaiseException(ErrorText);
+      UpdateInstallProgress(CustomMessage('TransactionStatus'), 4, 4);
+    finally
+      HideInstallProgress;
+    end;
   end
   else if CurStep = ssDone then
   begin
