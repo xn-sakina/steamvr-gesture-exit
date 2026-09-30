@@ -144,6 +144,12 @@ Type: dirifempty; Name: "{app}\installer"
 Type: dirifempty; Name: "{app}"
 
 [Code]
+const
+  WH_CBT = 5;
+  HCBT_ACTIVATE = 5;
+  WM_SETFONT = $0030;
+  MessageBoxTextControlId = -1;
+
 var
   TransactionStarted: Boolean;
   SetupCompleted: Boolean;
@@ -154,9 +160,80 @@ var
   InstallProgressPage: TOutputProgressWizardPage;
   IssueFeedbackText: TNewMemo;
   OpenIssuesButton: TNewButton;
+  LargeMessageTextFont: TFont;
+  LargeMessageTextHook: THandle;
 
 function GetCurrentProcessId: DWORD;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
+function GetCurrentThreadId: DWORD;
+  external 'GetCurrentThreadId@kernel32.dll stdcall';
+function SetWindowsHookExW(IdHook: Integer; HookProc: NativeInt;
+  ModuleHandle: THandle; ThreadId: DWORD): THandle;
+  external 'SetWindowsHookExW@user32.dll stdcall';
+function UnhookWindowsHookEx(Hook: THandle): Boolean;
+  external 'UnhookWindowsHookEx@user32.dll stdcall';
+function CallNextHookEx(Hook: THandle; Code: Integer;
+  WParam, LParam: NativeInt): NativeInt;
+  external 'CallNextHookEx@user32.dll stdcall';
+function GetDlgItem(Dialog: HWND; ItemId: Integer): HWND;
+  external 'GetDlgItem@user32.dll stdcall';
+function SendMessageW(Window: HWND; Message: UINT;
+  WParam, LParam: NativeInt): NativeInt;
+  external 'SendMessageW@user32.dll stdcall';
+
+function LargeMessageTextHookProc(Code: Integer;
+  WParam, LParam: NativeInt): NativeInt;
+var
+  TextControl: HWND;
+begin
+  if Code = HCBT_ACTIVATE then
+  begin
+    TextControl := GetDlgItem(HWND(WParam), MessageBoxTextControlId);
+    if (TextControl <> 0) and (LargeMessageTextFont <> nil) then
+      SendMessageW(TextControl, WM_SETFONT,
+        NativeInt(LargeMessageTextFont.Handle), 1);
+
+    if LargeMessageTextHook <> 0 then
+    begin
+      UnhookWindowsHookEx(LargeMessageTextHook);
+      LargeMessageTextHook := 0;
+    end;
+  end;
+
+  Result := CallNextHookEx(0, Code, WParam, LParam);
+end;
+
+procedure ArmLargeMessageText;
+begin
+  if LargeMessageTextFont = nil then
+  begin
+    LargeMessageTextFont := TFont.Create;
+    LargeMessageTextFont.Name := 'Segoe UI';
+    LargeMessageTextFont.Size := 10;
+  end;
+
+  if LargeMessageTextHook = 0 then
+    LargeMessageTextHook := SetWindowsHookExW(
+      WH_CBT, CreateCallback(@LargeMessageTextHookProc), 0,
+      GetCurrentThreadId);
+
+  if LargeMessageTextHook = 0 then
+    Log('Could not install the message-box font hook.');
+end;
+
+procedure ReleaseLargeMessageText;
+begin
+  if LargeMessageTextHook <> 0 then
+  begin
+    UnhookWindowsHookEx(LargeMessageTextHook);
+    LargeMessageTextHook := 0;
+  end;
+  if LargeMessageTextFont <> nil then
+  begin
+    LargeMessageTextFont.Free;
+    LargeMessageTextFont := nil;
+  end;
+end;
 
 function Quote(const Value: String): String;
 begin
@@ -393,6 +470,21 @@ begin
   SetPreviousData(PreviousDataKey, 'Version', '{#AppVersion}');
 end;
 
+procedure CancelButtonClick(CurPageID: Integer;
+  var Cancel, Confirm: Boolean);
+begin
+  if not Confirm then
+    Exit;
+
+  Confirm := False;
+  ArmLargeMessageText;
+  try
+    Cancel := ExitSetupMsgBox;
+  finally
+    ReleaseLargeMessageText;
+  end;
+end;
+
 function InitializeUninstall: Boolean;
 begin
   if CheckForMutexes('{#SetupMutexName}') then
@@ -409,6 +501,17 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ErrorText: String;
 begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    if not UninstallSilent then
+      ArmLargeMessageText;
+    Exit;
+  end;
+  if CurUninstallStep = usDone then
+  begin
+    ReleaseLargeMessageText;
+    Exit;
+  end;
   if (CurUninstallStep <> usUninstall) or UninstallPrepared then
     Exit;
   UninstallPrepared := True;
