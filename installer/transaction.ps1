@@ -104,6 +104,20 @@ function Get-TextSha256([string]$Text) {
     }
 }
 
+function Get-FileSha256([string]$Path) {
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::OpenRead($Path)
+        try {
+            return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $algorithm.Dispose()
+    }
+}
+
 function Read-JournalSlots {
     $records = [Collections.Generic.List[object]]::new()
     $found = $false
@@ -607,7 +621,7 @@ function Restore-OpenVrSnapshot([object]$Journal) {
         if ([bool]$record.existed) {
             $backup = [string]$record.backup
             if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
-                (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+                (Get-FileSha256 $backup) -ne
                     ([string]$record.sha256).ToLowerInvariant()) {
                 throw [InvalidOperationException]::new("rollback_failed")
             }
@@ -726,7 +740,7 @@ function Assert-Payload([string]$Root, [string]$ExpectedVersion) {
         if ([long]((Get-Item -LiteralPath $path).Length) -ne [long]$record.size) {
             throw [InvalidOperationException]::new("package_invalid")
         }
-        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = Get-FileSha256 $path
         if ($hash -ne ([string]$record.sha256).ToLowerInvariant()) { throw [InvalidOperationException]::new("package_invalid") }
     }
     return $validation.Manifest
@@ -909,7 +923,7 @@ function Undo-Journal {
                         throw [InvalidOperationException]::new("rollback_failed")
                     }
                     if ($file.PSObject.Properties["sha256"] -and $file.sha256 -and
-                        (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+                        (Get-FileSha256 $backup) -ne
                             ([string]$file.sha256).ToLowerInvariant()) {
                         throw [InvalidOperationException]::new("rollback_failed")
                     }
@@ -1071,8 +1085,8 @@ function Invoke-Install {
                 $backupPath = Join-Path ([string]$journal.backup) ([string]$file.path)
                 New-Item -ItemType Directory -Path (Split-Path $backupPath -Parent) -Force | Out-Null
                 Copy-Item -LiteralPath $source -Destination $backupPath -Force
-                $hash = (Get-FileHash -LiteralPath $backupPath -Algorithm SHA256).Hash.ToLowerInvariant()
-                if ($hash -ne (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()) {
+                $hash = Get-FileSha256 $backupPath
+                if ($hash -ne (Get-FileSha256 $source)) {
                     throw [InvalidOperationException]::new("rollback_failed")
                 }
                 $file.sha256 = $hash
@@ -1083,8 +1097,8 @@ function Invoke-Install {
                 if (-not [bool]$file.existed) { continue }
                 New-Item -ItemType Directory -Path (Split-Path ([string]$file.backup) -Parent) -Force | Out-Null
                 Copy-Item -LiteralPath ([string]$file.path) -Destination ([string]$file.backup) -Force
-                $hash = (Get-FileHash -LiteralPath ([string]$file.backup) -Algorithm SHA256).Hash.ToLowerInvariant()
-                if ($hash -ne (Get-FileHash -LiteralPath ([string]$file.path) -Algorithm SHA256).Hash.ToLowerInvariant()) {
+                $hash = Get-FileSha256 ([string]$file.backup)
+                if ($hash -ne (Get-FileSha256 ([string]$file.path))) {
                     throw [InvalidOperationException]::new("rollback_failed")
                 }
                 $file.sha256 = $hash
@@ -1124,7 +1138,7 @@ function Invoke-Install {
                 New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
                 $temporary = "$destination.steamvr-gesture-exit-new"
                 Copy-Item -LiteralPath $source -Destination $temporary -Force
-                if ((Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash) {
+                if ((Get-FileSha256 $temporary) -ne (Get-FileSha256 $source)) {
                     throw [InvalidOperationException]::new("write_failed")
                 }
                 Move-Item -LiteralPath $temporary -Destination $destination -Force
