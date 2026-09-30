@@ -102,6 +102,13 @@ en.CoordinatorFailed=Installation was unsuccessful. It may have been blocked by 
 en.IssueFeedback=If installation still fails, you can report it on GitHub: https://github.com/xn-sakina/steamvr-gesture-exit/issues
 en.OpenIssues=Open feedback page
 en.OperationBusy=Another installer is running. Close it before installing or uninstalling.
+en.CancelTitle=Exit Setup
+en.CancelMessage=Setup is not complete. If you exit now, the program will not be installed.%n%nYou may run Setup again at another time to complete the installation.%n%nExit Setup now?
+en.ButtonYes=Yes
+en.ButtonNo=No
+en.ButtonOK=OK
+en.UninstallCompleteTitle=SteamVR Gesture Exit Uninstall
+en.UninstallComplete=SteamVR Gesture Exit was successfully removed from your computer.
 zh.AppDescription=通过手势退出当前 VR 游戏的 SteamVR 插件。
 zh.VersionChange=已安装版本：%1%n将安装版本：%2
 zh.FreshInstall=将安装版本：%1
@@ -115,6 +122,13 @@ zh.CoordinatorFailed=无法成功安装，也许被杀毒软件拦截。
 zh.IssueFeedback=如果仍然安装失败，可以到 GitHub 反馈：https://github.com/xn-sakina/steamvr-gesture-exit/issues
 zh.OpenIssues=打开反馈网页
 zh.OperationBusy=另一个安装程序正在运行，请关闭后再安装或卸载。
+zh.CancelTitle=退出安装程序
+zh.CancelMessage=安装程序尚未完成。如果现在退出，将不会安装该程序。%n%n您之后可以再次运行安装程序完成安装。%n%n现在退出安装程序吗？
+zh.ButtonYes=是
+zh.ButtonNo=否
+zh.ButtonOK=确定
+zh.UninstallCompleteTitle=SteamVR Gesture Exit 卸载
+zh.UninstallComplete=已顺利从您的计算机中移除 SteamVR Gesture Exit。
 
 [Files]
 Source: "{#PayloadArchive}"; DestName: "payload.zip"; Flags: dontcopy noencryption
@@ -147,8 +161,7 @@ Type: dirifempty; Name: "{app}"
 const
   WH_CBT = 5;
   HCBT_ACTIVATE = 5;
-  WM_SETFONT = $0030;
-  MessageBoxTextControlId = -1;
+  WM_COMMAND = $0111;
 
 var
   TransactionStarted: Boolean;
@@ -160,8 +173,8 @@ var
   InstallProgressPage: TOutputProgressWizardPage;
   IssueFeedbackText: TNewMemo;
   OpenIssuesButton: TNewButton;
-  LargeMessageTextFont: TFont;
-  LargeMessageTextHook: THandle;
+  UninstallSuccessHook: THandle;
+  ShowUninstallSuccessDialog: Boolean;
 
 function GetCurrentProcessId: DWORD;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
@@ -177,61 +190,62 @@ function CallNextHookEx(Hook: THandle; Code: Integer;
   external 'CallNextHookEx@user32.dll stdcall';
 function GetDlgItem(Dialog: HWND; ItemId: Integer): HWND;
   external 'GetDlgItem@user32.dll stdcall';
-function SendMessageW(Window: HWND; Message: UINT;
+function PostMessageW(Window: HWND; Message: UINT;
   WParam, LParam: NativeInt): NativeInt;
-  external 'SendMessageW@user32.dll stdcall';
+  external 'PostMessageW@user32.dll stdcall';
+function ShowWindow(Window: HWND; Command: Integer): Boolean;
+  external 'ShowWindow@user32.dll stdcall';
 
-function LargeMessageTextHookProc(Code: Integer;
+function UninstallSuccessHookProc(Code: Integer;
   WParam, LParam: NativeInt): NativeInt;
 var
-  TextControl: HWND;
+  Dialog: HWND;
+  TargetDialogFound: Boolean;
 begin
   if Code = HCBT_ACTIVATE then
   begin
-    TextControl := GetDlgItem(HWND(WParam), MessageBoxTextControlId);
-    if (TextControl <> 0) and (LargeMessageTextFont <> nil) then
-      SendMessageW(TextControl, WM_SETFONT,
-        NativeInt(LargeMessageTextFont.Handle), 1);
-
-    if LargeMessageTextHook <> 0 then
+    Dialog := HWND(WParam);
+    TargetDialogFound := False;
+    if GetDlgItem(Dialog, IDOK) <> 0 then
     begin
-      UnhookWindowsHookEx(LargeMessageTextHook);
-      LargeMessageTextHook := 0;
+      TargetDialogFound := True;
+      ShowUninstallSuccessDialog := True;
+      ShowWindow(Dialog, SW_HIDE);
+      PostMessageW(Dialog, WM_COMMAND, IDOK, 0);
+    end;
+
+    if (GetDlgItem(Dialog, IDYES) <> 0) and
+      (GetDlgItem(Dialog, IDNO) <> 0) then
+      TargetDialogFound := True;
+
+    if TargetDialogFound and (UninstallSuccessHook <> 0) then
+    begin
+      UnhookWindowsHookEx(UninstallSuccessHook);
+      UninstallSuccessHook := 0;
     end;
   end;
 
   Result := CallNextHookEx(0, Code, WParam, LParam);
 end;
 
-procedure ArmLargeMessageText;
+procedure ArmUninstallSuccessReplacement;
 begin
-  if LargeMessageTextFont = nil then
-  begin
-    LargeMessageTextFont := TFont.Create;
-    LargeMessageTextFont.Name := 'Segoe UI';
-    LargeMessageTextFont.Size := 10;
-  end;
-
-  if LargeMessageTextHook = 0 then
-    LargeMessageTextHook := SetWindowsHookExW(
-      WH_CBT, CreateCallback(@LargeMessageTextHookProc), 0,
+  ShowUninstallSuccessDialog := False;
+  if UninstallSuccessHook = 0 then
+    UninstallSuccessHook := SetWindowsHookExW(
+      WH_CBT, CreateCallback(@UninstallSuccessHookProc), 0,
       GetCurrentThreadId);
 
-  if LargeMessageTextHook = 0 then
-    Log('Could not install the message-box font hook.');
+  if UninstallSuccessHook = 0 then
+    Log('Could not install the uninstall-success replacement hook.');
 end;
 
-procedure ReleaseLargeMessageText;
+procedure ReleaseUninstallSuccessReplacement;
 begin
-  if LargeMessageTextHook <> 0 then
+  if UninstallSuccessHook <> 0 then
   begin
-    UnhookWindowsHookEx(LargeMessageTextHook);
-    LargeMessageTextHook := 0;
-  end;
-  if LargeMessageTextFont <> nil then
-  begin
-    LargeMessageTextFont.Free;
-    LargeMessageTextFont := nil;
+    UnhookWindowsHookEx(UninstallSuccessHook);
+    UninstallSuccessHook := 0;
   end;
 end;
 
@@ -470,6 +484,76 @@ begin
   SetPreviousData(PreviousDataKey, 'Version', '{#AppVersion}');
 end;
 
+function ShowLargeTextDialog(const DialogCaption, MessageText,
+  PrimaryButtonCaption, SecondaryButtonCaption: String;
+  Confirmation: Boolean): Boolean;
+var
+  Dialog: TSetupForm;
+  MessageLabel: TNewStaticText;
+  PrimaryButton: TNewButton;
+  SecondaryButton: TNewButton;
+  ButtonWidth: Integer;
+  DialogResult: Integer;
+begin
+  Dialog := CreateCustomForm(ScaleX(420), ScaleY(190), False, False);
+  try
+    Dialog.Caption := DialogCaption;
+
+    MessageLabel := TNewStaticText.Create(Dialog);
+    MessageLabel.Parent := Dialog;
+    MessageLabel.AutoSize := False;
+    MessageLabel.Left := ScaleX(20);
+    MessageLabel.Top := ScaleY(20);
+    MessageLabel.Width := Dialog.ClientWidth - ScaleX(40);
+    MessageLabel.WordWrap := True;
+    MessageLabel.Caption := MessageText;
+    MessageLabel.Font.Size := MessageLabel.Font.Size + 1;
+    MessageLabel.AdjustHeight;
+
+    PrimaryButton := TNewButton.Create(Dialog);
+    PrimaryButton.Parent := Dialog;
+    PrimaryButton.Caption := PrimaryButtonCaption;
+    PrimaryButton.Top := Dialog.ClientHeight - ScaleY(43);
+    PrimaryButton.Height := ScaleY(23);
+
+    if Confirmation then
+    begin
+      SecondaryButton := TNewButton.Create(Dialog);
+      SecondaryButton.Parent := Dialog;
+      SecondaryButton.Caption := SecondaryButtonCaption;
+      SecondaryButton.Top := PrimaryButton.Top;
+      SecondaryButton.Height := PrimaryButton.Height;
+      ButtonWidth := Dialog.CalculateButtonWidth(
+        [PrimaryButton.Caption, SecondaryButton.Caption]);
+      SecondaryButton.Width := ButtonWidth;
+      SecondaryButton.Left := Dialog.ClientWidth - ScaleX(20) - ButtonWidth;
+      SecondaryButton.ModalResult := mrNo;
+      SecondaryButton.Default := True;
+      SecondaryButton.Cancel := True;
+
+      PrimaryButton.Width := ButtonWidth;
+      PrimaryButton.Left := SecondaryButton.Left - ScaleX(8) - ButtonWidth;
+      PrimaryButton.ModalResult := mrYes;
+    end
+    else
+    begin
+      ButtonWidth := Dialog.CalculateButtonWidth([PrimaryButton.Caption]);
+      PrimaryButton.Width := ButtonWidth;
+      PrimaryButton.Left := Dialog.ClientWidth - ScaleX(20) - ButtonWidth;
+      PrimaryButton.ModalResult := mrOk;
+      PrimaryButton.Default := True;
+      PrimaryButton.Cancel := True;
+    end;
+
+    if not IsUninstaller then
+      Dialog.FlipAndCenterIfNeeded(True, WizardForm, False);
+    DialogResult := Dialog.ShowModal;
+    Result := DialogResult = mrYes;
+  finally
+    Dialog.Free;
+  end;
+end;
+
 procedure CancelButtonClick(CurPageID: Integer;
   var Cancel, Confirm: Boolean);
 begin
@@ -477,12 +561,9 @@ begin
     Exit;
 
   Confirm := False;
-  ArmLargeMessageText;
-  try
-    Cancel := ExitSetupMsgBox;
-  finally
-    ReleaseLargeMessageText;
-  end;
+  Cancel := ShowLargeTextDialog(
+    CustomMessage('CancelTitle'), CustomMessage('CancelMessage'),
+    CustomMessage('ButtonYes'), CustomMessage('ButtonNo'), True);
 end;
 
 function InitializeUninstall: Boolean;
@@ -504,12 +585,20 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     if not UninstallSilent then
-      ArmLargeMessageText;
+      ArmUninstallSuccessReplacement;
     Exit;
   end;
   if CurUninstallStep = usDone then
   begin
-    ReleaseLargeMessageText;
+    ReleaseUninstallSuccessReplacement;
+    if ShowUninstallSuccessDialog then
+    begin
+      ShowLargeTextDialog(
+        CustomMessage('UninstallCompleteTitle'),
+        CustomMessage('UninstallComplete'),
+        CustomMessage('ButtonOK'), '', False);
+      ShowUninstallSuccessDialog := False;
+    end;
     Exit;
   end;
   if (CurUninstallStep <> usUninstall) or UninstallPrepared then
