@@ -1,3 +1,5 @@
+#requires -Version 5.1
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -118,6 +120,11 @@ function Get-FileSha256([string]$Path) {
     }
 }
 
+function Expand-ZipArchive([string]$ArchivePath, [string]$DestinationDirectory) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $DestinationDirectory)
+}
+
 function Read-JournalSlots {
     $records = [Collections.Generic.List[object]]::new()
     $found = $false
@@ -168,7 +175,13 @@ function Write-Journal([object]$Journal) {
     $slots = Read-JournalSlots
     $revision = 1L
     if (@($slots.Records).Count -ne 0) {
-        $revision = [long](@($slots.Records | Measure-Object Revision -Maximum).Maximum) + 1L
+        [long]$maximumRevision = 0
+        foreach ($slot in @($slots.Records)) {
+            if ([long]$slot.Revision -gt $maximumRevision) {
+                $maximumRevision = [long]$slot.Revision
+            }
+        }
+        $revision = $maximumRevision + 1L
     }
     $payloadJson = $Journal | ConvertTo-Json -Depth 20 -Compress
     $envelope = [ordered]@{
@@ -993,7 +1006,7 @@ function Invoke-Install {
     $work = Join-Path ([IO.Path]::GetTempPath()) ("steamvr-gesture-exit-" + [guid]::NewGuid().ToString("N"))
     try {
         New-Item -ItemType Directory -Path $work -Force | Out-Null
-        Expand-Archive -LiteralPath $PayloadArchive -DestinationPath $work -Force
+        Expand-ZipArchive $PayloadArchive $work
         $payload = Assert-Payload $work $Version
         $helper = Join-Path $work "installer\steamvr_gesture_exit_cli.exe"
         if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw [InvalidOperationException]::new("package_invalid") }

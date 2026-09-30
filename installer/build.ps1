@@ -1,3 +1,5 @@
+#requires -Version 5.1
+
 [CmdletBinding()]
 param(
     [string]$IsccPath,
@@ -19,6 +21,16 @@ function Get-FileSha256([string]$Path) {
     } finally {
         $algorithm.Dispose()
     }
+}
+
+function New-ZipArchive([string]$SourceDirectory, [string]$DestinationPath) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::CreateFromDirectory(
+        $SourceDirectory,
+        $DestinationPath,
+        [IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
 }
 
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -91,27 +103,31 @@ if (-not (Test-Path -LiteralPath $openVrLicense -PathType Leaf)) { throw "Missin
 ) -join "`r`n" | Set-Content -LiteralPath (Join-Path $payloadRoot "THIRD_PARTY_NOTICES.txt") -Encoding UTF8
 
 $records = [Collections.Generic.List[object]]::new()
+[long]$payloadInstallSize = 0
+[long]$payloadLargestFileSize = 0
 $payloadPrefix = $payloadRoot.TrimEnd('\') + '\'
 foreach ($file in (Get-ChildItem -LiteralPath $payloadRoot -File -Recurse | Sort-Object FullName)) {
     if (-not $file.FullName.StartsWith($payloadPrefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Payload file escaped the staging root: $($file.FullName)"
     }
     $relative = $file.FullName.Substring($payloadPrefix.Length).Replace('\', '/')
-    $records.Add([ordered]@{
+    [long]$fileSize = $file.Length
+    $records.Add([pscustomobject][ordered]@{
         path = $relative
-        size = [long]$file.Length
+        size = $fileSize
         sha256 = Get-FileSha256 $file.FullName
     })
+    $payloadInstallSize = [long]($payloadInstallSize + $fileSize)
+    if ($fileSize -gt $payloadLargestFileSize) { $payloadLargestFileSize = $fileSize }
 }
-$manifest = [ordered]@{ schema = 1; version = $version; files = $records }
+if ($records.Count -eq 0) { throw "The installer payload is empty." }
+$manifest = [ordered]@{ schema = 1; version = $version; files = @($records) }
 $payloadManifestPath = Join-Path $payloadRoot "payload.json"
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $payloadManifestPath -Encoding UTF8
-$payloadInstallSize = [long](($records | Measure-Object -Property size -Sum).Sum)
-$payloadLargestFileSize = [long](($records | Measure-Object -Property size -Maximum).Maximum)
 $payloadExpandedSize = [long]($payloadInstallSize + (Get-Item -LiteralPath $payloadManifestPath).Length)
 
 Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
-Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal
+New-ZipArchive $payloadRoot $archivePath
 $payloadArchiveSize = [long](Get-Item -LiteralPath $archivePath).Length
 
 if (-not $IsccPath) {

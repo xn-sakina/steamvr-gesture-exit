@@ -1,3 +1,5 @@
+#requires -Version 5.1
+
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
