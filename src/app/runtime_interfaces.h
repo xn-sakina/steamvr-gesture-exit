@@ -18,6 +18,12 @@ struct HandPose {
   int tracking_result = -1;
   std::uint32_t device_index = 0xFFFFFFFFU;
   Vec3 position{}, forward{}, up{}, right{};
+  // OpenVR render models may expose a controller-specific "tip" coordinate
+  // system whose -Z axis is the natural pointing direction. Keep it separate
+  // from the tracked-device pose so gesture recognition continues to use the
+  // physical controller origin.
+  Vec3 aim_position{}, aim_forward{};
+  bool aim_pose_valid = false;
   bool trigger_available = false;
   bool trigger_pressed = false;
   bool input_active = false;
@@ -27,6 +33,12 @@ struct HandPose {
     // separate so a transient input-state failure does not hide the control or
     // its pointer feedback.
     return connected && tracked && device_index != 0xFFFFFFFFU;
+  }
+  [[nodiscard]] constexpr Vec3 pointer_origin() const noexcept {
+    return aim_pose_valid ? aim_position : position;
+  }
+  [[nodiscard]] constexpr Vec3 pointer_direction() const noexcept {
+    return aim_pose_valid ? aim_forward : forward;
   }
 };
 struct TrackingFrame {

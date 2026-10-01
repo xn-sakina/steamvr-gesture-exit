@@ -25,6 +25,7 @@ constexpr float kRightButtonLeft = 268.0f;
 constexpr float kRightButtonRight = 472.0f;
 constexpr uint32_t kPointerRayTextureWidth = 16;
 constexpr uint32_t kPointerRayTextureHeight = 1024;
+constexpr float kPointerRaySourceFadeFraction = 0.07f;
 constexpr size_t kMaxOverlayEventsPerPoll = 256;
 enum class WristHit { None, Left, Right };
 struct Float3 {
@@ -223,14 +224,21 @@ bool OverlayManager::initialize() {
     return false;
   }
   // Keep most of the quad transparent and shape the visible core like a thin
-  // illuminated tube. The texture top maps to local +Y (the panel end), so
-  // that end is already invisible before it reaches the hover point.
+  // illuminated tube. The texture top maps to local +Y (the panel end). Keep
+  // its existing long fade, while the controller end gets only a short fade
+  // over the first 7% of the ray so it emerges softly from the hand.
   std::array<uint8_t, kPointerRayTextureWidth * kPointerRayTextureHeight * 4> ray_pixels{};
   for (uint32_t y = 0; y < kPointerRayTextureHeight; ++y) {
     const float target_to_source =
         static_cast<float>(y) / static_cast<float>(kPointerRayTextureHeight - 1);
-    const float fade_t = std::clamp((target_to_source - 0.12f) / 0.40f, 0.0f, 1.0f);
-    const float length_alpha = fade_t * fade_t * (3.0f - 2.0f * fade_t);
+    const float target_fade_t = std::clamp((target_to_source - 0.12f) / 0.40f, 0.0f, 1.0f);
+    const float target_alpha =
+        target_fade_t * target_fade_t * (3.0f - 2.0f * target_fade_t);
+    const float source_fade_t =
+        std::clamp((1.0f - target_to_source) / kPointerRaySourceFadeFraction, 0.0f, 1.0f);
+    const float source_alpha =
+        source_fade_t * source_fade_t * (3.0f - 2.0f * source_fade_t);
+    const float length_alpha = target_alpha * source_alpha;
     for (uint32_t x = 0; x < kPointerRayTextureWidth; ++x) {
       const float distance_from_centre =
           std::abs((static_cast<float>(x) + 0.5f) - kPointerRayTextureWidth * 0.5f);
@@ -347,7 +355,8 @@ bool OverlayManager::show_pointer_ray(const app::HandPose& hand, const app::Vec3
                                       const vr::HmdVector3_t& target) {
   if (pointer_ray_ == vr::k_ulOverlayHandleInvalid)
     return fail("pointer ray overlay unavailable");
-  const Float3 source{hand.position.x, hand.position.y, hand.position.z};
+  const auto pointer_origin = hand.pointer_origin();
+  const Float3 source{pointer_origin.x, pointer_origin.y, pointer_origin.z};
   const Float3 endpoint{target.v[0], target.v[1], target.v[2]};
   const Float3 segment = endpoint - source;
   const float segment_length = length(segment);
@@ -565,9 +574,12 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
   WristHit hit = WristHit::None;
   vr::HmdVector3_t pointer_target{};
   if (wrist_visible_ && pointer_enabled && hand.pointer_available()) {
+    const auto pointer_origin = hand.pointer_origin();
+    const auto pointer_direction = hand.pointer_direction();
     vr::VROverlayIntersectionParams_t parameters{};
-    parameters.vSource = {{hand.position.x, hand.position.y, hand.position.z}};
-    parameters.vDirection = {{hand.forward.x, hand.forward.y, hand.forward.z}};
+    parameters.vSource = {{pointer_origin.x, pointer_origin.y, pointer_origin.z}};
+    parameters.vDirection =
+        {{pointer_direction.x, pointer_direction.y, pointer_direction.z}};
     parameters.eOrigin = vr::TrackingUniverseStanding;
     vr::VROverlayIntersectionResults_t intersection{};
     if (overlays_->ComputeOverlayIntersection(wrist_, &parameters, &intersection) &&

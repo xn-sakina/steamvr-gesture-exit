@@ -791,6 +791,16 @@ void pointer_availability_uses_tracked_controller() {
   CHECK(!hand.pointer_available());
   hand.connected = true;
   CHECK(hand.pointer_available());
+
+  hand.position = {1.0f, 2.0f, 3.0f};
+  hand.forward = {0.0f, 0.0f, -1.0f};
+  CHECK(hand.pointer_origin().x == 1.0f);
+  CHECK(hand.pointer_direction().z == -1.0f);
+  hand.aim_position = {4.0f, 5.0f, 6.0f};
+  hand.aim_forward = {0.0f, -0.5f, -0.8660254f};
+  hand.aim_pose_valid = true;
+  CHECK(hand.pointer_origin().x == 4.0f);
+  CHECK(hand.pointer_direction().y == -0.5f);
 }
 
 void wrist_pose_smoothing_follows_and_resets_safely() {
