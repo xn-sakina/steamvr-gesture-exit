@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Preflight", "Install", "Commit", "Rollback", "Recover", "Uninstall")]
+    [ValidateSet("Preflight", "Install", "Commit", "Rollback", "Recover", "UninstallCheck", "Uninstall")]
     [string]$Action,
     [string]$PayloadArchive,
     [string]$PayloadManifest,
@@ -294,7 +294,26 @@ function Get-RelativePathUnder([string]$Root, [string]$Path) {
 }
 
 function Test-InnoOwnedPath([string]$Relative) {
-    return $Relative -imatch '^installer\\uninstall\\unins[0-9]+\.(exe|dat|msg)$'
+    # Current releases keep the uninstaller at the install root. Accept the
+    # previous location as well so upgrades can validate and clean it safely.
+    return $Relative -imatch '^(installer\\uninstall\\)?unins[0-9]+\.(exe|dat|msg)$'
+}
+
+function Remove-LegacyUninstallerFiles([string]$Path) {
+    $full = Get-FullPath $Path
+    $legacyDirectory = Join-Path $full "installer\uninstall"
+    if (-not (Test-Path -LiteralPath $legacyDirectory -PathType Container)) { return }
+
+    foreach ($item in @(Get-ChildItem -LiteralPath $legacyDirectory -Force)) {
+        if ($item.PSIsContainer) { continue }
+        $relative = Get-RelativePathUnder $full $item.FullName
+        if (Test-InnoOwnedPath $relative) {
+            Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (@(Get-ChildItem -LiteralPath $legacyDirectory -Force).Count -eq 0) {
+        Remove-Item -LiteralPath $legacyDirectory -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Assert-TargetOwnership([string]$Path, [object]$Payload, [object]$OldState) {
@@ -1231,6 +1250,7 @@ function Invoke-Commit {
     Remove-Item -LiteralPath ([string]$journal.backup) -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Journal
     Remove-OrphanedRollbackDirectories
+    Remove-LegacyUninstallerFiles ([string]$journal.target)
 }
 
 function Invoke-Uninstall {
@@ -1299,6 +1319,7 @@ try {
         "Commit" { Invoke-Commit }
         "Rollback" { Undo-Journal }
         "Recover" { Invoke-Recover }
+        "UninstallCheck" { Assert-SteamVrStopped }
         "Uninstall" { Invoke-Uninstall }
     }
     Write-Result (Get-Message "ok")

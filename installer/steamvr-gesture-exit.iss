@@ -63,7 +63,7 @@ SetupIconFile=..\assets\brand\steamvr-gesture-exit.ico
 WizardSmallImageFile=..\assets\brand\steamvr-gesture-exit.png
 UninstallDisplayIcon={app}\bin\win64\steamvr_gesture_exit.exe
 UninstallDisplayName={#AppName}
-UninstallFilesDir={app}\installer\uninstall
+UninstallFilesDir={app}
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany=Kanamio
 VersionInfoDescription={#AppName} Installer
@@ -143,6 +143,9 @@ Type: files; Name: "{app}\installer\transaction.ps1"
 Type: files; Name: "{app}\installer\steamvr_gesture_exit_appconfig_editor.exe"
 Type: files; Name: "{app}\LICENSE"
 Type: files; Name: "{app}\THIRD_PARTY_NOTICES.txt"
+Type: files; Name: "{app}\installer\uninstall\unins*.exe"
+Type: files; Name: "{app}\installer\uninstall\unins*.dat"
+Type: files; Name: "{app}\installer\uninstall\unins*.msg"
 Type: dirifempty; Name: "{app}\bin\win64"
 Type: dirifempty; Name: "{app}\bin"
 Type: dirifempty; Name: "{app}\manifest"
@@ -433,6 +436,8 @@ begin
 end;
 
 function InitializeUninstall: Boolean;
+var
+  ErrorText: String;
 begin
   if CheckForMutexes('{#SetupMutexName}') then
   begin
@@ -441,6 +446,14 @@ begin
     Exit;
   end;
   CreateMutex('{#SetupMutexName}');
+  TransactionScript := ExpandConstant('{app}\installer\transaction.ps1');
+  CoordinatorRunner := ExpandConstant('{app}\installer\coordinator_runner.exe');
+  if not RunCoordinator('UninstallCheck', '', '', '', ErrorText) then
+  begin
+    MsgBox(ErrorText, mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
   Result := True;
 end;
 
@@ -452,8 +465,6 @@ begin
     Exit;
   UninstallPrepared := True;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('UninstallStatus');
-  TransactionScript := ExpandConstant('{app}\installer\transaction.ps1');
-  CoordinatorRunner := ExpandConstant('{app}\installer\coordinator_runner.exe');
   if not RunCoordinator('Uninstall', ExpandConstant('{app}'), '', '', ErrorText) then
   begin
     MsgBox(ErrorText, mbError, MB_OK);
