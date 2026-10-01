@@ -894,7 +894,6 @@ int RuntimeApp::run() {
   const auto started_at = std::chrono::steady_clock::now();
   auto next_server_check = started_at;
   auto last_dashboard_refresh_at = started_at;
-  std::optional<std::chrono::steady_clock::time_point> no_devices_since;
   TrackingFrame last_frame{};
   bool dashboard_was_open = dashboard_open();
   std::uint32_t observed_scene_pid = 0;
@@ -1207,17 +1206,11 @@ int RuntimeApp::run() {
       last_tracking_log_at_ = now;
     }
     last_frame = frame;
-    if (!frame.headset_connected || (!frame.left.connected && !frame.right.connected)) {
-      if (!no_devices_since)
-        no_devices_since = now;
-      else if (flow_->state() != core::FlowState::Exiting &&
-               now - *no_devices_since >= std::chrono::seconds(30)) {
-        (void)log_.append({core::DiagnosticEventType::Lifecycle, "VR_DEVICES_UNAVAILABLE"});
-        break;
-      }
-    } else {
-      no_devices_since.reset();
-    }
+    // Device availability gates interaction, not the Add-on Session. SteamVR
+    // disconnects the HMD and controllers while entering standby, and they may
+    // remain unavailable indefinitely until the user returns. Keep the runtime
+    // alive and let the prerequisite state below disable gesture/exit actions;
+    // the vrserver monitor remains the authority for ending this session.
     const bool dashboard_visible = dashboard_open();
     const auto prereq = prerequisites(frame, latest_resolution_, dashboard_visible);
     std::string availability =

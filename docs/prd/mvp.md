@@ -83,7 +83,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - Use a graceful close request against the Exit Target main process first. Do not use keyboard simulation, Alt+F4, or focus-dependent input.
 - Use a fixed 5-second Exit Grace Period after graceful close before force closing the same target main process.
 - Keep Exit Grace Period internal and separate from the user-visible Exit Countdown.
-- Keep the Add-on Session running after Game Exit and clear only Exit Target related state.
+- Keep the Add-on Session running after Game Exit, SteamVR backgrounding or standby, HMD removal, and controller disconnection; clear only unavailable interaction and Exit Target related state. End the session only when SteamVR shuts down or the add-on is explicitly disabled or stopped.
 - Model Farewell Gesture as a request for Exit Control only. It must never directly confirm, cancel, or execute Game Exit.
 - Detect Farewell Gesture from the Configured Hand controller's tracked position in the Activation Zone. Require three committed direction reversals and aggregate evidence from repeated lateral travel, path efficiency, vertical/depth suppression, endpoint stability, stroke extent and rhythm, and plausible speed. Evaluate controller motion relative to the HMD so ordinary body movement is not mistaken for a gesture. Accept compact, quick waves without inferring palm direction from controller axes.
 - Do not gate Farewell Gesture on a chest-height assumption. Armrest and lap-height starts are valid when they remain within arm reach and not substantially behind the HMD.

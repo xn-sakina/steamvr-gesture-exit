@@ -85,7 +85,7 @@ The distributable form recognized and managed by SteamVR so the add-on can load 
 _Avoid_: standalone app, normal executable, installer
 
 **Add-on Session**:
-The add-on's running lifetime within SteamVR. It is independent of any single Current VR Game and continues after a Game Exit so the add-on can serve later games.
+The add-on's running lifetime within SteamVR. It is independent of any single Current VR Game and continues after a Game Exit so the add-on can serve later games. SteamVR backgrounding, standby, HMD removal, and temporary or indefinite controller disconnection disable unavailable interactions but do not end the Add-on Session; the session ends when SteamVR shuts down or the add-on is explicitly disabled or stopped.
 _Avoid_: game session, app lifetime, exit session
 
 **Language**:
