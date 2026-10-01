@@ -16,15 +16,15 @@ constexpr float kDashboardWidth = 1024.0f;
 constexpr float kDashboardHeight = 456.0f;
 constexpr float kDashboardWidthMeters = 2.52f;  // 90% of the previous 2.8-metre panel.
 constexpr float kWristWidth = 512.0f;
-constexpr float kWristHeight = 560.0f;
-constexpr float kButtonTop = 438.0f;
-constexpr float kButtonBottom = 510.0f;
+constexpr float kWristHeight = 512.0f;
+constexpr float kButtonTop = 390.0f;
+constexpr float kButtonBottom = 462.0f;
 constexpr float kLeftButtonLeft = 40.0f;
 constexpr float kLeftButtonRight = 244.0f;
 constexpr float kRightButtonLeft = 268.0f;
 constexpr float kRightButtonRight = 472.0f;
-constexpr uint32_t kPointerRayTextureWidth = 8;
-constexpr uint32_t kPointerRayTextureHeight = 512;
+constexpr uint32_t kPointerRayTextureWidth = 16;
+constexpr uint32_t kPointerRayTextureHeight = 1024;
 constexpr size_t kMaxOverlayEventsPerPoll = 256;
 enum class WristHit { None, Left, Right };
 struct Float3 {
@@ -222,8 +222,29 @@ bool OverlayManager::initialize() {
     shutdown();
     return false;
   }
-  std::array<uint8_t, kPointerRayTextureWidth * kPointerRayTextureHeight * 4> ray_pixels;
-  ray_pixels.fill(0xFF);
+  // Keep most of the quad transparent and shape the visible core like a thin
+  // illuminated tube. The texture top maps to local +Y (the panel end), so
+  // that end is already invisible before it reaches the hover point.
+  std::array<uint8_t, kPointerRayTextureWidth * kPointerRayTextureHeight * 4> ray_pixels{};
+  for (uint32_t y = 0; y < kPointerRayTextureHeight; ++y) {
+    const float target_to_source =
+        static_cast<float>(y) / static_cast<float>(kPointerRayTextureHeight - 1);
+    const float fade_t = std::clamp((target_to_source - 0.12f) / 0.40f, 0.0f, 1.0f);
+    const float length_alpha = fade_t * fade_t * (3.0f - 2.0f * fade_t);
+    for (uint32_t x = 0; x < kPointerRayTextureWidth; ++x) {
+      const float distance_from_centre =
+          std::abs((static_cast<float>(x) + 0.5f) - kPointerRayTextureWidth * 0.5f);
+      const float radius_position = distance_from_centre / 3.25f;
+      const float tube_alpha = std::sqrt(std::max(0.0f, 1.0f - radius_position * radius_position));
+      const auto alpha = static_cast<uint8_t>(
+          std::lround(255.0f * std::clamp(length_alpha * tube_alpha, 0.0f, 1.0f)));
+      const size_t offset = (static_cast<size_t>(y) * kPointerRayTextureWidth + x) * 4;
+      ray_pixels[offset] = 0xFF;
+      ray_pixels[offset + 1] = 0xFF;
+      ray_pixels[offset + 2] = 0xFF;
+      ray_pixels[offset + 3] = alpha;
+    }
+  }
   result = overlays_->SetOverlayRaw(pointer_ray_, ray_pixels.data(), kPointerRayTextureWidth,
                                     kPointerRayTextureHeight, 4);
   if (result != vr::VROverlayError_None) {
@@ -233,7 +254,7 @@ bool OverlayManager::initialize() {
   }
   result = overlays_->SetOverlayColor(pointer_ray_, 0.20f, 0.74f, 0.94f);
   if (result == vr::VROverlayError_None)
-    result = overlays_->SetOverlayAlpha(pointer_ray_, 0.88f);
+    result = overlays_->SetOverlayAlpha(pointer_ray_, 0.92f);
   if (result != vr::VROverlayError_None) {
     fail("configure pointer ray appearance", result);
     shutdown();

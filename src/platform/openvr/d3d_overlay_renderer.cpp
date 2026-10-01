@@ -30,8 +30,8 @@ struct D3dOverlayRenderer::Impl {
   ComPtr<ID3D11DeviceContext> context;
   ComPtr<ID2D1Factory> d2d;
   ComPtr<IDWriteFactory> write;
-  ComPtr<IDWriteTextFormat> title, body, button, dashboard_tab, dashboard_button, label, help_text,
-      step_number, small_text_format, countdown_number;
+  ComPtr<IDWriteTextFormat> title, prompt_title, body, button, brand, dashboard_tab,
+      dashboard_button, label, help_text, step_number, small_text_format, countdown_number;
   ComPtr<ID2D1StrokeStyle> round_stroke;
   std::map<std::string, Surface> surfaces;
   std::string error;
@@ -202,12 +202,18 @@ bool D3dOverlayRenderer::initialize() {
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 46, L"",
                                  &impl_->title);
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 52, L"",
+                                 &impl_->prompt_title);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 27, L"",
                                  &impl_->body);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30, L"",
                                  &impl_->button);
+  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18, L"",
+                                 &impl_->brand);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 19, L"",
                                  &impl_->dashboard_tab);
@@ -233,9 +239,10 @@ bool D3dOverlayRenderer::initialize() {
   stroke_properties.startCap = D2D1_CAP_STYLE_ROUND;
   stroke_properties.endCap = D2D1_CAP_STYLE_ROUND;
   (void)impl_->d2d->CreateStrokeStyle(stroke_properties, nullptr, 0, &impl_->round_stroke);
-  if (!impl_->title || !impl_->body || !impl_->button || !impl_->dashboard_tab ||
-      !impl_->dashboard_button || !impl_->label || !impl_->help_text || !impl_->step_number ||
-      !impl_->small_text_format || !impl_->countdown_number || !impl_->round_stroke) {
+  if (!impl_->title || !impl_->prompt_title || !impl_->body || !impl_->button || !impl_->brand ||
+      !impl_->dashboard_tab || !impl_->dashboard_button || !impl_->label || !impl_->help_text ||
+      !impl_->step_number || !impl_->small_text_format || !impl_->countdown_number ||
+      !impl_->round_stroke) {
     impl_->error = "CreateTextFormat failed";
     return false;
   }
@@ -243,6 +250,10 @@ bool D3dOverlayRenderer::initialize() {
   impl_->button->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->title->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   impl_->title->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+  impl_->prompt_title->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  impl_->prompt_title->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+  impl_->brand->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+  impl_->brand->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->countdown_number->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   impl_->countdown_number->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->dashboard_tab->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -337,9 +348,13 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   auto panel_border = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.26f));
   auto neutral = impl_->brush(t, D2D1::ColorF(0.075f, 0.12f, 0.18f, 1.0f));
   auto neutral_hover = impl_->brush(t, D2D1::ColorF(0.12f, 0.22f, 0.31f, 1.0f));
+  auto cancel = impl_->brush(t, D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f));
+  auto cancel_hover = impl_->brush(t, D2D1::ColorF(0.97f, 0.99f, 1.0f, 1.0f));
+  auto dark_text = impl_->brush(t, D2D1::ColorF(0.025f, 0.04f, 0.065f, 1.0f));
   auto track = impl_->brush(t, D2D1::ColorF(0.33f, 0.40f, 0.49f, 0.28f));
   if (!white || !muted || !accent || !accent_hover || !danger || !danger_hover || !panel ||
-      !panel_border || !neutral || !neutral_hover || !track) {
+      !panel_border || !neutral || !neutral_hover || !cancel || !cancel_hover || !dark_text ||
+      !track) {
     if (recover_target(id, impl_->resource_status) && !retried)
       return render(id, m, true);
     return false;
@@ -367,11 +382,11 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
             stops.Get(), &wash)))
       t->FillRoundedRectangle(panel_bounds, wash.Get());
 
+    impl_->load_dashboard_logo(s);
     if (m.mode != SurfaceMode::Countdown) {
-      impl_->load_dashboard_logo(s);
       if (s.dashboard_logo) {
         const auto logo_size = s.dashboard_logo->GetSize();
-        t->DrawBitmap(s.dashboard_logo.Get(), D2D1::RectF(126, 174, 386, 434), 1.0f,
+        t->DrawBitmap(s.dashboard_logo.Get(), D2D1::RectF(44, 58, 88, 102), 0.58f,
                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
                       D2D1::RectF(0, 0, logo_size.width, logo_size.height));
       }
@@ -382,13 +397,35 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
         t->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(40, 30, 40 + 432 * timeout, 38), 4, 4), accent.Get());
       }
-      t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
-                   D2D1::RectF(40, 70, 472, 150), white.Get());
+      t->DrawTextW(m.body.c_str(), static_cast<UINT32>(m.body.size()), impl_->brand.Get(),
+                   D2D1::RectF(100, 54, 460, 108), muted.Get());
+      t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->prompt_title.Get(),
+                   D2D1::RectF(40, 160, 472, 300), white.Get());
     }
 
-    const D2D1_POINT_2F ring_centre = D2D1::Point2F(256, 280);
+    // The countdown belongs to the content area above the fixed button group,
+    // rather than to the full surface including the button.
+    const D2D1_POINT_2F ring_centre = D2D1::Point2F(256, 200);
     constexpr float ring_radius = 88.0f;
     if (m.mode == SurfaceMode::Countdown) {
+      constexpr float watermark_radius = 80.0f;
+      const auto watermark_bounds =
+          D2D1::RectF(ring_centre.x - watermark_radius, ring_centre.y - watermark_radius,
+                      ring_centre.x + watermark_radius, ring_centre.y + watermark_radius);
+      ComPtr<ID2D1EllipseGeometry> watermark_clip;
+      ComPtr<ID2D1Layer> watermark_layer;
+      if (s.dashboard_logo &&
+          SUCCEEDED(impl_->d2d->CreateEllipseGeometry(
+              D2D1::Ellipse(ring_centre, watermark_radius, watermark_radius), &watermark_clip)) &&
+          SUCCEEDED(t->CreateLayer(nullptr, &watermark_layer))) {
+        const auto logo_size = s.dashboard_logo->GetSize();
+        t->PushLayer(D2D1::LayerParameters(watermark_bounds, watermark_clip.Get()),
+                     watermark_layer.Get());
+        t->DrawBitmap(s.dashboard_logo.Get(), watermark_bounds, 0.08f,
+                      D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                      D2D1::RectF(0, 0, logo_size.width, logo_size.height));
+        t->PopLayer();
+      }
       t->DrawEllipse(D2D1::Ellipse(ring_centre, ring_radius, ring_radius), track.Get(), 14.0f,
                      impl_->round_stroke.Get());
       const float progress = std::clamp(m.progress, 0.0f, 1.0f);
@@ -425,11 +462,11 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
       }
       const std::wstring seconds = std::to_wstring(std::max(1, m.countdown_seconds));
       t->DrawTextW(seconds.c_str(), static_cast<UINT32>(seconds.size()),
-                   impl_->countdown_number.Get(), D2D1::RectF(156, 190, 356, 370), white.Get());
+                   impl_->countdown_number.Get(), D2D1::RectF(156, 110, 356, 290), white.Get());
     }
 
     if (!m.left_button.empty()) {
-      const auto bounds = D2D1::RoundedRect(D2D1::RectF(40, 438, 244, 510), 14, 14);
+      const auto bounds = D2D1::RoundedRect(D2D1::RectF(40, 390, 244, 462), 14, 14);
       ID2D1Brush* fill =
           m.mode == SurfaceMode::Confirm
               ? static_cast<ID2D1Brush*>(m.left_hover ? danger_hover.Get() : danger.Get())
@@ -440,10 +477,18 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
     }
     if (!m.right_button.empty()) {
       const float left = m.mode == SurfaceMode::Countdown ? 40.0f : 268.0f;
-      const auto bounds = D2D1::RoundedRect(D2D1::RectF(left, 438, 472, 510), 14, 14);
-      t->FillRoundedRectangle(bounds, m.right_hover ? neutral_hover.Get() : neutral.Get());
+      const auto bounds = D2D1::RoundedRect(D2D1::RectF(left, 390, 472, 462), 14, 14);
+      const bool countdown_cancel = m.mode == SurfaceMode::Countdown;
+      ID2D1Brush* fill =
+          countdown_cancel
+              ? static_cast<ID2D1Brush*>(m.right_hover ? cancel_hover.Get() : cancel.Get())
+              : static_cast<ID2D1Brush*>(m.right_hover ? neutral_hover.Get() : neutral.Get());
+      t->FillRoundedRectangle(bounds, fill);
+      if (countdown_cancel && m.right_hover)
+        t->DrawRoundedRectangle(bounds, accent_hover.Get(), 2.0f);
       t->DrawTextW(m.right_button.c_str(), static_cast<UINT32>(m.right_button.size()),
-                   impl_->button.Get(), bounds.rect, white.Get());
+                   impl_->button.Get(), bounds.rect,
+                   countdown_cancel ? dark_text.Get() : white.Get());
     }
   }
   if (m.pointer_visible) {

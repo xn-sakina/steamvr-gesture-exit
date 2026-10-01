@@ -620,9 +620,9 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
       case core::EffectType::ShowIdleControl:
         if (!overlays_->show_wrist(
                 settings_.configured_hand, f,
-                {text(core::StringId::ConfirmTitle), L"", text(core::StringId::ExitGame),
-                 text(core::StringId::Dismiss), L"", 0.0f, platform::openvr::SurfaceMode::Prompt,
-                 1.0f, settings_.countdown_seconds})) {
+                {text(core::StringId::ConfirmTitle), text(core::StringId::AppName),
+                 text(core::StringId::ExitGame), text(core::StringId::Dismiss), L"", 0.0f,
+                 platform::openvr::SurfaceMode::Prompt, 1.0f, settings_.countdown_seconds})) {
           abort_overlay_flow(now, f);
           return;
         }
@@ -630,8 +630,9 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
       case core::EffectType::ShowConfirmation: {
         if (!overlays_->show_wrist(
                 settings_.configured_hand, f,
-                {text(core::StringId::ConfirmTitle), L"", text(core::StringId::Confirm),
-                 text(core::StringId::Dismiss), L"", 0.0f, platform::openvr::SurfaceMode::Confirm,
+                {text(core::StringId::ConfirmTitle), text(core::StringId::AppName),
+                 text(core::StringId::Confirm), text(core::StringId::Dismiss), L"", 0.0f,
+                 platform::openvr::SurfaceMode::Confirm,
                  static_cast<float>(flow_->snapshot(now).control_timeout_progress),
                  settings_.countdown_seconds})) {
           abort_overlay_flow(now, f);
