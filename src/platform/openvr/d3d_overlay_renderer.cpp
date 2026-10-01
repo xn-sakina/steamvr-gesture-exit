@@ -31,7 +31,7 @@ struct D3dOverlayRenderer::Impl {
   ComPtr<ID2D1Factory> d2d;
   ComPtr<IDWriteFactory> write;
   ComPtr<IDWriteTextFormat> title, body, button, dashboard_tab, dashboard_button, label, help_text,
-      step_number, small_text_format, version_tag, countdown_number;
+      step_number, small_text_format, countdown_number;
   ComPtr<ID2D1StrokeStyle> round_stroke;
   std::map<std::string, Surface> surfaces;
   std::string error;
@@ -227,9 +227,6 @@ bool D3dOverlayRenderer::initialize() {
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14, L"",
                                  &impl_->small_text_format);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12, L"",
-                                 &impl_->version_tag);
-  impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 76, L"",
                                  &impl_->countdown_number);
   D2D1_STROKE_STYLE_PROPERTIES stroke_properties = D2D1::StrokeStyleProperties();
@@ -238,8 +235,7 @@ bool D3dOverlayRenderer::initialize() {
   (void)impl_->d2d->CreateStrokeStyle(stroke_properties, nullptr, 0, &impl_->round_stroke);
   if (!impl_->title || !impl_->body || !impl_->button || !impl_->dashboard_tab ||
       !impl_->dashboard_button || !impl_->label || !impl_->help_text || !impl_->step_number ||
-      !impl_->small_text_format || !impl_->version_tag || !impl_->countdown_number ||
-      !impl_->round_stroke) {
+      !impl_->small_text_format || !impl_->countdown_number || !impl_->round_stroke) {
     impl_->error = "CreateTextFormat failed";
     return false;
   }
@@ -257,8 +253,6 @@ bool D3dOverlayRenderer::initialize() {
   impl_->help_text->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   impl_->step_number->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   impl_->step_number->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-  impl_->version_tag->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-  impl_->version_tag->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   return true;
 }
 bool D3dOverlayRenderer::create_surface(const std::string& id, uint32_t w, uint32_t h) {
@@ -641,8 +635,8 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
                                                                           : m.help_lines.size();
     for (size_t i = 0; i < row_count; ++i) {
       const bool help = m.active_tab == core::DashboardTab::Help;
-      const float row_height = m.active_tab == core::DashboardTab::Settings ? 56.0f : 68.0f;
-      const float top = 96.0f + (help ? 116.0f : row_height) * static_cast<float>(i);
+      const float row_height = help ? 116.0f : 56.0f;
+      const float top = 96.0f + row_height * static_cast<float>(i);
       base->FillRectangle(D2D1::RectF(44, top + 4, 980, top + (help ? 104.0f : row_height - 4.0f)),
                           base_card.Get());
     }
@@ -671,13 +665,15 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
         D2D1::RectF(tab.bounds.left, tab.bounds.top + 4, tab.bounds.right, tab.bounds.bottom - 4);
     const bool selected = m.active_tab == tab.tab;
     const bool hovered = m.hovered_tab && *m.hovered_tab == tab.tab;
-    if (selected || hovered)
-      t->FillRectangle(rect, selected ? active_tab.Get() : normal.Get());
+    if (selected)
+      t->FillRectangle(rect, active_tab.Get());
     if (selected)
       t->FillRectangle(D2D1::RectF(rect.left, rect.bottom - 3, rect.right, rect.bottom),
                        hover.Get());
+    if (hovered)
+      t->DrawRectangle(rect, hover.Get(), 2.0f);
     t->DrawTextW(label->c_str(), static_cast<UINT32>(label->size()), impl_->dashboard_tab.Get(),
-                 rect, selected ? white.Get() : muted.Get());
+                 rect, selected || hovered ? white.Get() : muted.Get());
   }
   if (m.active_tab == core::DashboardTab::Settings) {
     for (size_t i = 0; i < m.settings.size(); ++i) {
@@ -705,15 +701,15 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     }
   } else if (m.active_tab == core::DashboardTab::Status) {
     for (size_t i = 0; i < m.statuses.size(); ++i) {
-      const float top = 96.0f + 68.0f * static_cast<float>(i);
+      const float top = 96.0f + 56.0f * static_cast<float>(i);
       const auto& status = m.statuses[i];
       t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()),
-                   impl_->label.Get(), D2D1::RectF(64, top + 4, 344, top + 64), white.Get());
+                   impl_->label.Get(), D2D1::RectF(64, top + 4, 344, top + 52), white.Get());
       auto* tone = status.tone == DashboardStatusTone::Available     ? good.Get()
                    : status.tone == DashboardStatusTone::Unavailable ? bad.Get()
                                                                      : white.Get();
       t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()),
-                   impl_->label.Get(), D2D1::RectF(356, top + 4, 956, top + 64), tone);
+                   impl_->label.Get(), D2D1::RectF(356, top + 4, 956, top + 52), tone);
     }
   } else {
     for (size_t i = 0; i < m.help_lines.size(); ++i) {
@@ -726,13 +722,6 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
       t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),
                    impl_->help_text.Get(), D2D1::RectF(132, top + 4, 948, top + 104), white.Get());
     }
-  }
-  if (!m.version_tag.empty()) {
-    const auto badge = D2D1::RoundedRect(D2D1::RectF(890, 433, 972, 447), 7.0f, 7.0f);
-    t->FillRoundedRectangle(badge, active_tab.Get());
-    t->DrawRoundedRectangle(badge, hover.Get(), 1.0f);
-    t->DrawTextW(m.version_tag.c_str(), static_cast<UINT32>(m.version_tag.size()),
-                 impl_->version_tag.Get(), badge.rect, muted.Get());
   }
   const auto result = t->EndDraw();
   if (FAILED(result)) {

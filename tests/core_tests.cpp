@@ -526,7 +526,7 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "另一只手柄");
   CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "已识别到手柄");
   CHECK(localize(StringId::HelpOppositeHand, Language::English) ==
-        "When the exit panel appears, use the other controller to press the Exit button.");
+        "When the app panel appears, use the other controller to press the Exit button.");
   CHECK(localize(StringId::SettingsSaved, Language::ChineseSimplified) == "配置已修改");
   CHECK(localize(StringId::GestureSensitivity, Language::ChineseSimplified) == "触发灵敏度");
   CHECK(localize(StringId::SensitivityLow, Language::ChineseSimplified) == "低灵敏");

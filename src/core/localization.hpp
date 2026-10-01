@@ -36,6 +36,7 @@ enum class StringId {
   ControllerTracked,
   ControllerNotTracked,
   LastExit,
+  AppVersion,
   Unavailable,
   Never,
   SettingsSaved,

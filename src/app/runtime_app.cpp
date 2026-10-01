@@ -17,6 +17,8 @@ namespace steamvr_gesture_exit::app {
 namespace {
 constexpr char kAppKey[] = "dev.kanamio.steamvrgestureexit";
 constexpr auto kMaxTargetResolutionAge = std::chrono::seconds(2);
+constexpr auto kSaveSuccessNoticeDuration = std::chrono::seconds(3);
+constexpr auto kSaveFailureNoticeDuration = std::chrono::seconds(5);
 const char* wrist_action_name(platform::openvr::OverlayAction action) {
   switch (action) {
     case platform::openvr::OverlayAction::Primary:
@@ -584,7 +586,9 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
                     {text(core::StringId::LastExit), last,
                      snapshot.last_exit == core::LastExitStatus::Succeeded
                          ? platform::openvr::DashboardStatusTone::Available
-                         : platform::openvr::DashboardStatusTone::Neutral}};
+                         : platform::openvr::DashboardStatusTone::Neutral},
+                    {text(core::StringId::AppVersion), model.version_tag,
+                     platform::openvr::DashboardStatusTone::Neutral}};
   model.help_lines = {text(core::StringId::HelpGesture), text(core::StringId::HelpOppositeHand),
                       text(core::StringId::HelpForceClose)};
   const auto submit_started = std::chrono::steady_clock::now();
@@ -871,7 +875,8 @@ int RuntimeApp::run() {
         record.setting_value = std::move(result.change.value);
       }
       save_notice_success_ = result.saved;
-      save_notice_until_ = confirmed_at + std::chrono::seconds(8);
+      save_notice_until_ = confirmed_at + (result.saved ? kSaveSuccessNoticeDuration
+                                                        : kSaveFailureNoticeDuration);
       save_notice_changed = true;
       if (result.change.requested_at != std::chrono::steady_clock::time_point{}) {
         record.details["queue_wait_ms"] =
@@ -1120,7 +1125,7 @@ int RuntimeApp::run() {
           sound_.ui_select();
         } else {
           save_notice_success_ = false;
-          save_notice_until_ = now + std::chrono::seconds(8);
+          save_notice_until_ = now + kSaveFailureNoticeDuration;
           save_notice_changed = true;
         }
       }
