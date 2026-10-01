@@ -1,7 +1,4 @@
-#pragma code_page(65001)
-
 #include <windows.h>
-#include "@CMAKE_CURRENT_SOURCE_DIR@/assets/brand/product_strings.inc"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
@@ -21,17 +18,7 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "Kanamio\0"
-            VALUE "FileDescription", AppDescriptionEnglish "\0"
-            VALUE "FileVersion", "@PROJECT_VERSION@\0"
-            VALUE "InternalName", "steamvr_gesture_exit\0"
-            VALUE "OriginalFilename", "steamvr_gesture_exit.exe\0"
-            VALUE "ProductName", "SteamVR Gesture Exit\0"
-            VALUE "ProductVersion", "@PROJECT_VERSION@\0"
-        END
-        BLOCK "080404b0"
-        BEGIN
-            VALUE "CompanyName", "Kanamio\0"
-            VALUE "FileDescription", AppDescriptionChinese "\0"
+            VALUE "FileDescription", "SteamVR Gesture Exit\0"
             VALUE "FileVersion", "@PROJECT_VERSION@\0"
             VALUE "InternalName", "steamvr_gesture_exit\0"
             VALUE "OriginalFilename", "steamvr_gesture_exit.exe\0"
@@ -41,6 +28,6 @@ BEGIN
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x0409, 1200, 0x0804, 1200
+        VALUE "Translation", 0x0409, 1200
     END
 END
