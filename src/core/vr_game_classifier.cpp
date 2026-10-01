@@ -1,8 +1,8 @@
 #include "core/vr_game_classifier.hpp"
+#include "core/supported_vr_games.generated.hpp"
 
 #include <algorithm>
-#include <array>
-#include <string_view>
+#include <cctype>
 
 namespace steamvr_gesture_exit::core {
 namespace {
@@ -23,15 +23,11 @@ bool is_current_vr_game_candidate(const VrApplicationEvidence& evidence) {
   }
 
   const std::string key = lower(evidence.app_key);
-  // OpenVR exposes no game-vs-utility property. A scene app, a numeric Steam
-  // key, and a binary/url launch can all belong to a non-game tool. Admit only
-  // reviewed game keys; additional titles need an explicit safety review.
-  constexpr std::array<std::string_view, 3> game_keys{
-      "steam.app.438100",  // VRChat
-      "steam.app.450390",  // The Lab
-      "steam.app.620980",  // Beat Saber
-  };
-  if (std::find(game_keys.begin(), game_keys.end(), key) == game_keys.end())
+  // OpenVR exposes no game-vs-utility property. The reviewed keys are generated
+  // from config/supported_vr_games.json so contributors can update evidence and
+  // scope without editing classifier logic.
+  if (std::find(generated::kSupportedVrGameKeys.begin(), generated::kSupportedVrGameKeys.end(),
+                key) == generated::kSupportedVrGameKeys.end())
     return false;
 
   const std::string launch_type = lower(evidence.launch_type);

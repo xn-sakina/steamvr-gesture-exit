@@ -16,12 +16,89 @@ project(steamvr_gesture_exit VERSION "${STEAMVR_GESTURE_EXIT_VERSION}" LANGUAGES
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
     "${CMAKE_CURRENT_SOURCE_DIR}/package.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/supported_vr_games.json"
 )
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/package.json" STEAMVR_GESTURE_EXIT_PACKAGE_JSON)
 string(JSON STEAMVR_GESTURE_EXIT_PACKAGE_VERSION GET "${STEAMVR_GESTURE_EXIT_PACKAGE_JSON}" version)
 if(NOT "${STEAMVR_GESTURE_EXIT_PACKAGE_VERSION}" STREQUAL "${PROJECT_VERSION}")
     message(FATAL_ERROR "package.json version ${STEAMVR_GESTURE_EXIT_PACKAGE_VERSION} must match CMake project version ${PROJECT_VERSION}")
 endif()
+
+set(STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_PATH
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/supported_vr_games.json")
+file(READ "${STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_PATH}"
+    STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_JSON)
+string(JSON STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_SCHEMA ERROR_VARIABLE supported_games_error
+    GET "${STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_JSON}" schema_version)
+if(supported_games_error OR NOT STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_SCHEMA EQUAL 2)
+    message(FATAL_ERROR "supported_vr_games.json must have schema_version 2")
+endif()
+string(JSON STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_REVIEWED_AT ERROR_VARIABLE supported_games_error
+    GET "${STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_JSON}" reviewed_at)
+if(supported_games_error OR
+   NOT STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_REVIEWED_AT MATCHES
+       "^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$")
+    message(FATAL_ERROR "supported_vr_games.json must have a YYYY-MM-DD reviewed_at date")
+endif()
+string(JSON STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_COUNT ERROR_VARIABLE supported_games_error
+    LENGTH "${STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_JSON}" games)
+if(supported_games_error OR STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_COUNT LESS 1)
+    message(FATAL_ERROR "supported_vr_games.json must contain at least one game")
+endif()
+
+set(STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_ENTRIES "")
+set(STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_IDS "")
+set(STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_KEYS "")
+set(STEAMVR_GESTURE_EXIT_HAS_VRCHAT FALSE)
+math(EXPR STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_LAST
+    "${STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_COUNT} - 1")
+foreach(index RANGE ${STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_LAST})
+    foreach(field name steam_app_id app_key store_url vr_evidence social_evidence
+                  embodied_presence_evidence embodied_presence_url popularity_evidence)
+        string(JSON game_${field} ERROR_VARIABLE supported_games_error
+            GET "${STEAMVR_GESTURE_EXIT_SUPPORTED_GAMES_JSON}" games ${index} ${field})
+        if(supported_games_error OR "${game_${field}}" STREQUAL "")
+            message(FATAL_ERROR "supported_vr_games.json game ${index} has an invalid ${field}")
+        endif()
+    endforeach()
+    if(NOT game_steam_app_id MATCHES "^[0-9]+$")
+        message(FATAL_ERROR "supported_vr_games.json game ${index} has an invalid steam_app_id")
+    endif()
+    set(expected_app_key "steam.app.${game_steam_app_id}")
+    if(NOT game_app_key STREQUAL expected_app_key)
+        message(FATAL_ERROR "supported_vr_games.json game ${index} app_key must be ${expected_app_key}")
+    endif()
+    if(NOT game_store_url MATCHES "^https://store\\.steampowered\\.com/app/${game_steam_app_id}(/|$)")
+        message(FATAL_ERROR "supported_vr_games.json game ${index} must cite its official Steam page")
+    endif()
+    if(NOT game_embodied_presence_url MATCHES "^https://")
+        message(FATAL_ERROR
+            "supported_vr_games.json game ${index} must cite embodied-presence evidence")
+    endif()
+    if(game_steam_app_id IN_LIST STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_IDS)
+        message(FATAL_ERROR "supported_vr_games.json contains duplicate Steam app id ${game_steam_app_id}")
+    endif()
+    if(game_app_key IN_LIST STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_KEYS)
+        message(FATAL_ERROR "supported_vr_games.json contains duplicate app key ${game_app_key}")
+    endif()
+    list(APPEND STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_IDS "${game_steam_app_id}")
+    list(APPEND STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_KEYS "${game_app_key}")
+    string(APPEND STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_ENTRIES
+        "        \"${game_app_key}\",\n")
+    if(game_app_key STREQUAL "steam.app.438100")
+        set(STEAMVR_GESTURE_EXIT_HAS_VRCHAT TRUE)
+    endif()
+endforeach()
+if(NOT STEAMVR_GESTURE_EXIT_HAS_VRCHAT)
+    message(FATAL_ERROR "supported_vr_games.json must contain VRChat (steam.app.438100)")
+endif()
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/include/core")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/supported_vr_games.generated.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/include/core/supported_vr_games.generated.hpp"
+    @ONLY
+)
 
 option(STEAMVR_GESTURE_EXIT_BUILD_TESTS "Build portable core tests" ON)
 option(STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
@@ -96,6 +173,8 @@ add_library(steamvr_gesture_exit_core STATIC
     src/core/wrist_pose_smoother.cpp
 )
 target_include_directories(steamvr_gesture_exit_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(steamvr_gesture_exit_core PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
 target_compile_features(steamvr_gesture_exit_core PUBLIC cxx_std_20)
 target_link_libraries(steamvr_gesture_exit_core PRIVATE steamvr_gesture_exit_jsoncpp)
 

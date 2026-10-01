@@ -1,0 +1,149 @@
+{
+  "schema_version": 2,
+  "reviewed_at": "2026-10-01",
+  "games": [
+    {
+      "name": "VRChat",
+      "steam_app_id": 438100,
+      "app_key": "steam.app.438100",
+      "store_url": "https://store.steampowered.com/app/438100/VRChat/",
+      "vr_evidence": "Steam lists VR support and tracked-controller support.",
+      "social_evidence": "The official description identifies VRChat as social VR with online multiplayer.",
+      "embodied_presence_evidence": "The official description documents avatars with full-range motion, eye tracking, lip sync and avatar interactions, so other people are present as motion-driven bodies rather than abstract multiplayer markers.",
+      "embodied_presence_url": "https://store.steampowered.com/app/438100/VRChat/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Gorilla Tag",
+      "steam_app_id": 1533390,
+      "app_key": "steam.app.1533390",
+      "store_url": "https://store.steampowered.com/app/1533390/Gorilla_Tag/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller support.",
+      "social_evidence": "Online PvP, cross-platform multiplayer, public rooms and private friend rooms are official features.",
+      "embodied_presence_evidence": "The official description makes hand-and-arm locomotion the core mechanic and places players together as gorilla avatars in public or private rooms.",
+      "embodied_presence_url": "https://store.steampowered.com/app/1533390/Gorilla_Tag/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Resonite",
+      "steam_app_id": 2519830,
+      "app_key": "steam.app.2519830",
+      "store_url": "https://store.steampowered.com/app/2519830/Resonite/",
+      "vr_evidence": "Steam lists VR and tracked-controller support, including SteamVR.",
+      "social_evidence": "The official description makes real-time socialization and multiplayer sessions foundational features.",
+      "embodied_presence_evidence": "The official description documents customizable avatars plus full-body, eye, face and finger tracking in shared multiplayer sessions.",
+      "embodied_presence_url": "https://store.steampowered.com/app/2519830/Resonite/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "ChilloutVR",
+      "steam_app_id": 661130,
+      "app_key": "steam.app.661130",
+      "store_url": "https://store.steampowered.com/app/661130/ChilloutVR/",
+      "vr_evidence": "Steam lists VR and tracked-controller support, including SteamVR.",
+      "social_evidence": "The official description calls it a social sandbox for meeting people and exploring together.",
+      "embodied_presence_evidence": "The official description documents player avatars, avatar customization and full-body tracking in a shared social sandbox.",
+      "embodied_presence_url": "https://store.steampowered.com/app/661130/ChilloutVR/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Beat Saber",
+      "steam_app_id": 620980,
+      "app_key": "steam.app.620980",
+      "store_url": "https://store.steampowered.com/app/620980/Beat_Saber/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller support.",
+      "social_evidence": "Online PvP and multiplayer are Steam-listed features.",
+      "embodied_presence_evidence": "Official multiplayer notes place other players' avatars beside the player; a later official update explicitly adjusts avatar hand movement on the multiplayer result screen.",
+      "embodied_presence_url": "https://store.steampowered.com/news/posts/?appids=620980&enddate=1619708370&feed=steam_community_announcements",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Walkabout Mini Golf VR",
+      "steam_app_id": 1408230,
+      "app_key": "steam.app.1408230",
+      "store_url": "https://store.steampowered.com/app/1408230/Walkabout_Mini_Golf_VR/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller support.",
+      "social_evidence": "Online PvP, cross-platform multiplayer and multiplayer play are Steam-listed features.",
+      "embodied_presence_evidence": "Official updates document multiplayer avatars and a putter hand whose rotation mirrors the tracked controller, providing a visible embodied player at the shared course.",
+      "embodied_presence_url": "https://steamcommunity.com/app/1408230/allnews/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Among Us 3D: VR",
+      "steam_app_id": 1849900,
+      "app_key": "steam.app.1849900",
+      "store_url": "https://store.steampowered.com/app/1849900/Among_Us_3D_VR/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller support.",
+      "social_evidence": "Online PvP, online co-op and cross-platform multiplayer support its social-deduction design.",
+      "embodied_presence_evidence": "The official VR patch notes expose a Hands Visible setting, while the official game description identifies proximity voice chat and shared lobbies with other crewmate avatars.",
+      "embodied_presence_url": "https://schellgames.com/blog/among-us-vr-patch-4",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Vegas Infinite by PokerStars",
+      "steam_app_id": 886250,
+      "app_key": "steam.app.886250",
+      "store_url": "https://store.steampowered.com/app/886250/Vegas_Infinite_by_PokerStars/",
+      "vr_evidence": "Steam lists SteamVR and tracked-controller support.",
+      "social_evidence": "Online PvP, cross-platform multiplayer, voice chat and play with friends are official features.",
+      "embodied_presence_evidence": "The official description places real opponents together at shared tables and documents customizable avatars plus interactive props; official avatar apparel includes hand-driven special moves.",
+      "embodied_presence_url": "https://www.vegasinfinite.com/news-updates-hub/street-fighter",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Pavlov",
+      "steam_app_id": 555160,
+      "app_key": "steam.app.555160",
+      "store_url": "https://store.steampowered.com/app/555160/Pavlov_VR/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller support.",
+      "social_evidence": "Online PvP, online co-op, hosted lobbies and proximity voice chat are official features.",
+      "embodied_presence_evidence": "Official update notes document controller finger gestures, player avatars, player hands and third-person animations in this community-focused multiplayer VR game.",
+      "embodied_presence_url": "https://store.steampowered.com/news/posts/?appids=555160&enddate=1701204236&feed=steam_community_announcements",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Phasmophobia",
+      "steam_app_id": 739630,
+      "app_key": "steam.app.739630",
+      "store_url": "https://store.steampowered.com/app/739630/Phasmophobia/",
+      "vr_evidence": "Steam lists VR and tracked-controller support; current system requirements name OpenXR.",
+      "social_evidence": "The official description identifies it as four-player online co-op where teamwork is central.",
+      "embodied_presence_evidence": "Official VR updates document multiplayer player bodies and a VR character rig that follows the user's body and arm motion; some held-item actions are explicitly rendered for other players.",
+      "embodied_presence_url": "https://steamcommunity.com/app/739630/announcements/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Eleven Table Tennis",
+      "steam_app_id": 488310,
+      "app_key": "steam.app.488310",
+      "store_url": "https://store.steampowered.com/app/488310/Eleven_Table_Tennis/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller and SteamVR support.",
+      "social_evidence": "Online PvP and cross-platform multiplayer let players compete with people worldwide.",
+      "embodied_presence_evidence": "Official developer responses and updates document human opponent avatars with tracked hands, including the hand assigned to the paddle.",
+      "embodied_presence_url": "https://steamcommunity.com/app/488310/discussions/0/4526764654807037502/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Demeo",
+      "steam_app_id": 1484280,
+      "app_key": "steam.app.1484280",
+      "store_url": "https://store.steampowered.com/app/1484280/Demeo/",
+      "vr_evidence": "Steam lists VR and tracked-controller support, including SteamVR.",
+      "social_evidence": "Online co-op, cross-platform multiplayer and a VR-only social hangout are official features.",
+      "embodied_presence_evidence": "The developer's official Heroes' Hangout is a shared VR social space where player avatars meet and use spatial activities such as painting and archery.",
+      "embodied_presence_url": "https://www.resolutiongames.com/tinyverse",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    },
+    {
+      "name": "Ghosts of Tabor",
+      "steam_app_id": 1957780,
+      "app_key": "steam.app.1957780",
+      "store_url": "https://store.steampowered.com/app/1957780/Ghosts_of_Tabor/",
+      "vr_evidence": "Steam lists the title as VR-only with tracked-controller and SteamVR support.",
+      "social_evidence": "Online PvP, online co-op, cross-platform multiplayer and squad play are official features.",
+      "embodied_presence_evidence": "Official patch notes document tracked finger curls, hand poses, grabbing other players and interacting with items held by other players, establishing visible embodied co-presence.",
+      "embodied_presence_url": "https://ghostsoftabor.com/patch-0-4-3198-14463/",
+      "popularity_evidence": "The Steam store shows more than 1000 user reviews."
+    }
+  ]
+}

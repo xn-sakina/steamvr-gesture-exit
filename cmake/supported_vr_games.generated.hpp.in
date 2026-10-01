@@ -1,0 +1,12 @@
+#pragma once
+
+#include <array>
+#include <string_view>
+
+namespace steamvr_gesture_exit::core::generated {
+
+inline constexpr std::array<std::string_view, @STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_COUNT@>
+    kSupportedVrGameKeys{{
+@STEAMVR_GESTURE_EXIT_SUPPORTED_GAME_ENTRIES@}};
+
+}  // namespace steamvr_gesture_exit::core::generated

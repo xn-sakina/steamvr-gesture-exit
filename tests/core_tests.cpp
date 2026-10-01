@@ -737,8 +737,20 @@ void diagnostics_rotate_at_a_fixed_size() {
 
 void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(is_current_vr_game_candidate({"steam.app.438100", "url", false, false, false, false}));
-  CHECK(is_current_vr_game_candidate({"steam.app.450390", "binary", false, false, false, false}));
+  // Beat Saber is intentionally admitted: official multiplayer releases show
+  // other player avatars and synchronized avatar hand movement.
   CHECK(is_current_vr_game_candidate({"steam.app.620980", "url", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.1533390", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.2519830", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.661130", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.1408230", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.1849900", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.886250", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.555160", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.739630", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.488310", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.1484280", "binary", false, false, false, false}));
+  CHECK(is_current_vr_game_candidate({"steam.app.1957780", "binary", false, false, false, false}));
   CHECK(is_current_vr_game_candidate({"steam.app.438100", "", false, false, false, false}));
 
   CHECK(
@@ -746,6 +758,7 @@ void vr_game_classifier_accepts_games_and_rejects_runtime_apps() {
   CHECK(!is_current_vr_game_candidate(
       {"com.example.indie-vr-game", "binary", false, false, false, false}));
   CHECK(!is_current_vr_game_candidate({"steam.app.999999", "url", false, false, false, false}));
+  CHECK(!is_current_vr_game_candidate({"steam.app.450390", "binary", false, false, false, false}));
 
   CHECK(
       !is_current_vr_game_candidate({"steam.app.not-a-number", "url", false, false, false, false}));
