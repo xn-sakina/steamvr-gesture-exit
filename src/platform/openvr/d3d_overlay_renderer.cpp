@@ -345,7 +345,10 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   auto danger = impl_->brush(t, D2D1::ColorF(0.86f, 0.27f, 0.24f, 1.0f));
   auto danger_hover = impl_->brush(t, D2D1::ColorF(0.98f, 0.38f, 0.32f, 1.0f));
   auto panel = impl_->brush(t, D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.97f));
-  auto panel_border = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.26f));
+  auto panel_border = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.72f));
+  auto panel_outer_glow = impl_->brush(t, D2D1::ColorF(0.10f, 0.58f, 0.82f, 0.08f));
+  auto panel_soft_glow = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.18f));
+  auto panel_inner_highlight = impl_->brush(t, D2D1::ColorF(0.55f, 0.78f, 1.0f, 0.15f));
   auto neutral = impl_->brush(t, D2D1::ColorF(0.075f, 0.12f, 0.18f, 1.0f));
   auto neutral_hover = impl_->brush(t, D2D1::ColorF(0.12f, 0.22f, 0.31f, 1.0f));
   auto cancel = impl_->brush(t, D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f));
@@ -353,8 +356,8 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   auto dark_text = impl_->brush(t, D2D1::ColorF(0.025f, 0.04f, 0.065f, 1.0f));
   auto track = impl_->brush(t, D2D1::ColorF(0.33f, 0.40f, 0.49f, 0.28f));
   if (!white || !muted || !accent || !accent_hover || !danger || !danger_hover || !panel ||
-      !panel_border || !neutral || !neutral_hover || !cancel || !cancel_hover || !dark_text ||
-      !track) {
+      !panel_border || !panel_outer_glow || !panel_soft_glow || !panel_inner_highlight ||
+      !neutral || !neutral_hover || !cancel || !cancel_hover || !dark_text || !track) {
     if (recover_target(id, impl_->resource_status) && !retried)
       return render(id, m, true);
     return false;
@@ -363,8 +366,33 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   t->Clear(D2D1::ColorF(0, 0, 0, 0));
   const auto panel_bounds =
       D2D1::RoundedRect(D2D1::RectF(10, 10, float(s.w - 10), float(s.h - 10)), 32, 32);
+  // Separate the control from bright or busy game scenes with a restrained,
+  // static bloom. The wide strokes are drawn first so the opaque panel hides
+  // their inner halves and leaves only a soft exterior halo.
+  t->DrawRoundedRectangle(panel_bounds, panel_outer_glow.Get(), 12.0f);
+  t->DrawRoundedRectangle(panel_bounds, panel_soft_glow.Get(), 5.0f);
   t->FillRoundedRectangle(panel_bounds, panel.Get());
-  t->DrawRoundedRectangle(panel_bounds, panel_border.Get(), 1.5f);
+
+  ComPtr<ID2D1GradientStopCollection> border_stops;
+  ComPtr<ID2D1LinearGradientBrush> border_gradient;
+  const D2D1_GRADIENT_STOP border_colors[] = {
+      {0.0f, D2D1::ColorF(0.34f, 0.88f, 1.0f, 0.95f)},
+      {0.48f, D2D1::ColorF(0.10f, 0.58f, 0.94f, 0.80f)},
+      {1.0f, D2D1::ColorF(0.54f, 0.36f, 0.96f, 0.64f)}};
+  if (SUCCEEDED(t->CreateGradientStopCollection(border_colors, 3, D2D1_GAMMA_2_2,
+                                                 D2D1_EXTEND_MODE_CLAMP, &border_stops))) {
+    (void)t->CreateLinearGradientBrush(
+        D2D1::LinearGradientBrushProperties(D2D1::Point2F(70.0f, 18.0f),
+                                            D2D1::Point2F(470.0f, 500.0f)),
+        border_stops.Get(), &border_gradient);
+  }
+  t->DrawRoundedRectangle(panel_bounds,
+                          border_gradient ? static_cast<ID2D1Brush*>(border_gradient.Get())
+                                          : static_cast<ID2D1Brush*>(panel_border.Get()),
+                          1.75f);
+  const auto inner_bounds =
+      D2D1::RoundedRect(D2D1::RectF(13, 13, float(s.w - 13), float(s.h - 13)), 29, 29);
+  t->DrawRoundedRectangle(inner_bounds, panel_inner_highlight.Get(), 1.0f);
   if (m.mode == SurfaceMode::Message) {
     t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
                  D2D1::RectF(42, 30, float(s.w - 42), 100), white.Get());
