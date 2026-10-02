@@ -24,36 +24,79 @@ float ease_out_cubic(const float value) {
   return 1.0f - inverse * inverse * inverse;
 }
 
-bool draw_partial_rounded_border(ID2D1Factory* factory, ID2D1RenderTarget* target,
-                                 const D2D1_RECT_F rect, const float radius,
-                                 const float progress, ID2D1Brush* brush, const float width,
-                                 ID2D1StrokeStyle* stroke) {
-  const float visible = clamp01(progress);
-  if (visible <= 0.0f)
-    return true;
+void append_arc(std::vector<D2D1_POINT_2F>& points, const float centre_x, const float centre_y,
+                const float radius, const float start_angle) {
+  constexpr int kCornerSteps = 10;
+  constexpr float kHalfPi = 0.5f * 3.14159265358979323846f;
+  for (int step = 1; step <= kCornerSteps; ++step) {
+    const float angle = start_angle + kHalfPi * step / kCornerSteps;
+    points.push_back(
+        D2D1::Point2F(centre_x + std::cos(angle) * radius, centre_y + std::sin(angle) * radius));
+  }
+}
 
+// Keep the fill, glow, full border and timeout border on one shared perimeter.
+// A flattened point list is intentional here: Direct2D can anti-alias the
+// closed geometry, while the same points also give the animated border an
+// unambiguous distance along the irregular outline (including the tail).
+std::vector<D2D1_POINT_2F> speech_bubble_outline(const D2D1_RECT_F rect, const float radius,
+                                                 const bool tail_on_right, const float tail_tip_x) {
+  constexpr float kPi = 3.14159265358979323846f;
+  constexpr float kTailTop = 410.0f;
+  constexpr float kTailTipY = 430.0f;
+  constexpr float kTailBottom = 450.0f;
   std::vector<D2D1_POINT_2F> points;
-  points.reserve(40);
+  points.reserve(52);
   const float centre_x = (rect.left + rect.right) * 0.5f;
   points.push_back(D2D1::Point2F(centre_x, rect.top));
   points.push_back(D2D1::Point2F(rect.right - radius, rect.top));
-  constexpr int corner_steps = 8;
-  auto append_corner = [&](const float x, const float y, const float start_angle) {
-    for (int step = 1; step <= corner_steps; ++step) {
-      const float angle =
-          (start_angle + 0.5f * 3.14159265358979323846f * step / corner_steps);
-      points.push_back(D2D1::Point2F(x + std::cos(angle) * radius,
-                                    y + std::sin(angle) * radius));
-    }
-  };
-  append_corner(rect.right - radius, rect.top + radius, -0.5f * 3.14159265358979323846f);
+  append_arc(points, rect.right - radius, rect.top + radius, radius, -0.5f * kPi);
+  if (tail_on_right) {
+    points.push_back(D2D1::Point2F(rect.right, kTailTop));
+    points.push_back(D2D1::Point2F(tail_tip_x, kTailTipY));
+    points.push_back(D2D1::Point2F(rect.right, kTailBottom));
+  }
   points.push_back(D2D1::Point2F(rect.right, rect.bottom - radius));
-  append_corner(rect.right - radius, rect.bottom - radius, 0.0f);
+  append_arc(points, rect.right - radius, rect.bottom - radius, radius, 0.0f);
   points.push_back(D2D1::Point2F(rect.left + radius, rect.bottom));
-  append_corner(rect.left + radius, rect.bottom - radius, 0.5f * 3.14159265358979323846f);
+  append_arc(points, rect.left + radius, rect.bottom - radius, radius, 0.5f * kPi);
+  if (!tail_on_right) {
+    points.push_back(D2D1::Point2F(rect.left, kTailBottom));
+    points.push_back(D2D1::Point2F(tail_tip_x, kTailTipY));
+    points.push_back(D2D1::Point2F(rect.left, kTailTop));
+  }
   points.push_back(D2D1::Point2F(rect.left, rect.top + radius));
-  append_corner(rect.left + radius, rect.top + radius, 3.14159265358979323846f);
-  points.push_back(D2D1::Point2F(centre_x, rect.top));
+  append_arc(points, rect.left + radius, rect.top + radius, radius, kPi);
+  points.push_back(points.front());
+  // Mirror the traversal as well as the shape. The timeout border therefore
+  // always leaves the top centre toward the avatar side and reaches the tail
+  // at the same visual moment in left- and right-handed layouts.
+  if (!tail_on_right)
+    std::reverse(points.begin(), points.end());
+  return points;
+}
+
+ComPtr<ID2D1PathGeometry> closed_geometry(ID2D1Factory* factory,
+                                          const std::vector<D2D1_POINT_2F>& points) {
+  ComPtr<ID2D1PathGeometry> geometry;
+  ComPtr<ID2D1GeometrySink> sink;
+  if (points.size() < 3 || FAILED(factory->CreatePathGeometry(&geometry)) ||
+      FAILED(geometry->Open(&sink)))
+    return {};
+  sink->BeginFigure(points.front(), D2D1_FIGURE_BEGIN_FILLED);
+  sink->AddLines(points.data() + 1, static_cast<UINT32>(points.size() - 1));
+  sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+  if (FAILED(sink->Close()))
+    return {};
+  return geometry;
+}
+
+bool draw_partial_outline(ID2D1Factory* factory, ID2D1RenderTarget* target,
+                          const std::vector<D2D1_POINT_2F>& points, const float progress,
+                          ID2D1Brush* brush, const float width, ID2D1StrokeStyle* stroke) {
+  const float visible = clamp01(progress);
+  if (visible <= 0.0f)
+    return true;
 
   std::vector<float> cumulative(points.size(), 0.0f);
   for (size_t index = 1; index < points.size(); ++index) {
@@ -73,14 +116,11 @@ bool draw_partial_rounded_border(ID2D1Factory* factory, ID2D1RenderTarget* targe
       continue;
     }
     const float segment = cumulative[index] - cumulative[index - 1];
-    const float amount = segment > 0.0f
-                             ? (target_length - cumulative[index - 1]) / segment
-                             : 0.0f;
+    const float amount = segment > 0.0f ? (target_length - cumulative[index - 1]) / segment : 0.0f;
     if (amount > 0.0f) {
-      sink->AddLine(D2D1::Point2F(points[index - 1].x +
-                                      (points[index].x - points[index - 1].x) * amount,
-                                  points[index - 1].y +
-                                      (points[index].y - points[index - 1].y) * amount));
+      sink->AddLine(
+          D2D1::Point2F(points[index - 1].x + (points[index].x - points[index - 1].x) * amount,
+                        points[index - 1].y + (points[index].y - points[index - 1].y) * amount));
     }
     break;
   }
@@ -316,6 +356,7 @@ bool D3dOverlayRenderer::initialize() {
   D2D1_STROKE_STYLE_PROPERTIES stroke_properties = D2D1::StrokeStyleProperties();
   stroke_properties.startCap = D2D1_CAP_STYLE_ROUND;
   stroke_properties.endCap = D2D1_CAP_STYLE_ROUND;
+  stroke_properties.lineJoin = D2D1_LINE_JOIN_ROUND;
   (void)impl_->d2d->CreateStrokeStyle(stroke_properties, nullptr, 0, &impl_->round_stroke);
   if (!impl_->title || !impl_->prompt_title || !impl_->body || !impl_->button || !impl_->brand ||
       !impl_->dashboard_tab || !impl_->dashboard_button || !impl_->label || !impl_->help_text ||
@@ -426,7 +467,6 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   auto panel_border = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.72f));
   auto panel_outer_glow = impl_->brush(t, D2D1::ColorF(0.10f, 0.58f, 0.82f, 0.08f));
   auto panel_soft_glow = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.18f));
-  auto panel_inner_highlight = impl_->brush(t, D2D1::ColorF(0.55f, 0.78f, 1.0f, 0.15f));
   auto neutral = impl_->brush(t, D2D1::ColorF(0.075f, 0.12f, 0.18f, 1.0f));
   auto neutral_hover = impl_->brush(t, D2D1::ColorF(0.12f, 0.22f, 0.31f, 1.0f));
   auto cancel = impl_->brush(t, D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f));
@@ -434,8 +474,8 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   auto dark_text = impl_->brush(t, D2D1::ColorF(0.025f, 0.04f, 0.065f, 1.0f));
   auto track = impl_->brush(t, D2D1::ColorF(0.33f, 0.40f, 0.49f, 0.28f));
   if (!white || !muted || !accent || !accent_hover || !danger || !danger_hover || !panel ||
-      !panel_border || !panel_outer_glow || !panel_soft_glow || !panel_inner_highlight ||
-      !neutral || !neutral_hover || !cancel || !cancel_hover || !dark_text || !track) {
+      !panel_border || !panel_outer_glow || !panel_soft_glow || !neutral || !neutral_hover ||
+      !cancel || !cancel_hover || !dark_text || !track) {
     if (recover_target(id, impl_->resource_status) && !retried)
       return render(id, m, true);
     return false;
@@ -460,11 +500,56 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
     const float panel_right = panel_left + 492.0f;
     const float avatar_x = m.avatar_on_right ? 572.0f : 68.0f;
     constexpr float avatar_y = 430.0f;
+    constexpr float prompt_panel_top = 222.0f;
+    constexpr float expanded_panel_top = 10.0f;
+    constexpr float panel_bottom = 502.0f;
+    constexpr float button_top = 400.0f;
+    constexpr float button_bottom = 468.0f;
+    constexpr float panel_border_width = 4.0f;
+    constexpr float avatar_border_radius = 42.0f;
+    constexpr float avatar_border_gap = 8.0f;
     const float expansion =
         m.mode == SurfaceMode::Countdown ? ease_out_cubic(animation / 0.60f) : 0.0f;
-    const float panel_top = 222.0f + (10.0f - 222.0f) * expansion;
-    const auto panel_rect = D2D1::RectF(panel_left, panel_top, panel_right, 502.0f);
-    const auto panel_bounds = D2D1::RoundedRect(panel_rect, 30.0f, 30.0f);
+    const float panel_top = prompt_panel_top + (expanded_panel_top - prompt_panel_top) * expansion;
+    const auto panel_rect = D2D1::RectF(panel_left, panel_top, panel_right, panel_bottom);
+    // Include both half-strokes so avatar_border_gap is the visible gap,
+    // rather than merely the distance between the two stroke centre lines.
+    const float tail_tip_x =
+        avatar_x + (m.avatar_on_right ? -1.0f : 1.0f) *
+                       (avatar_border_radius + panel_border_width + avatar_border_gap);
+    const auto bubble_points =
+        speech_bubble_outline(panel_rect, 30.0f, m.avatar_on_right, tail_tip_x);
+    const auto bubble_geometry = closed_geometry(impl_->d2d.Get(), bubble_points);
+    if (!bubble_geometry) {
+      (void)t->EndDraw();
+      impl_->error = "CreatePathGeometry(speech bubble) failed";
+      return false;
+    }
+
+    ComPtr<ID2D1GradientStopCollection> border_stops;
+    const D2D1_GRADIENT_STOP border_colors[] = {{0.0f, D2D1::ColorF(0.34f, 0.88f, 1.0f, 0.98f)},
+                                                {0.50f, D2D1::ColorF(0.10f, 0.58f, 0.94f, 0.90f)},
+                                                {1.0f, D2D1::ColorF(0.54f, 0.36f, 0.96f, 0.78f)}};
+    (void)t->CreateGradientStopCollection(border_colors, 3, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP,
+                                          &border_stops);
+    auto make_border_gradient = [&](const D2D1_POINT_2F start, const D2D1_POINT_2F end) {
+      ComPtr<ID2D1LinearGradientBrush> gradient;
+      if (border_stops) {
+        (void)t->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(start, end),
+                                           border_stops.Get(), &gradient);
+      }
+      return gradient;
+    };
+    auto border_gradient = make_border_gradient(D2D1::Point2F(panel_left, panel_top),
+                                                D2D1::Point2F(panel_right, panel_bottom));
+    auto avatar_border_gradient = make_border_gradient(
+        D2D1::Point2F(avatar_x - avatar_border_radius, avatar_y - avatar_border_radius),
+        D2D1::Point2F(avatar_x + avatar_border_radius, avatar_y + avatar_border_radius));
+    auto* active_border = border_gradient ? static_cast<ID2D1Brush*>(border_gradient.Get())
+                                          : static_cast<ID2D1Brush*>(panel_border.Get());
+    auto* avatar_border = avatar_border_gradient
+                              ? static_cast<ID2D1Brush*>(avatar_border_gradient.Get())
+                              : static_cast<ID2D1Brush*>(panel_border.Get());
 
     float bubble_opacity = 1.0f;
     float bubble_scale = 1.0f;
@@ -477,80 +562,46 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
     }
     const float anchor_x = m.avatar_on_right ? panel_right : panel_left;
     const auto bubble_transform =
-        D2D1::Matrix3x2F::Scale(bubble_scale, bubble_scale,
-                               D2D1::Point2F(anchor_x, 452.0f)) *
+        D2D1::Matrix3x2F::Scale(bubble_scale, bubble_scale, D2D1::Point2F(anchor_x, 452.0f)) *
         D2D1::Matrix3x2F::Translation(bubble_shift, 7.0f * (1.0f - bubble_opacity));
     t->SetTransform(bubble_transform);
     ComPtr<ID2D1Layer> bubble_layer;
-    const bool has_bubble_layer =
-        SUCCEEDED(t->CreateLayer(nullptr, &bubble_layer)) && bubble_layer;
+    const bool has_bubble_layer = SUCCEEDED(t->CreateLayer(nullptr, &bubble_layer)) && bubble_layer;
     if (has_bubble_layer) {
-      t->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr,
-                                         D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                         D2D1::IdentityMatrix(), bubble_opacity),
-                   bubble_layer.Get());
+      t->PushLayer(
+          D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                D2D1::IdentityMatrix(), bubble_opacity),
+          bubble_layer.Get());
     }
 
-    // A small speech tail makes the logo read as the sender rather than as an
-    // icon embedded in the dialog. It mirrors with the side of presentation.
-    ComPtr<ID2D1PathGeometry> tail_geometry;
-    ComPtr<ID2D1GeometrySink> tail_sink;
-    if (SUCCEEDED(impl_->d2d->CreatePathGeometry(&tail_geometry)) &&
-        SUCCEEDED(tail_geometry->Open(&tail_sink))) {
-      const float edge = m.avatar_on_right ? panel_right : panel_left;
-      const float point = m.avatar_on_right ? 532.0f : 108.0f;
-      tail_sink->BeginFigure(D2D1::Point2F(edge, 408.0f), D2D1_FIGURE_BEGIN_FILLED);
-      tail_sink->AddLine(D2D1::Point2F(point, 432.0f));
-      tail_sink->AddLine(D2D1::Point2F(edge, 450.0f));
-      tail_sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-      if (SUCCEEDED(tail_sink->Close())) {
-        t->FillGeometry(tail_geometry.Get(), panel.Get());
-        t->DrawGeometry(tail_geometry.Get(), panel_border.Get(), 1.5f);
-      }
-    }
-
-    t->DrawRoundedRectangle(panel_bounds, panel_outer_glow.Get(), 12.0f);
-    t->DrawRoundedRectangle(panel_bounds, panel_soft_glow.Get(), 5.0f);
-    t->FillRoundedRectangle(panel_bounds, panel.Get());
-    t->DrawRoundedRectangle(panel_bounds, panel_border.Get(), 1.25f);
-    const auto inner_bounds = D2D1::RoundedRect(
-        D2D1::RectF(panel_left + 3.0f, panel_top + 3.0f, panel_right - 3.0f, 499.0f), 27, 27);
-    t->DrawRoundedRectangle(inner_bounds, panel_inner_highlight.Get(), 1.0f);
-
-    ComPtr<ID2D1GradientStopCollection> border_stops;
-    ComPtr<ID2D1LinearGradientBrush> border_gradient;
-    const D2D1_GRADIENT_STOP border_colors[] = {
-        {0.0f, D2D1::ColorF(0.34f, 0.88f, 1.0f, 0.98f)},
-        {0.50f, D2D1::ColorF(0.10f, 0.58f, 0.94f, 0.90f)},
-        {1.0f, D2D1::ColorF(0.54f, 0.36f, 0.96f, 0.78f)}};
-    if (SUCCEEDED(t->CreateGradientStopCollection(border_colors, 3, D2D1_GAMMA_2_2,
-                                                   D2D1_EXTEND_MODE_CLAMP, &border_stops))) {
-      (void)t->CreateLinearGradientBrush(
-          D2D1::LinearGradientBrushProperties(D2D1::Point2F(panel_left, panel_top),
-                                              D2D1::Point2F(panel_right, 502.0f)),
-          border_stops.Get(), &border_gradient);
-    }
-    auto* active_border = border_gradient
-                              ? static_cast<ID2D1Brush*>(border_gradient.Get())
-                              : static_cast<ID2D1Brush*>(panel_border.Get());
+    t->DrawGeometry(bubble_geometry.Get(), panel_outer_glow.Get(), 12.0f);
+    t->DrawGeometry(bubble_geometry.Get(), panel_soft_glow.Get(), 5.0f);
+    t->FillGeometry(bubble_geometry.Get(), panel.Get());
     if (m.mode == SurfaceMode::Countdown) {
-      t->DrawRoundedRectangle(panel_bounds, active_border, 1.75f);
+      t->DrawGeometry(bubble_geometry.Get(), active_border, panel_border_width,
+                      impl_->round_stroke.Get());
     } else {
-      (void)draw_partial_rounded_border(impl_->d2d.Get(), t, panel_rect, 30.0f,
-                                        m.timeout_progress, active_border, 3.0f,
-                                        impl_->round_stroke.Get());
-      t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()),
-                   impl_->prompt_title.Get(),
-                   D2D1::RectF(panel_left + 34.0f, 264.0f, panel_right - 34.0f, 344.0f),
+      (void)draw_partial_outline(impl_->d2d.Get(), t, bubble_points, m.timeout_progress,
+                                 active_border, panel_border_width, impl_->round_stroke.Get());
+      // Centre the title in the optical content band between the border's
+      // inner edge and the button row, rather than in the panel's raw bounds.
+      const float title_centre = (prompt_panel_top + panel_border_width * 0.5f + button_top) * 0.5f;
+      t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->prompt_title.Get(),
+                   D2D1::RectF(panel_left + 34.0f, title_centre - 40.0f, panel_right - 34.0f,
+                               title_centre + 40.0f),
                    white.Get());
     }
 
+    // The ring is centred between the expanded panel's inner top edge and
+    // the fixed button row. Its outer stroke therefore has equal clear space
+    // above and below without moving the buttons.
+    const float ring_centre_y =
+        (expanded_panel_top + panel_border_width * 0.5f + button_top) * 0.5f;
     const D2D1_POINT_2F ring_centre =
-        D2D1::Point2F((panel_left + panel_right) * 0.5f, 205.0f);
+        D2D1::Point2F((panel_left + panel_right) * 0.5f, ring_centre_y);
     constexpr float ring_radius = 108.0f;
-    const float ring_scale = m.mode == SurfaceMode::Countdown
-                                 ? ease_out_cubic((animation - 0.60f) / 0.25f)
-                                 : 0.0f;
+    const float ring_scale =
+        m.mode == SurfaceMode::Countdown ? ease_out_cubic((animation - 0.60f) / 0.25f) : 0.0f;
     if (ring_scale > 0.001f) {
       t->SetTransform(D2D1::Matrix3x2F::Scale(ring_scale, ring_scale, ring_centre));
       constexpr float watermark_radius = 102.0f;
@@ -625,7 +676,7 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
     const float right_button_right = panel_left + 462.0f;
     if (!m.left_button.empty()) {
       const auto bounds = D2D1::RoundedRect(
-          D2D1::RectF(left_button_left, 400.0f, left_button_right, 468.0f), 34, 34);
+          D2D1::RectF(left_button_left, button_top, left_button_right, button_bottom), 34, 34);
       ID2D1Brush* fill =
           m.mode == SurfaceMode::Confirm
               ? static_cast<ID2D1Brush*>(m.left_hover ? danger_hover.Get() : danger.Get())
@@ -635,10 +686,9 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
                    impl_->button.Get(), bounds.rect, white.Get());
     }
     if (!m.right_button.empty()) {
-      const float left =
-          m.mode == SurfaceMode::Countdown ? left_button_left : right_button_left;
+      const float left = m.mode == SurfaceMode::Countdown ? left_button_left : right_button_left;
       const auto bounds = D2D1::RoundedRect(
-          D2D1::RectF(left, 400.0f, right_button_right, 468.0f), 34, 34);
+          D2D1::RectF(left, button_top, right_button_right, button_bottom), 34, 34);
       const bool countdown_cancel = m.mode == SurfaceMode::Countdown;
       ID2D1Brush* fill =
           countdown_cancel
@@ -661,12 +711,11 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
     const float avatar_scale =
         m.mode == SurfaceMode::Countdown ? 1.0f : ease_out_cubic(animation / 0.45f);
     if (avatar_scale > 0.001f && s.dashboard_logo) {
-      t->SetTransform(D2D1::Matrix3x2F::Scale(
-          avatar_scale, avatar_scale, D2D1::Point2F(avatar_x, avatar_y)));
+      t->SetTransform(
+          D2D1::Matrix3x2F::Scale(avatar_scale, avatar_scale, D2D1::Point2F(avatar_x, avatar_y)));
       t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 48.0f, 48.0f),
                      panel_soft_glow.Get());
-      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 44.0f, 44.0f),
-                     panel.Get());
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 44.0f, 44.0f), panel.Get());
       const auto logo_size = s.dashboard_logo->GetSize();
       const auto avatar_bounds =
           D2D1::RectF(avatar_x - 41.0f, avatar_y - 41.0f, avatar_x + 41.0f, avatar_y + 41.0f);
@@ -681,8 +730,8 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
                       D2D1::RectF(0, 0, logo_size.width, logo_size.height));
         t->PopLayer();
       }
-      t->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 42.0f, 42.0f),
-                     active_border, 2.0f);
+      t->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 42.0f, 42.0f), avatar_border,
+                     panel_border_width);
       t->SetTransform(D2D1::Matrix3x2F::Identity());
     }
   }
