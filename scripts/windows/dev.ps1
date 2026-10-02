@@ -639,10 +639,18 @@ function Invoke-Configure {
 }
 
 function Invoke-Build {
-    if (-not (Test-Path -LiteralPath (Join-Path $script:BuildDirectory "CMakeCache.txt") -PathType Leaf)) { Invoke-Configure }
+    # Always regenerate from the checked-in preset. This prevents a previous
+    # cache with tests disabled (or stale source metadata) from producing a
+    # successful CTest run against an old binary.
+    Invoke-Configure
     Write-Step "Building $Configuration"
     $cmake = Find-CMake
     Invoke-Checked $cmake @("--build", $script:BuildDirectory, "--config", $Configuration, "--parallel")
+    Write-Step "Verifying the portable core test target exists and is current"
+    Invoke-Checked $cmake @(
+        "--build", $script:BuildDirectory, "--config", $Configuration,
+        "--target", "steamvr_gesture_exit_core_tests", "--parallel"
+    )
     $ctest = Join-Path (Split-Path $cmake -Parent) "ctest.exe"
     if (-not (Test-Path -LiteralPath $ctest -PathType Leaf)) {
         throw "CTest was not found next to CMake: $ctest"

@@ -6,7 +6,8 @@
       "displayName": "Host build and portable tests",
       "binaryDir": "${sourceDir}/out/build/host",
       "cacheVariables": {
-        "STEAMVR_GESTURE_EXIT_BUILD_TESTS": "ON"
+        "STEAMVR_GESTURE_EXIT_BUILD_TESTS": "ON",
+        "STEAMVR_GESTURE_EXIT_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -16,7 +17,8 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/out/build/windows-x64",
       "cacheVariables": {
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/package/steamvr-gesture-exit"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/package/steamvr-gesture-exit",
+        "STEAMVR_GESTURE_EXIT_BUILD_TESTS": "ON"
       },
       "condition": {
         "type": "equals",

@@ -6,8 +6,8 @@ dev action="help" configuration="Debug":
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/dev.ps1 {{ action }} -Configuration {{ configuration }}
 
 test:
-    cmake --preset host
-    cmake --build --preset host --parallel
+    cmake --preset host --fresh
+    cmake --build --preset host --target steamvr_gesture_exit_core_tests --clean-first --parallel
     ctest --preset host
 
 format:
