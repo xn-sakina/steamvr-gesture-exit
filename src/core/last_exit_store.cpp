@@ -1,9 +1,10 @@
 #include "core/last_exit_store.hpp"
+#include "json/json.h"
 
-#include <charconv>
-#include <cstdint>
+#include <exception>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <system_error>
 #include <utility>
 #ifdef _WIN32
@@ -12,6 +13,8 @@
 
 namespace steamvr_gesture_exit::core {
 namespace {
+
+constexpr int kDocumentVersion = 1;
 
 void discard_temporary_file(const std::filesystem::path& path) {
   auto temporary = path;
@@ -38,24 +41,42 @@ std::optional<std::chrono::system_clock::time_point> LastExitStore::load(std::st
   std::ifstream input(path_, std::ios::binary);
   const std::string document{std::istreambuf_iterator<char>(input),
                              std::istreambuf_iterator<char>()};
-  if ((!input.good() && !input.eof()) || document.empty() || document.size() > 32) {
+  if ((!input.good() && !input.eof()) || document.empty() || document.size() > 1024) {
     if (error)
       *error = "LAST_EXIT_READ_FAILED";
     return std::nullopt;
   }
-  std::int64_t unix_seconds = 0;
-  const char* begin = document.data();
-  const char* end = begin + document.size();
-  auto parsed = std::from_chars(begin, end, unix_seconds);
-  const char* remainder = parsed.ptr;
-  if (remainder != end && *remainder == '\r')
-    ++remainder;
-  if (remainder != end && *remainder == '\n')
-    ++remainder;
+  Json::CharReaderBuilder parser;
+  parser["allowComments"] = false;
+  parser["strictRoot"] = true;
+  parser["failIfExtra"] = true;
+  parser["rejectDupKeys"] = true;
+  Json::Value root;
+  std::string parse_error;
+  std::istringstream json(document);
+  bool parsed = false;
+  try {
+    parsed = Json::parseFromStream(parser, json, &root, &parse_error);
+  } catch (const std::exception&) {
+    parsed = false;
+  }
+  if (!parsed || !root.isObject() || root.size() != 2) {
+    if (error)
+      *error = "LAST_EXIT_JSON_INVALID";
+    return std::nullopt;
+  }
+  const auto& version = root["version"];
+  const auto& timestamp = root["lastSuccessfulExitUnixSeconds"];
+  if (!version.isInt() || version.asInt() != kDocumentVersion || !timestamp.isInt64()) {
+    if (error)
+      *error = "LAST_EXIT_JSON_INVALID";
+    return std::nullopt;
+  }
+  const auto unix_seconds = timestamp.asInt64();
   const auto maximum =
       std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max())
           .count();
-  if (parsed.ec != std::errc{} || remainder != end || unix_seconds < 0 || unix_seconds > maximum) {
+  if (unix_seconds < 0 || unix_seconds > maximum) {
     if (error)
       *error = "LAST_EXIT_INVALID";
     return std::nullopt;
@@ -87,7 +108,10 @@ bool LastExitStore::save(const std::chrono::system_clock::time_point time,
   temporary += ".tmp";
   {
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    output << unix_seconds << '\n';
+    output << "{\n"
+           << "  \"version\": " << kDocumentVersion << ",\n"
+           << "  \"lastSuccessfulExitUnixSeconds\": " << unix_seconds << "\n"
+           << "}\n";
     output.flush();
     if (!output) {
       output.close();

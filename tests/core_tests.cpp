@@ -516,7 +516,7 @@ void last_exit_store_persists_only_explicit_records() {
   const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-last-exit-test";
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
-  LastExitStore store(root / "last-exit.txt");
+  LastExitStore store(root / "last-exit.json");
   std::string error;
   CHECK(!store.load(&error));
   CHECK(error.empty());
@@ -524,6 +524,13 @@ void last_exit_store_persists_only_explicit_records() {
   const auto recorded = std::chrono::system_clock::time_point{std::chrono::seconds{1'800'000'123}};
   CHECK(store.save(recorded, &error));
   CHECK(store.load(&error) == recorded);
+  {
+    std::ifstream input(store.path());
+    const std::string document{std::istreambuf_iterator<char>(input),
+                               std::istreambuf_iterator<char>()};
+    CHECK(document.find("\"version\": 1") != std::string::npos);
+    CHECK(document.find("\"lastSuccessfulExitUnixSeconds\": 1800000123") != std::string::npos);
+  }
 
   auto temporary = store.path();
   temporary += ".tmp";
@@ -536,11 +543,11 @@ void last_exit_store_persists_only_explicit_records() {
 
   {
     std::ofstream output(store.path());
-    output << "not-a-timestamp";
+    output << R"({"version":1,"lastSuccessfulExitUnixSeconds":"1800000123"})";
   }
   error.clear();
   CHECK(!store.load(&error));
-  CHECK(error == "LAST_EXIT_INVALID");
+  CHECK(error == "LAST_EXIT_JSON_INVALID");
   std::filesystem::remove_all(root, ec);
 }
 
