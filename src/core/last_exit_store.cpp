@@ -74,7 +74,8 @@ std::optional<std::chrono::system_clock::time_point> LastExitStore::load(std::st
   }
   const auto unix_seconds = timestamp.asInt64();
   const auto maximum =
-      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max())
+      std::chrono::duration_cast<std::chrono::seconds>(
+          (std::chrono::system_clock::duration::max)())
           .count();
   if (unix_seconds < 0 || unix_seconds > maximum) {
     if (error)
