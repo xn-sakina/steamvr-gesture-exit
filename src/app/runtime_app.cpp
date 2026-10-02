@@ -626,6 +626,7 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           abort_overlay_flow(now, f);
           return;
         }
+        sound_.ui_open();
         break;
       case core::EffectType::ShowConfirmation: {
         if (!overlays_->show_wrist(

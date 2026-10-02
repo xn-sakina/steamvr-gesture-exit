@@ -519,7 +519,8 @@ void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::English, "schinese", "zh-CN") == Language::English);
   CHECK(localize(StringId::Confirm, Language::English) == "Confirm Exit");
   CHECK(localize(StringId::Confirm, Language::ChineseSimplified) == "确认退出");
-  CHECK(localize(StringId::ConfirmTitle, Language::ChineseSimplified) == "是否退出？");
+  CHECK(localize(StringId::ConfirmTitle, Language::English) == "Exit current game?");
+  CHECK(localize(StringId::ConfirmTitle, Language::ChineseSimplified) == "退出当前游戏？");
   CHECK(localize(StringId::ExitGame, Language::ChineseSimplified) == "退出");
   CHECK(localize(StringId::Dismiss, Language::ChineseSimplified) == "取消");
   CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");

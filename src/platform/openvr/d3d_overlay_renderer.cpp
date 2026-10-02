@@ -203,7 +203,7 @@ bool D3dOverlayRenderer::initialize() {
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 46, L"",
                                  &impl_->title);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 52, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 38, L"",
                                  &impl_->prompt_title);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 27, L"",
@@ -212,7 +212,7 @@ bool D3dOverlayRenderer::initialize() {
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30, L"",
                                  &impl_->button);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 21, L"",
                                  &impl_->brand);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 19, L"",
@@ -386,7 +386,7 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
     if (m.mode != SurfaceMode::Countdown) {
       if (s.dashboard_logo) {
         const auto logo_size = s.dashboard_logo->GetSize();
-        t->DrawBitmap(s.dashboard_logo.Get(), D2D1::RectF(44, 58, 88, 102), 0.58f,
+        t->DrawBitmap(s.dashboard_logo.Get(), D2D1::RectF(44, 58, 88, 102), 1.0f,
                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
                       D2D1::RectF(0, 0, logo_size.width, logo_size.height));
       }
@@ -398,17 +398,47 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
             D2D1::RoundedRect(D2D1::RectF(40, 30, 40 + 432 * timeout, 38), 4, 4), accent.Get());
       }
       t->DrawTextW(m.body.c_str(), static_cast<UINT32>(m.body.size()), impl_->brand.Get(),
-                   D2D1::RectF(100, 54, 460, 108), muted.Get());
+                   D2D1::RectF(100, 52, 460, 110), muted.Get());
+
+      // A compact pictogram gives the prompt a visual centre without adding
+      // explanatory copy. Keep it deliberately light so the actions remain
+      // the strongest elements on the panel.
+      const auto cue_centre = D2D1::Point2F(256.0f, 184.0f);
+      auto cue_fill = impl_->brush(t, D2D1::ColorF(0.10f, 0.58f, 0.82f, 0.12f));
+      auto cue_stroke = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.72f));
+      if (!cue_fill || !cue_stroke) {
+        (void)t->EndDraw();
+        if (recover_target(id, impl_->resource_status) && !retried)
+          return render(id, m, true);
+        return false;
+      }
+      t->FillEllipse(D2D1::Ellipse(cue_centre, 30.0f, 30.0f), cue_fill.Get());
+      t->DrawEllipse(D2D1::Ellipse(cue_centre, 30.0f, 30.0f), cue_stroke.Get(), 2.0f);
+      t->DrawLine(D2D1::Point2F(244.0f, 171.0f), D2D1::Point2F(244.0f, 197.0f),
+                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
+      t->DrawLine(D2D1::Point2F(244.0f, 171.0f), D2D1::Point2F(254.0f, 171.0f),
+                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
+      t->DrawLine(D2D1::Point2F(244.0f, 197.0f), D2D1::Point2F(254.0f, 197.0f),
+                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
+      t->DrawLine(D2D1::Point2F(251.0f, 184.0f), D2D1::Point2F(268.0f, 184.0f),
+                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
+      t->DrawLine(D2D1::Point2F(262.0f, 178.0f), D2D1::Point2F(268.0f, 184.0f),
+                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
+      t->DrawLine(D2D1::Point2F(262.0f, 190.0f), D2D1::Point2F(268.0f, 184.0f),
+                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
       t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->prompt_title.Get(),
-                   D2D1::RectF(40, 160, 472, 300), white.Get());
+                   D2D1::RectF(40, 226, 472, 310), white.Get());
     }
 
     // The countdown belongs to the content area above the fixed button group,
     // rather than to the full surface including the button.
-    const D2D1_POINT_2F ring_centre = D2D1::Point2F(256, 200);
-    constexpr float ring_radius = 88.0f;
+    constexpr float content_top = 10.0f;
+    constexpr float button_top = 390.0f;
+    const D2D1_POINT_2F ring_centre =
+        D2D1::Point2F(256.0f, content_top + (button_top - content_top) * 0.5f);
+    constexpr float ring_radius = 112.0f;
     if (m.mode == SurfaceMode::Countdown) {
-      constexpr float watermark_radius = 80.0f;
+      constexpr float watermark_radius = 102.0f;
       const auto watermark_bounds =
           D2D1::RectF(ring_centre.x - watermark_radius, ring_centre.y - watermark_radius,
                       ring_centre.x + watermark_radius, ring_centre.y + watermark_radius);

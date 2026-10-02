@@ -36,16 +36,21 @@ void make_wave(unsigned char* wave, uint32_t samples, double frequency, double a
 }  // namespace
 CountdownSound::CountdownSound() {
   make_wave(wave_, 800, 660.0, 20.0);
+  make_wave(open_wave_, 720, 720.0, 17.0);
   make_wave(hover_wave_, 320, 540.0, 13.0);
   make_wave(select_wave_, 520, 820.0, 19.0);
 }
 CountdownSound::~CountdownSound() {
-  // SND_MEMORY | SND_ASYNC keeps using wave_ after tick() returns.
+  // SND_MEMORY | SND_ASYNC keeps using a member wave buffer after playback returns.
   PlaySoundW(nullptr, nullptr, 0);
 }
 void CountdownSound::tick(bool enabled) {
   if (enabled)
     PlaySoundW(reinterpret_cast<LPCWSTR>(wave_), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+}
+void CountdownSound::ui_open() {
+  PlaySoundW(reinterpret_cast<LPCWSTR>(open_wave_), nullptr,
+             SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
 }
 void CountdownSound::ui_hover() {
   PlaySoundW(reinterpret_cast<LPCWSTR>(hover_wave_), nullptr,

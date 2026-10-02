@@ -15,7 +15,7 @@ struct TextPair {
 constexpr std::array<TextPair, 63> strings{{
     {"SteamVR Gesture Exit", "SteamVR手势退出"},
     {"Exit", "退出"},
-    {"Exit the game?", "是否退出？"},
+    {"Exit current game?", "退出当前游戏？"},
     {"Confirm Exit", "确认退出"},
     {"Cancel", "取消"},
     {"Exit Failed", "退出失败"},
