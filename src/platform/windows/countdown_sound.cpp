@@ -36,6 +36,7 @@ void make_wave(unsigned char* wave, uint32_t samples, double frequency, double a
 void make_bubble_wave(unsigned char* wave) {
   constexpr uint32_t samples = 960;
   constexpr uint32_t rate = 8000;
+  constexpr double volume = 0.70;
   std::memcpy(wave, "RIFF", 4);
   put<uint32_t>(wave + 4, 36 + samples);
   std::memcpy(wave + 8, "WAVEfmt ", 8);
@@ -60,8 +61,8 @@ void make_bubble_wave(unsigned char* wave) {
     const double decay = std::exp(-4.8 * position);
     const double body = std::sin(phase) * 18.0 * attack * decay;
     const double pop = std::sin(phase * 0.48) * 5.0 * attack * std::exp(-18.0 * position);
-    wave[44 + index] = static_cast<unsigned char>(
-        128 + std::clamp(body + pop, -24.0, 24.0));
+    const double sample = std::clamp(body + pop, -24.0, 24.0);
+    wave[44 + index] = static_cast<unsigned char>(128 + sample * volume);
   }
 }
 }  // namespace

@@ -641,10 +641,11 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
   if (wrist_visible_ && pointer_enabled && hand.pointer_available()) {
     const auto pointer_origin = hand.pointer_origin();
     const auto pointer_direction = hand.pointer_direction();
+    const Float3 direction = normalized(
+        {pointer_direction.x, pointer_direction.y, pointer_direction.z});
     vr::VROverlayIntersectionParams_t parameters{};
     parameters.vSource = {{pointer_origin.x, pointer_origin.y, pointer_origin.z}};
-    parameters.vDirection =
-        {{pointer_direction.x, pointer_direction.y, pointer_direction.z}};
+    parameters.vDirection = {{direction.x, direction.y, direction.z}};
     parameters.eOrigin = vr::TrackingUniverseStanding;
     vr::VROverlayIntersectionResults_t intersection{};
     if (overlays_->ComputeOverlayIntersection(wrist_, &parameters, &intersection) &&
@@ -653,14 +654,17 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
       pointer_visible = true;
       pointer_x = intersection.vUVs.v[0] * kWristWidth;
       pointer_y = (1.0f - intersection.vUVs.v[1]) * kWristHeight;
-      pointer_target = intersection.vPoint;
+      // Keep the visual ray on the exact same mathematical ray used for hit
+      // testing. The dot and click target come from this intersection's UVs;
+      // deriving the world-space endpoint from the same source, direction and
+      // distance prevents a separately returned point from becoming a second
+      // authority for the guide line.
+      pointer_target = {{pointer_origin.x + direction.x * intersection.fDistance,
+                         pointer_origin.y + direction.y * intersection.fDistance,
+                         pointer_origin.z + direction.z * intersection.fDistance}};
       hit = wrist_hit(wrist_model_, pointer_x, pointer_y);
     }
   }
-
-  const bool ray_updated = pointer_visible
-                               ? show_pointer_ray(hand, headset_position, pointer_target)
-                               : hide_pointer_ray();
 
   const auto next_pointer_device = pointer_enabled && hand.pointer_available()
                                        ? hand.device_index
@@ -696,9 +700,14 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
 
   const bool left = hit == WristHit::Left;
   const bool right = hit == WristHit::Right;
+  // The guide line is transformed every tracking sample, so the dot must use
+  // that same sample as well. The previous 1.5 px submission threshold left
+  // the dot at an older UV while the line already pointed at the new hit. An
+  // oblique ray turns small controller rotations into larger surface motion,
+  // which made that real temporal offset look angle-dependent.
   const bool moved = pointer_visible != wrist_model_.pointer_visible ||
-                     (pointer_visible && (std::abs(pointer_x - wrist_model_.pointer_x) >= 1.5f ||
-                                          std::abs(pointer_y - wrist_model_.pointer_y) >= 1.5f));
+                     (pointer_visible && (pointer_x != wrist_model_.pointer_x ||
+                                          pointer_y != wrist_model_.pointer_y));
   const bool hover_changed = wrist_model_.left_hover != left || wrist_model_.right_hover != right;
   out.entered_button = (left && !wrist_model_.left_hover) || (right && !wrist_model_.right_hover);
   out.clicked_button = !out.actions.empty();
@@ -712,8 +721,13 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
     wrist_model_.pointer_y = pointer_y;
     if (!submit(wrist_, "wrist", wrist_model_)) {
       out = {};
+      return out;
     }
   }
+
+  const bool ray_updated = pointer_visible
+                               ? show_pointer_ray(hand, headset_position, pointer_target)
+                               : hide_pointer_ray();
   if (!ray_updated)
     out = {};
   return out;
