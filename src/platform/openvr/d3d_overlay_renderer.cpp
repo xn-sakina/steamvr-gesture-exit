@@ -1004,8 +1004,8 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     for (size_t i = 0; i < m.help_lines.size(); ++i) {
       const float top = 96.0f + 116.0f * static_cast<float>(i);
       const auto number = std::to_wstring(i + 1);
-      const auto badge = D2D1::RectF(64, top + 28, 112, top + 76);
-      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(88, top + 52), 24, 24), accent.Get());
+      const auto badge = D2D1::RectF(70, top + 34, 106, top + 70);
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(88, top + 52), 18, 18), accent.Get());
       t->DrawTextW(number.c_str(), static_cast<UINT32>(number.size()), impl_->step_number.Get(),
                    badge, white.Get());
       t->DrawTextW(m.help_lines[i].c_str(), static_cast<UINT32>(m.help_lines[i].size()),

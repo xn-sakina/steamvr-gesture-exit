@@ -16,6 +16,9 @@ std::filesystem::path data_directory() {
 std::filesystem::path settings_path() {
   return data_directory() / L"settings.json";
 }
+std::filesystem::path last_exit_path() {
+  return data_directory() / L"last-exit.txt";
+}
 std::filesystem::path log_directory() {
   return data_directory() / L"logs";
 }

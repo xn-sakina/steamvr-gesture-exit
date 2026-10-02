@@ -167,6 +167,7 @@ add_library(steamvr_gesture_exit_core STATIC
     src/core/settings_persistence.cpp
     src/core/state_machine.cpp
     src/core/diagnostics.cpp
+    src/core/last_exit_store.cpp
     src/core/localization.cpp
     src/core/vr_game_classifier.cpp
     src/core/dashboard_ui.cpp

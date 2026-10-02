@@ -44,7 +44,7 @@ constexpr std::array<TextPair, 63> strings{{
     {"Last Exit", "上次退出"},
     {"App Version", "应用版本"},
     {"Unavailable", "不可用"},
-    {"Never", "从未"},
+    {"No record", "无记录"},
     {"Settings updated.", "配置已修改"},
     {"Failed to save settings. Please try again.", "配置保存失败，请重试。"},
     {"How to Use", "使用说明"},
@@ -111,7 +111,7 @@ std::string_view localize_last_exit(const LastExitStatus status,
                                     const Language resolved_language) noexcept {
   switch (status) {
     case LastExitStatus::Never:
-      return localize(StringId::Never, resolved_language);
+      return localize(StringId::NoExitRecord, resolved_language);
     case LastExitStatus::Succeeded:
       return localize(StringId::LastExitSucceeded, resolved_language);
     case LastExitStatus::Cancelled:

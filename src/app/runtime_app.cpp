@@ -358,7 +358,12 @@ core::StringId target_reason(platform::windows::ExitTargetStatus status) {
 }  // namespace
 RuntimeApp::RuntimeApp()
     : settings_store_(platform::windows::settings_path()),
+      last_exit_store_(platform::windows::last_exit_path()),
       log_(platform::windows::log_directory() / L"runtime.log") {
+  std::string last_exit_error;
+  last_successful_exit_at_ = last_exit_store_.load(&last_exit_error);
+  if (!last_exit_error.empty())
+    (void)log_.append({core::DiagnosticEventType::Error, last_exit_error});
   auto loaded = settings_store_.load();
   settings_ = loaded.settings;
   gesture_ = core::GestureDetector(core::gesture_config(settings_.gesture_sensitivity));
@@ -480,7 +485,6 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   const auto& configured = settings_.configured_hand == core::Hand::Left ? f.left : f.right;
   const auto& opposite = settings_.configured_hand == core::Hand::Left ? f.right : f.left;
   const auto now = std::chrono::steady_clock::now();
-  const auto snapshot = flow_->snapshot(now);
   platform::openvr::DashboardSurfaceModel model{};
   model.settings_title = text(core::StringId::SettingsTitle);
   model.diagnostics_title = text(core::StringId::DiagnosticsTitle);
@@ -564,9 +568,12 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   const std::wstring target_value = target_available
                                         ? resolution.target->display_name
                                         : text(target_reason(resolution.target_status));
-  std::wstring last = widen(core::localize_last_exit(snapshot.last_exit, language_));
-  if (snapshot.last_exit == core::LastExitStatus::Succeeded && last_successful_exit_at_)
-    last += L"  ·  " + local_timestamp(*last_successful_exit_at_);
+  std::wstring last = text(core::StringId::NoExitRecord);
+  if (last_successful_exit_at_) {
+    const auto timestamp = local_timestamp(*last_successful_exit_at_);
+    if (!timestamp.empty())
+      last = timestamp;
+  }
   model.statuses = {{text(core::StringId::CurrentVrGame), game_value,
                      game_available ? platform::openvr::DashboardStatusTone::Available
                                     : platform::openvr::DashboardStatusTone::Neutral},
@@ -584,9 +591,8 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
                      opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
                                                   : platform::openvr::DashboardStatusTone::Neutral},
                     {text(core::StringId::LastExit), last,
-                     snapshot.last_exit == core::LastExitStatus::Succeeded
-                         ? platform::openvr::DashboardStatusTone::Available
-                         : platform::openvr::DashboardStatusTone::Neutral},
+                     last_successful_exit_at_ ? platform::openvr::DashboardStatusTone::Available
+                                              : platform::openvr::DashboardStatusTone::Neutral},
                     {text(core::StringId::AppVersion), model.version_tag,
                      platform::openvr::DashboardStatusTone::Neutral}};
   model.help_lines = {text(core::StringId::HelpGesture), text(core::StringId::HelpOppositeHand),
@@ -740,8 +746,13 @@ void RuntimeApp::apply(core::Effects effects, std::chrono::steady_clock::time_po
           record.target_name = e.target->display_name;
         (void)log_.append(record);
         if (core::completes_exit_flow(e)) {
-          if (flow_->snapshot(now).last_exit == core::LastExitStatus::Succeeded)
-            last_successful_exit_at_ = std::chrono::system_clock::now();
+          if (flow_->snapshot(now).last_exit == core::LastExitStatus::Succeeded) {
+            const auto completed_at = std::chrono::system_clock::now();
+            last_successful_exit_at_ = completed_at;
+            std::string save_error;
+            if (!last_exit_store_.save(completed_at, &save_error))
+              (void)log_.append({core::DiagnosticEventType::Error, save_error});
+          }
           process_.clear();
           locked_native_.reset();
         }

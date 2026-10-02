@@ -1,6 +1,7 @@
 #include "core/diagnostics.hpp"
 #include "core/dashboard_ui.hpp"
 #include "core/gesture_detector.hpp"
+#include "core/last_exit_store.hpp"
 #include "core/localization.hpp"
 #include "core/settings.hpp"
 #include "core/settings_persistence.hpp"
@@ -511,6 +512,38 @@ void settings_worker_concurrent_stop_joins_once() {
   std::filesystem::remove_all(root, ec);
 }
 
+void last_exit_store_persists_only_explicit_records() {
+  const auto root = std::filesystem::temp_directory_path() / "steamvr-gesture-exit-last-exit-test";
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  LastExitStore store(root / "last-exit.txt");
+  std::string error;
+  CHECK(!store.load(&error));
+  CHECK(error.empty());
+
+  const auto recorded = std::chrono::system_clock::time_point{std::chrono::seconds{1'800'000'123}};
+  CHECK(store.save(recorded, &error));
+  CHECK(store.load(&error) == recorded);
+
+  auto temporary = store.path();
+  temporary += ".tmp";
+  {
+    std::ofstream output(temporary);
+    output << "interrupted";
+  }
+  CHECK(store.load(&error) == recorded);
+  CHECK(!std::filesystem::exists(temporary));
+
+  {
+    std::ofstream output(store.path());
+    output << "not-a-timestamp";
+  }
+  error.clear();
+  CHECK(!store.load(&error));
+  CHECK(error == "LAST_EXIT_INVALID");
+  std::filesystem::remove_all(root, ec);
+}
+
 void localization_resolves_auto_and_manual() {
   CHECK(resolve_language(Language::Auto, "schinese", "en-US") == Language::English);
   CHECK(resolve_language(Language::Auto, "", "zh-SG") == Language::ChineseSimplified);
@@ -542,7 +575,7 @@ void localization_resolves_auto_and_manual() {
         "挥手唤出退出按钮");
   CHECK(localize(StringId::SecondsUnit, Language::ChineseSimplified) == "秒");
   CHECK(localize(StringId::EnglishLanguage, Language::ChineseSimplified) == "English");
-  CHECK(localize_last_exit(LastExitStatus::Never, Language::ChineseSimplified) == "从未");
+  CHECK(localize_last_exit(LastExitStatus::Never, Language::ChineseSimplified) == "无记录");
   CHECK(localize_last_exit(LastExitStatus::Succeeded, Language::ChineseSimplified) == "成功");
   CHECK(localize_last_exit(LastExitStatus::Cancelled, Language::ChineseSimplified) == "已取消");
   CHECK(localize_last_exit(LastExitStatus::Failed, Language::ChineseSimplified) == "失败");
@@ -838,6 +871,10 @@ void dashboard_controls_are_visible_semantic_targets() {
     if (button.enabled)
       CHECK(hit && *hit == button.action);
   }
+  const auto edge_buttons =
+      std::count_if(buttons.begin(), buttons.end(),
+                    [](const DashboardButton& button) { return button.bounds.right == 980.0F; });
+  CHECK(edge_buttons == 6);
   CHECK(!dashboard_hit_test(buttons, 80.0F, 130.0F));
   CHECK(!dashboard_hit_test(buttons, 610.0F, 88.0F));
   CHECK(!dashboard_hit_test(buttons, 228.0F, 173.0F));
@@ -1286,6 +1323,7 @@ int main() {
       {"settings failure and queue bound",
        settings_worker_failure_preserves_last_commit_and_bounds_queue},
       {"settings concurrent stop", settings_worker_concurrent_stop_joins_once},
+      {"last exit persistence", last_exit_store_persists_only_explicit_records},
       {"localization resolves auto and manual", localization_resolves_auto_and_manual},
       {"diagnostics structured privacy", diagnostics_are_structured_and_privacy_bounded},
       {"diagnostics debug filtering", diagnostics_debug_records_follow_build_type},

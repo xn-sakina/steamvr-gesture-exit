@@ -38,7 +38,7 @@ enum class StringId {
   LastExit,
   AppVersion,
   Unavailable,
-  Never,
+  NoExitRecord,
   SettingsSaved,
   SettingsSaveFailed,
   QuickGuide,

@@ -2,6 +2,7 @@
 #include "core/diagnostics.hpp"
 #include "core/dashboard_ui.hpp"
 #include "core/gesture_detector.hpp"
+#include "core/last_exit_store.hpp"
 #include "core/localization.hpp"
 #include "core/settings.hpp"
 #include "core/settings_persistence.hpp"
@@ -41,6 +42,7 @@ class RuntimeApp {
   void abort_overlay_flow(std::chrono::steady_clock::time_point, const TrackingFrame&);
   std::wstring text(core::StringId) const;
   core::SettingsStore settings_store_;
+  core::LastExitStore last_exit_store_;
   core::Settings settings_;
   core::Language language_ = core::Language::English;
   core::DiagnosticLog log_;

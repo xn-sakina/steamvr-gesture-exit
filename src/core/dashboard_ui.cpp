@@ -8,7 +8,9 @@ namespace steamvr_gesture_exit::core {
 namespace {
 
 constexpr float kButtonLeft = 396.0F;
-constexpr float kButtonRight = 956.0F;
+// Settings controls reach the card's right edge. Keeping the old 24 px inset
+// exposed a dark vertical strip that looked like a stale width after updates.
+constexpr float kButtonRight = 980.0F;
 constexpr float kRowTop = 96.0F;
 // Six compact rows keep the previous y=432 content boundary. The dashboard
 // surface itself stays fixed, so the other tabs retain their exact layout and
