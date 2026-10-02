@@ -14,6 +14,84 @@
 #include <map>
 namespace steamvr_gesture_exit::platform::openvr {
 using Microsoft::WRL::ComPtr;
+namespace {
+float clamp01(const float value) {
+  return std::clamp(value, 0.0f, 1.0f);
+}
+
+float ease_out_cubic(const float value) {
+  const float inverse = 1.0f - clamp01(value);
+  return 1.0f - inverse * inverse * inverse;
+}
+
+bool draw_partial_rounded_border(ID2D1Factory* factory, ID2D1RenderTarget* target,
+                                 const D2D1_RECT_F rect, const float radius,
+                                 const float progress, ID2D1Brush* brush, const float width,
+                                 ID2D1StrokeStyle* stroke) {
+  const float visible = clamp01(progress);
+  if (visible <= 0.0f)
+    return true;
+
+  std::vector<D2D1_POINT_2F> points;
+  points.reserve(40);
+  const float centre_x = (rect.left + rect.right) * 0.5f;
+  points.push_back(D2D1::Point2F(centre_x, rect.top));
+  points.push_back(D2D1::Point2F(rect.right - radius, rect.top));
+  constexpr int corner_steps = 8;
+  auto append_corner = [&](const float x, const float y, const float start_angle) {
+    for (int step = 1; step <= corner_steps; ++step) {
+      const float angle =
+          (start_angle + 0.5f * 3.14159265358979323846f * step / corner_steps);
+      points.push_back(D2D1::Point2F(x + std::cos(angle) * radius,
+                                    y + std::sin(angle) * radius));
+    }
+  };
+  append_corner(rect.right - radius, rect.top + radius, -0.5f * 3.14159265358979323846f);
+  points.push_back(D2D1::Point2F(rect.right, rect.bottom - radius));
+  append_corner(rect.right - radius, rect.bottom - radius, 0.0f);
+  points.push_back(D2D1::Point2F(rect.left + radius, rect.bottom));
+  append_corner(rect.left + radius, rect.bottom - radius, 0.5f * 3.14159265358979323846f);
+  points.push_back(D2D1::Point2F(rect.left, rect.top + radius));
+  append_corner(rect.left + radius, rect.top + radius, 3.14159265358979323846f);
+  points.push_back(D2D1::Point2F(centre_x, rect.top));
+
+  std::vector<float> cumulative(points.size(), 0.0f);
+  for (size_t index = 1; index < points.size(); ++index) {
+    const float dx = points[index].x - points[index - 1].x;
+    const float dy = points[index].y - points[index - 1].y;
+    cumulative[index] = cumulative[index - 1] + std::sqrt(dx * dx + dy * dy);
+  }
+  const float target_length = cumulative.back() * visible;
+  ComPtr<ID2D1PathGeometry> geometry;
+  ComPtr<ID2D1GeometrySink> sink;
+  if (FAILED(factory->CreatePathGeometry(&geometry)) || FAILED(geometry->Open(&sink)))
+    return false;
+  sink->BeginFigure(points.front(), D2D1_FIGURE_BEGIN_HOLLOW);
+  for (size_t index = 1; index < points.size(); ++index) {
+    if (cumulative[index] <= target_length) {
+      sink->AddLine(points[index]);
+      continue;
+    }
+    const float segment = cumulative[index] - cumulative[index - 1];
+    const float amount = segment > 0.0f
+                             ? (target_length - cumulative[index - 1]) / segment
+                             : 0.0f;
+    if (amount > 0.0f) {
+      sink->AddLine(D2D1::Point2F(points[index - 1].x +
+                                      (points[index].x - points[index - 1].x) * amount,
+                                  points[index - 1].y +
+                                      (points[index].y - points[index - 1].y) * amount));
+    }
+    break;
+  }
+  sink->EndFigure(D2D1_FIGURE_END_OPEN);
+  if (FAILED(sink->Close()))
+    return false;
+  target->DrawGeometry(geometry.Get(), brush, width, stroke);
+  return true;
+}
+}  // namespace
+
 struct D3dOverlayRenderer::Impl {
   struct Surface {
     uint32_t w = 0, h = 0;
@@ -203,13 +281,13 @@ bool D3dOverlayRenderer::initialize() {
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 46, L"",
                                  &impl_->title);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 38, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 34, L"",
                                  &impl_->prompt_title);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 27, L"",
                                  &impl_->body);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30, L"",
+                                 DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 25, L"",
                                  &impl_->button);
   impl_->write->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
                                  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 21, L"",
@@ -364,108 +442,117 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
   }
   t->BeginDraw();
   t->Clear(D2D1::ColorF(0, 0, 0, 0));
-  const auto panel_bounds =
-      D2D1::RoundedRect(D2D1::RectF(10, 10, float(s.w - 10), float(s.h - 10)), 32, 32);
-  // Separate the control from bright or busy game scenes with a restrained,
-  // static bloom. The wide strokes are drawn first so the opaque panel hides
-  // their inner halves and leaves only a soft exterior halo.
-  t->DrawRoundedRectangle(panel_bounds, panel_outer_glow.Get(), 12.0f);
-  t->DrawRoundedRectangle(panel_bounds, panel_soft_glow.Get(), 5.0f);
-  t->FillRoundedRectangle(panel_bounds, panel.Get());
-
-  ComPtr<ID2D1GradientStopCollection> border_stops;
-  ComPtr<ID2D1LinearGradientBrush> border_gradient;
-  const D2D1_GRADIENT_STOP border_colors[] = {
-      {0.0f, D2D1::ColorF(0.34f, 0.88f, 1.0f, 0.95f)},
-      {0.48f, D2D1::ColorF(0.10f, 0.58f, 0.94f, 0.80f)},
-      {1.0f, D2D1::ColorF(0.54f, 0.36f, 0.96f, 0.64f)}};
-  if (SUCCEEDED(t->CreateGradientStopCollection(border_colors, 3, D2D1_GAMMA_2_2,
-                                                 D2D1_EXTEND_MODE_CLAMP, &border_stops))) {
-    (void)t->CreateLinearGradientBrush(
-        D2D1::LinearGradientBrushProperties(D2D1::Point2F(70.0f, 18.0f),
-                                            D2D1::Point2F(470.0f, 500.0f)),
-        border_stops.Get(), &border_gradient);
-  }
-  t->DrawRoundedRectangle(panel_bounds,
-                          border_gradient ? static_cast<ID2D1Brush*>(border_gradient.Get())
-                                          : static_cast<ID2D1Brush*>(panel_border.Get()),
-                          1.75f);
-  const auto inner_bounds =
-      D2D1::RoundedRect(D2D1::RectF(13, 13, float(s.w - 13), float(s.h - 13)), 29, 29);
-  t->DrawRoundedRectangle(inner_bounds, panel_inner_highlight.Get(), 1.0f);
   if (m.mode == SurfaceMode::Message) {
+    const auto panel_bounds =
+        D2D1::RoundedRect(D2D1::RectF(10, 10, float(s.w - 10), float(s.h - 10)), 32, 32);
+    t->DrawRoundedRectangle(panel_bounds, panel_outer_glow.Get(), 12.0f);
+    t->DrawRoundedRectangle(panel_bounds, panel_soft_glow.Get(), 5.0f);
+    t->FillRoundedRectangle(panel_bounds, panel.Get());
+    t->DrawRoundedRectangle(panel_bounds, panel_border.Get(), 1.75f);
     t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->title.Get(),
                  D2D1::RectF(42, 30, float(s.w - 42), 100), white.Get());
     t->DrawTextW(m.body.c_str(), static_cast<UINT32>(m.body.size()), impl_->body.Get(),
                  D2D1::RectF(42, 105, float(s.w - 42), float(s.h - 32)), muted.Get());
   } else {
-    ComPtr<ID2D1GradientStopCollection> stops;
-    ComPtr<ID2D1LinearGradientBrush> wash;
-    const D2D1_GRADIENT_STOP wash_stops[] = {{0.0f, D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.10f)},
-                                             {1.0f, D2D1::ColorF(0.025f, 0.04f, 0.065f, 0.82f)}};
-    if (SUCCEEDED(t->CreateGradientStopCollection(wash_stops, 2, D2D1_GAMMA_2_2,
-                                                  D2D1_EXTEND_MODE_CLAMP, &stops)) &&
-        SUCCEEDED(t->CreateLinearGradientBrush(
-            D2D1::LinearGradientBrushProperties(D2D1::Point2F(256, 120), D2D1::Point2F(256, 520)),
-            stops.Get(), &wash)))
-      t->FillRoundedRectangle(panel_bounds, wash.Get());
-
     impl_->load_dashboard_logo(s);
-    if (m.mode != SurfaceMode::Countdown) {
-      if (s.dashboard_logo) {
-        const auto logo_size = s.dashboard_logo->GetSize();
-        t->DrawBitmap(s.dashboard_logo.Get(), D2D1::RectF(44, 58, 88, 102), 1.0f,
-                      D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                      D2D1::RectF(0, 0, logo_size.width, logo_size.height));
-      }
-      const float timeout = std::clamp(m.timeout_progress, 0.0f, 1.0f);
-      const auto timeout_track = D2D1::RoundedRect(D2D1::RectF(40, 30, 472, 38), 4, 4);
-      t->FillRoundedRectangle(timeout_track, track.Get());
-      if (timeout > 0.0f) {
-        t->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(40, 30, 40 + 432 * timeout, 38), 4, 4), accent.Get());
-      }
-      t->DrawTextW(m.body.c_str(), static_cast<UINT32>(m.body.size()), impl_->brand.Get(),
-                   D2D1::RectF(100, 52, 460, 110), muted.Get());
+    const float animation = clamp01(m.animation_progress);
+    const float panel_left = m.avatar_on_right ? 10.0f : 138.0f;
+    const float panel_right = panel_left + 492.0f;
+    const float avatar_x = m.avatar_on_right ? 572.0f : 68.0f;
+    constexpr float avatar_y = 430.0f;
+    const float expansion =
+        m.mode == SurfaceMode::Countdown ? ease_out_cubic(animation / 0.60f) : 0.0f;
+    const float panel_top = 222.0f + (10.0f - 222.0f) * expansion;
+    const auto panel_rect = D2D1::RectF(panel_left, panel_top, panel_right, 502.0f);
+    const auto panel_bounds = D2D1::RoundedRect(panel_rect, 30.0f, 30.0f);
 
-      // A compact pictogram gives the prompt a visual centre without adding
-      // explanatory copy. Keep it deliberately light so the actions remain
-      // the strongest elements on the panel.
-      const auto cue_centre = D2D1::Point2F(256.0f, 184.0f);
-      auto cue_fill = impl_->brush(t, D2D1::ColorF(0.10f, 0.58f, 0.82f, 0.12f));
-      auto cue_stroke = impl_->brush(t, D2D1::ColorF(0.20f, 0.74f, 0.94f, 0.72f));
-      if (!cue_fill || !cue_stroke) {
-        (void)t->EndDraw();
-        if (recover_target(id, impl_->resource_status) && !retried)
-          return render(id, m, true);
-        return false;
-      }
-      t->FillEllipse(D2D1::Ellipse(cue_centre, 30.0f, 30.0f), cue_fill.Get());
-      t->DrawEllipse(D2D1::Ellipse(cue_centre, 30.0f, 30.0f), cue_stroke.Get(), 2.0f);
-      t->DrawLine(D2D1::Point2F(244.0f, 171.0f), D2D1::Point2F(244.0f, 197.0f),
-                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
-      t->DrawLine(D2D1::Point2F(244.0f, 171.0f), D2D1::Point2F(254.0f, 171.0f),
-                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
-      t->DrawLine(D2D1::Point2F(244.0f, 197.0f), D2D1::Point2F(254.0f, 197.0f),
-                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
-      t->DrawLine(D2D1::Point2F(251.0f, 184.0f), D2D1::Point2F(268.0f, 184.0f),
-                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
-      t->DrawLine(D2D1::Point2F(262.0f, 178.0f), D2D1::Point2F(268.0f, 184.0f),
-                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
-      t->DrawLine(D2D1::Point2F(262.0f, 190.0f), D2D1::Point2F(268.0f, 184.0f),
-                  cue_stroke.Get(), 3.0f, impl_->round_stroke.Get());
-      t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()), impl_->prompt_title.Get(),
-                   D2D1::RectF(40, 226, 472, 310), white.Get());
+    float bubble_opacity = 1.0f;
+    float bubble_scale = 1.0f;
+    float bubble_shift = 0.0f;
+    if (m.mode != SurfaceMode::Countdown) {
+      const float bubble_phase = ease_out_cubic((animation - 0.42f) / 0.58f);
+      bubble_opacity = bubble_phase;
+      bubble_scale = 0.96f + 0.04f * bubble_phase;
+      bubble_shift = (m.avatar_on_right ? 10.0f : -10.0f) * (1.0f - bubble_phase);
+    }
+    const float anchor_x = m.avatar_on_right ? panel_right : panel_left;
+    const auto bubble_transform =
+        D2D1::Matrix3x2F::Scale(bubble_scale, bubble_scale,
+                               D2D1::Point2F(anchor_x, 452.0f)) *
+        D2D1::Matrix3x2F::Translation(bubble_shift, 7.0f * (1.0f - bubble_opacity));
+    t->SetTransform(bubble_transform);
+    ComPtr<ID2D1Layer> bubble_layer;
+    const bool has_bubble_layer =
+        SUCCEEDED(t->CreateLayer(nullptr, &bubble_layer)) && bubble_layer;
+    if (has_bubble_layer) {
+      t->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr,
+                                         D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                         D2D1::IdentityMatrix(), bubble_opacity),
+                   bubble_layer.Get());
     }
 
-    // The countdown belongs to the content area above the fixed button group,
-    // rather than to the full surface including the button.
-    constexpr float content_top = 10.0f;
-    constexpr float button_top = 390.0f;
-    const D2D1_POINT_2F ring_centre =
-        D2D1::Point2F(256.0f, content_top + (button_top - content_top) * 0.5f);
-    constexpr float ring_radius = 112.0f;
+    // A small speech tail makes the logo read as the sender rather than as an
+    // icon embedded in the dialog. It mirrors with the side of presentation.
+    ComPtr<ID2D1PathGeometry> tail_geometry;
+    ComPtr<ID2D1GeometrySink> tail_sink;
+    if (SUCCEEDED(impl_->d2d->CreatePathGeometry(&tail_geometry)) &&
+        SUCCEEDED(tail_geometry->Open(&tail_sink))) {
+      const float edge = m.avatar_on_right ? panel_right : panel_left;
+      const float point = m.avatar_on_right ? 532.0f : 108.0f;
+      tail_sink->BeginFigure(D2D1::Point2F(edge, 408.0f), D2D1_FIGURE_BEGIN_FILLED);
+      tail_sink->AddLine(D2D1::Point2F(point, 432.0f));
+      tail_sink->AddLine(D2D1::Point2F(edge, 450.0f));
+      tail_sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+      if (SUCCEEDED(tail_sink->Close())) {
+        t->FillGeometry(tail_geometry.Get(), panel.Get());
+        t->DrawGeometry(tail_geometry.Get(), panel_border.Get(), 1.5f);
+      }
+    }
+
+    t->DrawRoundedRectangle(panel_bounds, panel_outer_glow.Get(), 12.0f);
+    t->DrawRoundedRectangle(panel_bounds, panel_soft_glow.Get(), 5.0f);
+    t->FillRoundedRectangle(panel_bounds, panel.Get());
+    t->DrawRoundedRectangle(panel_bounds, panel_border.Get(), 1.25f);
+    const auto inner_bounds = D2D1::RoundedRect(
+        D2D1::RectF(panel_left + 3.0f, panel_top + 3.0f, panel_right - 3.0f, 499.0f), 27, 27);
+    t->DrawRoundedRectangle(inner_bounds, panel_inner_highlight.Get(), 1.0f);
+
+    ComPtr<ID2D1GradientStopCollection> border_stops;
+    ComPtr<ID2D1LinearGradientBrush> border_gradient;
+    const D2D1_GRADIENT_STOP border_colors[] = {
+        {0.0f, D2D1::ColorF(0.34f, 0.88f, 1.0f, 0.98f)},
+        {0.50f, D2D1::ColorF(0.10f, 0.58f, 0.94f, 0.90f)},
+        {1.0f, D2D1::ColorF(0.54f, 0.36f, 0.96f, 0.78f)}};
+    if (SUCCEEDED(t->CreateGradientStopCollection(border_colors, 3, D2D1_GAMMA_2_2,
+                                                   D2D1_EXTEND_MODE_CLAMP, &border_stops))) {
+      (void)t->CreateLinearGradientBrush(
+          D2D1::LinearGradientBrushProperties(D2D1::Point2F(panel_left, panel_top),
+                                              D2D1::Point2F(panel_right, 502.0f)),
+          border_stops.Get(), &border_gradient);
+    }
+    auto* active_border = border_gradient
+                              ? static_cast<ID2D1Brush*>(border_gradient.Get())
+                              : static_cast<ID2D1Brush*>(panel_border.Get());
     if (m.mode == SurfaceMode::Countdown) {
+      t->DrawRoundedRectangle(panel_bounds, active_border, 1.75f);
+    } else {
+      (void)draw_partial_rounded_border(impl_->d2d.Get(), t, panel_rect, 30.0f,
+                                        m.timeout_progress, active_border, 3.0f,
+                                        impl_->round_stroke.Get());
+      t->DrawTextW(m.title.c_str(), static_cast<UINT32>(m.title.size()),
+                   impl_->prompt_title.Get(),
+                   D2D1::RectF(panel_left + 34.0f, 264.0f, panel_right - 34.0f, 344.0f),
+                   white.Get());
+    }
+
+    const D2D1_POINT_2F ring_centre =
+        D2D1::Point2F((panel_left + panel_right) * 0.5f, 205.0f);
+    constexpr float ring_radius = 108.0f;
+    const float ring_scale = m.mode == SurfaceMode::Countdown
+                                 ? ease_out_cubic((animation - 0.60f) / 0.25f)
+                                 : 0.0f;
+    if (ring_scale > 0.001f) {
+      t->SetTransform(D2D1::Matrix3x2F::Scale(ring_scale, ring_scale, ring_centre));
       constexpr float watermark_radius = 102.0f;
       const auto watermark_bounds =
           D2D1::RectF(ring_centre.x - watermark_radius, ring_centre.y - watermark_radius,
@@ -486,7 +573,12 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
       }
       t->DrawEllipse(D2D1::Ellipse(ring_centre, ring_radius, ring_radius), track.Get(), 14.0f,
                      impl_->round_stroke.Get());
-      const float progress = std::clamp(m.progress, 0.0f, 1.0f);
+      // Hold the visual ring at its starting state until the panel and ring
+      // have completed their entrance, then ease into the live value without
+      // a visible jump. The state machine clock remains intact.
+      const float live_progress = clamp01(m.progress);
+      const float countdown_phase = ease_out_cubic((animation - 0.85f) / 0.15f);
+      const float progress = 1.0f + (live_progress - 1.0f) * countdown_phase;
       const float elapsed = 1.0f - progress;
       const D2D1_COLOR_F ring_color = D2D1::ColorF(0.10f + 0.88f * elapsed, 0.58f - 0.24f * elapsed,
                                                    0.82f - 0.54f * elapsed, 1.0f);
@@ -520,11 +612,20 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
       }
       const std::wstring seconds = std::to_wstring(std::max(1, m.countdown_seconds));
       t->DrawTextW(seconds.c_str(), static_cast<UINT32>(seconds.size()),
-                   impl_->countdown_number.Get(), D2D1::RectF(156, 110, 356, 290), white.Get());
+                   impl_->countdown_number.Get(),
+                   D2D1::RectF(ring_centre.x - 100.0f, ring_centre.y - 90.0f,
+                               ring_centre.x + 100.0f, ring_centre.y + 90.0f),
+                   white.Get());
+      t->SetTransform(bubble_transform);
     }
 
+    const float left_button_left = panel_left + 30.0f;
+    const float left_button_right = panel_left + 234.0f;
+    const float right_button_left = panel_left + 258.0f;
+    const float right_button_right = panel_left + 462.0f;
     if (!m.left_button.empty()) {
-      const auto bounds = D2D1::RoundedRect(D2D1::RectF(40, 390, 244, 462), 14, 14);
+      const auto bounds = D2D1::RoundedRect(
+          D2D1::RectF(left_button_left, 400.0f, left_button_right, 468.0f), 34, 34);
       ID2D1Brush* fill =
           m.mode == SurfaceMode::Confirm
               ? static_cast<ID2D1Brush*>(m.left_hover ? danger_hover.Get() : danger.Get())
@@ -534,8 +635,10 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
                    impl_->button.Get(), bounds.rect, white.Get());
     }
     if (!m.right_button.empty()) {
-      const float left = m.mode == SurfaceMode::Countdown ? 40.0f : 268.0f;
-      const auto bounds = D2D1::RoundedRect(D2D1::RectF(left, 390, 472, 462), 14, 14);
+      const float left =
+          m.mode == SurfaceMode::Countdown ? left_button_left : right_button_left;
+      const auto bounds = D2D1::RoundedRect(
+          D2D1::RectF(left, 400.0f, right_button_right, 468.0f), 34, 34);
       const bool countdown_cancel = m.mode == SurfaceMode::Countdown;
       ID2D1Brush* fill =
           countdown_cancel
@@ -547,6 +650,40 @@ bool D3dOverlayRenderer::render(const std::string& id, const SurfaceModel& m, bo
       t->DrawTextW(m.right_button.c_str(), static_cast<UINT32>(m.right_button.size()),
                    impl_->button.Get(), bounds.rect,
                    countdown_cancel ? dark_text.Get() : white.Get());
+    }
+
+    if (has_bubble_layer)
+      t->PopLayer();
+    t->SetTransform(D2D1::Matrix3x2F::Identity());
+
+    // The avatar enters first, quickly and without overshoot; its compact
+    // scale-only motion remains comfortable in a head-tracked view.
+    const float avatar_scale =
+        m.mode == SurfaceMode::Countdown ? 1.0f : ease_out_cubic(animation / 0.45f);
+    if (avatar_scale > 0.001f && s.dashboard_logo) {
+      t->SetTransform(D2D1::Matrix3x2F::Scale(
+          avatar_scale, avatar_scale, D2D1::Point2F(avatar_x, avatar_y)));
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 48.0f, 48.0f),
+                     panel_soft_glow.Get());
+      t->FillEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 44.0f, 44.0f),
+                     panel.Get());
+      const auto logo_size = s.dashboard_logo->GetSize();
+      const auto avatar_bounds =
+          D2D1::RectF(avatar_x - 41.0f, avatar_y - 41.0f, avatar_x + 41.0f, avatar_y + 41.0f);
+      ComPtr<ID2D1EllipseGeometry> avatar_clip;
+      ComPtr<ID2D1Layer> avatar_layer;
+      if (SUCCEEDED(impl_->d2d->CreateEllipseGeometry(
+              D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 41.0f, 41.0f), &avatar_clip)) &&
+          SUCCEEDED(t->CreateLayer(nullptr, &avatar_layer))) {
+        t->PushLayer(D2D1::LayerParameters(avatar_bounds, avatar_clip.Get()), avatar_layer.Get());
+        t->DrawBitmap(s.dashboard_logo.Get(), avatar_bounds, 1.0f,
+                      D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                      D2D1::RectF(0, 0, logo_size.width, logo_size.height));
+        t->PopLayer();
+      }
+      t->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(avatar_x, avatar_y), 42.0f, 42.0f),
+                     active_border, 2.0f);
+      t->SetTransform(D2D1::Matrix3x2F::Identity());
     }
   }
   if (m.pointer_visible) {

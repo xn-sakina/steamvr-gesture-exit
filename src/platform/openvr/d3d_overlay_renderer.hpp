@@ -31,6 +31,10 @@ struct SurfaceModel {
   SurfaceMode mode = SurfaceMode::Message;
   float timeout_progress = 0;
   int countdown_seconds = 0;
+  // Presentation-only state supplied by OverlayManager. This never changes
+  // the exit-flow clocks; it only drives the short entrance transitions.
+  float animation_progress = 1.0f;
+  bool avatar_on_right = false;
   bool left_hover = false, right_hover = false;
   bool pointer_visible = false;
   float pointer_x = 0, pointer_y = 0;

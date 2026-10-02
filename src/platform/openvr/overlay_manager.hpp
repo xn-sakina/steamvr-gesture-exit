@@ -95,6 +95,7 @@ class OverlayManager {
   uint32_t pointer_device_ = vr::k_unTrackedDeviceIndexInvalid;
   bool trigger_state_primed_ = false;
   bool previous_trigger_pressed_ = false;
+  std::chrono::steady_clock::time_point wrist_animation_started_{};
   SurfaceModel wrist_model_{};
   DashboardSurfaceModel dashboard_model_{};
 };

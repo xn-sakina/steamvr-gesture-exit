@@ -11,7 +11,7 @@ class CountdownSound {
 
  private:
   unsigned char wave_[2048]{};
-  unsigned char open_wave_[44 + 720]{};
+  unsigned char open_wave_[44 + 960]{};
   unsigned char hover_wave_[44 + 320]{};
   unsigned char select_wave_[44 + 520]{};
 };

@@ -15,14 +15,17 @@ constexpr float kDashboardWidth = 1024.0f;
 // Keep the same 24 px of canvas space below the final settings row.
 constexpr float kDashboardHeight = 456.0f;
 constexpr float kDashboardWidthMeters = 2.52f;  // 90% of the previous 2.8-metre panel.
-constexpr float kWristWidth = 512.0f;
+// The dialog keeps its former physical width. The wider transparent canvas
+// only makes room for the avatar beside it.
+constexpr float kWristWidth = 640.0f;
 constexpr float kWristHeight = 512.0f;
-constexpr float kButtonTop = 390.0f;
-constexpr float kButtonBottom = 462.0f;
-constexpr float kLeftButtonLeft = 40.0f;
-constexpr float kLeftButtonRight = 244.0f;
-constexpr float kRightButtonLeft = 268.0f;
-constexpr float kRightButtonRight = 472.0f;
+constexpr float kWristWidthMeters = 0.275f;
+constexpr float kPanelLeftWithLeftAvatar = 138.0f;
+constexpr float kPanelLeftWithRightAvatar = 10.0f;
+constexpr float kButtonTop = 400.0f;
+constexpr float kButtonBottom = 468.0f;
+constexpr auto kPromptEntranceDuration = std::chrono::milliseconds(220);
+constexpr auto kCountdownEntranceDuration = std::chrono::milliseconds(300);
 constexpr uint32_t kPointerRayTextureWidth = 16;
 constexpr uint32_t kPointerRayTextureHeight = 1024;
 constexpr float kPointerRaySourceFadeFraction = 0.07f;
@@ -107,13 +110,21 @@ const char* action_name(core::DashboardAction action) {
 }
 #endif
 WristHit wrist_hit(const SurfaceModel& model, const float x, const float y) {
+  if (model.mode != SurfaceMode::Countdown && model.animation_progress < 0.70f)
+    return WristHit::None;
   if (y < kButtonTop || y > kButtonBottom)
     return WristHit::None;
-  if (!model.left_button.empty() && x >= kLeftButtonLeft && x <= kLeftButtonRight)
+  const float panel_left =
+      model.avatar_on_right ? kPanelLeftWithRightAvatar : kPanelLeftWithLeftAvatar;
+  const float left_button_left = panel_left + 30.0f;
+  const float left_button_right = panel_left + 234.0f;
+  const float right_button_left = panel_left + 258.0f;
+  const float right_button_right = panel_left + 462.0f;
+  if (!model.left_button.empty() && x >= left_button_left && x <= left_button_right)
     return WristHit::Left;
-  const float right_left =
-      model.mode == SurfaceMode::Countdown ? kLeftButtonLeft : kRightButtonLeft;
-  if (!model.right_button.empty() && x >= right_left && x <= kRightButtonRight)
+  const float right_left = model.mode == SurfaceMode::Countdown ? left_button_left
+                                                                : right_button_left;
+  if (!model.right_button.empty() && x >= right_left && x <= right_button_right)
     return WristHit::Right;
   return WristHit::None;
 }
@@ -138,9 +149,17 @@ vr::HmdMatrix34_t control_transform(const core::Hand configured_hand,
   const Float3 z_axis = normalized(head - panel);
   const Float3 x_axis = normalized(cross(world_up, z_axis));
   const Float3 y_axis = normalized(cross(z_axis, x_axis));
-  return {{{x_axis.x, y_axis.x, z_axis.x, panel.x},
-           {x_axis.y, y_axis.y, z_axis.y, panel.y},
-           {x_axis.z, y_axis.z, z_axis.z, panel.z}}};
+  // The dialog centre remains at the legacy position while the transparent
+  // canvas extends toward the avatar. A left-hand gesture presents on the
+  // right and mirrors the avatar/message direction.
+  const bool avatar_on_right = configured_hand == core::Hand::Left;
+  constexpr float panel_centre_offset_metres = 0.0275f;
+  const float local_offset = avatar_on_right ? -panel_centre_offset_metres
+                                             : panel_centre_offset_metres;
+  const Float3 overlay = panel - x_axis * local_offset;
+  return {{{x_axis.x, y_axis.x, z_axis.x, overlay.x},
+           {x_axis.y, y_axis.y, z_axis.y, overlay.y},
+           {x_axis.z, y_axis.z, z_axis.z, overlay.z}}};
 }
 }  // namespace
 bool OverlayManager::fail(const char* operation, vr::EVROverlayError result) {
@@ -217,7 +236,7 @@ bool OverlayManager::initialize() {
   };
   if (!configure(dashboard_, kDashboardWidthMeters, vr::VROverlayInputMethod_Mouse, kDashboardWidth,
                  kDashboardHeight) ||
-      !configure(wrist_, 0.22f, vr::VROverlayInputMethod_None, 0, 0) ||
+      !configure(wrist_, kWristWidthMeters, vr::VROverlayInputMethod_None, 0, 0) ||
       !configure(pointer_ray_, 0.005f, vr::VROverlayInputMethod_None, 0, 0) ||
       !configure(hud_, 0.42f, vr::VROverlayInputMethod_None, 0, 0)) {
     shutdown();
@@ -412,13 +431,33 @@ bool OverlayManager::hide_pointer_ray() {
 }
 bool OverlayManager::show_wrist(const core::Hand configured_hand, const app::TrackingFrame& frame,
                                 const SurfaceModel& m) {
-  bool same_content = wrist_model_.title == m.title && wrist_model_.body == m.body &&
-                      wrist_model_.left_button == m.left_button &&
-                      wrist_model_.right_button == m.right_button &&
-                      wrist_model_.progress == m.progress && wrist_model_.mode == m.mode &&
-                      wrist_model_.timeout_progress == m.timeout_progress &&
-                      wrist_model_.countdown_seconds == m.countdown_seconds;
+  const auto now = std::chrono::steady_clock::now();
   SurfaceModel next = m;
+  next.avatar_on_right = configured_hand == core::Hand::Left;
+  const bool beginning_entrance = !wrist_visible_;
+  const bool beginning_countdown =
+      wrist_visible_ && m.mode == SurfaceMode::Countdown &&
+      wrist_model_.mode != SurfaceMode::Countdown;
+  if (beginning_entrance || beginning_countdown)
+    wrist_animation_started_ = now;
+  if (wrist_animation_started_ != std::chrono::steady_clock::time_point{}) {
+    const auto duration = m.mode == SurfaceMode::Countdown ? kCountdownEntranceDuration
+                                                           : kPromptEntranceDuration;
+    next.animation_progress = std::clamp(
+        std::chrono::duration<float>(now - wrist_animation_started_).count() /
+            std::chrono::duration<float>(duration).count(),
+        0.0f, 1.0f);
+    if (next.animation_progress >= 1.0f)
+      wrist_animation_started_ = {};
+  }
+  bool same_content = wrist_model_.title == next.title && wrist_model_.body == next.body &&
+                      wrist_model_.left_button == next.left_button &&
+                      wrist_model_.right_button == next.right_button &&
+                      wrist_model_.progress == next.progress && wrist_model_.mode == next.mode &&
+                      wrist_model_.timeout_progress == next.timeout_progress &&
+                      wrist_model_.countdown_seconds == next.countdown_seconds &&
+                      wrist_model_.animation_progress == next.animation_progress &&
+                      wrist_model_.avatar_on_right == next.avatar_on_right;
   if (wrist_visible_) {
     next.pointer_visible = wrist_model_.pointer_visible;
     next.pointer_x = wrist_model_.pointer_x;
@@ -467,6 +506,7 @@ bool OverlayManager::hide_wrist() {
   wrist_model_.left_hover = false;
   wrist_model_.right_hover = false;
   wrist_model_.pointer_visible = false;
+  wrist_animation_started_ = {};
   return ok;
 }
 bool OverlayManager::show_hud(const SurfaceModel& m) {
@@ -569,6 +609,24 @@ WristEvents OverlayManager::poll_wrist_events(const app::HandPose& hand,
                                               const bool pointer_enabled, bool confirming,
                                               bool counting) {
   WristEvents out;
+  if (wrist_visible_ && wrist_model_.animation_progress < 1.0f &&
+      wrist_animation_started_ != std::chrono::steady_clock::time_point{}) {
+    const auto now = std::chrono::steady_clock::now();
+    const auto duration = wrist_model_.mode == SurfaceMode::Countdown
+                              ? kCountdownEntranceDuration
+                              : kPromptEntranceDuration;
+    const float progress = std::clamp(
+        std::chrono::duration<float>(now - wrist_animation_started_).count() /
+            std::chrono::duration<float>(duration).count(),
+        0.0f, 1.0f);
+    if (progress != wrist_model_.animation_progress) {
+      wrist_model_.animation_progress = progress;
+      if (!submit(wrist_, "wrist", wrist_model_))
+        return out;
+    }
+    if (progress >= 1.0f)
+      wrist_animation_started_ = {};
+  }
   bool pointer_visible = false;
   float pointer_x = 0.0f, pointer_y = 0.0f;
   WristHit hit = WristHit::None;
