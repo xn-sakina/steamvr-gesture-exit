@@ -474,7 +474,7 @@ void RuntimeApp::apply_settings(const core::Settings& next) {
   }
 }
 void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& resolution,
-                                  const TrackingFrame& f) {
+                                  const TrackingFrame& f, const bool force_texture_submit) {
   if (!overlays_)
     return;
   const auto& configured = settings_.configured_hand == core::Hand::Left ? f.left : f.right;
@@ -592,7 +592,7 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   model.help_lines = {text(core::StringId::HelpGesture), text(core::StringId::HelpOppositeHand),
                       text(core::StringId::HelpForceClose)};
   const auto submit_started = std::chrono::steady_clock::now();
-  const bool submitted = overlays_->update_dashboard(model);
+  const bool submitted = overlays_->update_dashboard(model, force_texture_submit);
   const auto submit_finished = std::chrono::steady_clock::now();
   const auto submit_duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(submit_finished - submit_started);
@@ -1133,9 +1133,10 @@ int RuntimeApp::run() {
       }
     }
     save_notice_changed |= consume_save_results();
-    if (dashboard_events.hover_changed || dashboard_events.tab_changed || settings_changed ||
-        save_notice_changed) {
-      update_dashboard(latest_resolution_, last_frame);
+    if (dashboard_events.texture_refresh_requested || dashboard_events.hover_changed ||
+        dashboard_events.tab_changed || settings_changed || save_notice_changed) {
+      update_dashboard(latest_resolution_, last_frame,
+                       dashboard_events.texture_refresh_requested);
       last_dashboard_refresh_at = std::chrono::steady_clock::now();
     }
     if ((dashboard_events.hover_changed || dashboard_events.tab_changed || settings_changed) &&

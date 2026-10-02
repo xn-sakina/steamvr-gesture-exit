@@ -352,6 +352,7 @@ void OverlayManager::shutdown() {
   dashboard_texture_initialized_ = false;
   dashboard_texture_dirty_ = true;
   dashboard_was_visible_ = false;
+  dashboard_show_refresh_armed_ = true;
   dashboard_pointer_primed_ = false;
   dashboard_tab_ = core::DashboardTab::Settings;
   thumbnail_requested_ = false;
@@ -582,7 +583,8 @@ bool OverlayManager::refresh_recreated_textures() {
   renderer_generation_seen_ = generation;
   return true;
 }
-bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
+bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m,
+                                      const bool force_texture_submit) {
   const bool recovered = renderer_.retry_pending_recovery();
   if (!recovered)
     fail("renderer recovery failed");
@@ -599,7 +601,12 @@ bool OverlayManager::update_dashboard(const DashboardSurfaceModel& m) {
     dashboard_model_ = std::move(next);
     dashboard_texture_dirty_ = true;
   }
-  if ((!dashboard_texture_initialized_ || (dashboard_texture_dirty_ && dashboard_visible())) &&
+  const bool visible = dashboard_visible();
+  // A show refresh is a one-shot submission request, not persistent dirty
+  // state. If it fails, normal content changes keep their existing retry
+  // behavior, while visibility alone cannot create an endless retry loop.
+  if ((!dashboard_texture_initialized_ ||
+       (visible && (dashboard_texture_dirty_ || force_texture_submit))) &&
       !submit_dashboard())
     return false;
   return recovered && refreshed;
@@ -716,6 +723,18 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
   auto hovered = dashboard_model_.hovered_action;
   auto hovered_tab = dashboard_model_.hovered_tab;
   const bool visible = dashboard_visible();
+  auto request_texture_refresh = [&] {
+    dashboard_show_refresh_armed_ = false;
+    out.texture_refresh_requested = true;
+  };
+  // Refresh once for each hidden -> visible lifetime. The level check is the
+  // authority; OverlayShown below also catches a hide/show cycle that occurred
+  // entirely between two polls. The latch coalesces duplicate signals and
+  // prevents SetOverlayTexture from causing a refresh loop.
+  if (!visible)
+    dashboard_show_refresh_armed_ = true;
+  else if (dashboard_show_refresh_armed_)
+    request_texture_refresh();
   if (!visible || !dashboard_was_visible_) {
     hovered.reset();
     hovered_tab.reset();
@@ -735,6 +754,12 @@ DashboardEvents OverlayManager::poll_dashboard_events() {
        ++count) {
     if (e.eventType == vr::VREvent_FocusLeave || e.eventType == vr::VREvent_OverlayShown ||
         e.eventType == vr::VREvent_OverlayHidden) {
+      if (e.eventType == vr::VREvent_OverlayHidden) {
+        dashboard_show_refresh_armed_ = true;
+      } else if (e.eventType == vr::VREvent_OverlayShown && visible &&
+                 dashboard_show_refresh_armed_) {
+        request_texture_refresh();
+      }
       hovered.reset();
       hovered_tab.reset();
       dashboard_pointer_primed_ = false;

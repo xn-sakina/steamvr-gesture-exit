@@ -24,6 +24,7 @@ struct DashboardEvents {
   bool entered_button = false;
   bool hover_changed = false;
   bool tab_changed = false;
+  bool texture_refresh_requested = false;
 };
 class OverlayManager {
  public:
@@ -37,7 +38,8 @@ class OverlayManager {
   [[nodiscard]] bool hide_wrist();
   [[nodiscard]] bool show_hud(const SurfaceModel&);
   [[nodiscard]] bool hide_hud();
-  [[nodiscard]] bool update_dashboard(const DashboardSurfaceModel&);
+  [[nodiscard]] bool update_dashboard(const DashboardSurfaceModel&,
+                                      bool force_texture_submit = false);
   [[nodiscard]] bool dashboard_visible() const {
     return overlays_ && dashboard_ != vr::k_ulOverlayHandleInvalid &&
            overlays_->IsOverlayVisible(dashboard_);
@@ -84,6 +86,9 @@ class OverlayManager {
   bool dashboard_texture_initialized_ = false;
   bool dashboard_texture_dirty_ = true;
   bool dashboard_was_visible_ = false;
+  // Armed while the panel is hidden. A visibility level or OverlayShown event
+  // consumes the latch once, so a texture submission cannot retrigger itself.
+  bool dashboard_show_refresh_armed_ = true;
   bool dashboard_pointer_primed_ = false;
   core::DashboardHoldRepeater dashboard_hold_repeater_;
   core::DashboardTab dashboard_tab_ = core::DashboardTab::Settings;
