@@ -137,6 +137,59 @@ void gesture_uses_head_relative_right_axis() {
   CHECK(detector.update(sample(1000, moved(-0.08), forward)));
 }
 
+void gesture_rejects_head_shake_with_controller_jitter() {
+  for (const auto sensitivity :
+       {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+    GestureDetector detector(gesture_config(sensitivity));
+    bool recognized = false;
+    for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+      const double seconds = static_cast<double>(milliseconds) / 1000.0;
+      const double yaw = 0.30 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+      const Vec3 forward{std::sin(yaw), 0.0, -std::cos(yaw)};
+      const Vec3 headset{0.012 * std::sin(yaw), 1.65, 0.004 * (1.0 - std::cos(yaw))};
+      const Vec3 controller{0.30 + 0.004 * std::sin(37.0 * seconds),
+                            1.05 + 0.003 * std::sin(29.0 * seconds),
+                            -0.50 + 0.004 * std::cos(31.0 * seconds)};
+      recognized =
+          detector.update(sample(milliseconds, controller, forward, true, headset)) || recognized;
+    }
+    CHECK(!recognized);
+    CHECK(detector.diagnostic().decision == GestureDecision::InsufficientStroke);
+  }
+
+  GestureDetector turning_with_body;
+  bool recognized = false;
+  for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const double yaw = 0.30 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+    const Vec3 forward{std::sin(yaw), 0.0, -std::cos(yaw)};
+    const Vec3 right{forward.z, 0.0, -forward.x};
+    const Vec3 headset{0.0, 1.65, 0.0};
+    const Vec3 controller{headset.x + right.x * 0.30 + forward.x * 0.50,
+                          1.05 + 0.003 * std::sin(29.0 * seconds),
+                          headset.z + right.z * 0.30 + forward.z * 0.50};
+    recognized =
+        turning_with_body.update(sample(milliseconds, controller, forward, true, headset)) ||
+        recognized;
+  }
+  CHECK(!recognized);
+
+  GestureDetector waving;
+  for (int milliseconds = 0; milliseconds <= 1200 && !recognized; milliseconds += 10) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const double yaw = 0.18 * std::sin(2.0 * 3.141592653589793 * 1.1 * seconds);
+    const Vec3 forward{std::sin(yaw), 0.0, -std::cos(yaw)};
+    const Vec3 right{forward.z, 0.0, -forward.x};
+    const Vec3 headset{0.20 * seconds, 1.65, -0.08 * seconds};
+    const double lateral = 0.18 + 0.08 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+    const Vec3 controller{headset.x + right.x * lateral + forward.x * 0.50,
+                          1.05 + 0.003 * std::sin(29.0 * seconds),
+                          headset.z + right.z * lateral + forward.z * 0.50};
+    recognized = waving.update(sample(milliseconds, controller, forward, true, headset));
+  }
+  CHECK(recognized);
+}
+
 void gesture_rejects_unsafe_or_weak_motion() {
   GestureDetector jitter;
   for (int i = 0; i < 8; ++i) {
@@ -1317,6 +1370,8 @@ int main() {
       {"gesture recognizes center crossing wave", gesture_recognizes_center_crossing_wave},
       {"gesture recognizes sampled controller wave", gesture_recognizes_sampled_controller_wave},
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},
+      {"gesture rejects head shake with controller jitter",
+       gesture_rejects_head_shake_with_controller_jitter},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},
       {"gesture accepts seated postures", gesture_accepts_real_seated_postures},
       {"gesture recognizes lazy fast low wave", gesture_recognizes_lazy_fast_low_wave},

@@ -162,6 +162,8 @@ bool GestureDetector::motion_matches() noexcept {
     double vertical = 0;
     double depth = 0;
     bool input_active = false;
+    Vec3 relative_position{};
+    Vec3 head_right{};
   };
   std::vector<Point> points;
   points.reserve(samples_.size());
@@ -174,7 +176,7 @@ bool GestureDetector::motion_matches() noexcept {
       head_right = {1.0, 0.0, 0.0};
     const Vec3 relative = sample.hand_position - sample.headset_position;
     points.push_back({sample.time, dot(relative, head_right), relative.y,
-                      dot(relative, head_forward), sample.input_active});
+                      dot(relative, head_forward), sample.input_active, relative, head_right});
   }
 
   // A short time-aware low-pass removes tracking shimmer without erasing a
@@ -270,6 +272,29 @@ bool GestureDetector::motion_matches() noexcept {
     const Point& a = points[*it];
     const Point& b = points[*(it + 1)];
     const double lateral = std::abs(b.lateral - a.lateral);
+
+    // The head-relative axes intentionally rotate with the player, but that
+    // also means head yaw can manufacture an apparent lateral stroke around a
+    // nearly stationary controller. Keep the established trajectory model and
+    // require each accepted stroke to be corroborated by a small, same-way
+    // controller displacement measured through one shared axis. Using the
+    // hand-to-head delta preserves whole-body translation cancellation, while
+    // the shared axis prevents head rotation from becoming controller motion.
+    // Reusing reversal hysteresis avoids changing the existing full-stroke
+    // threshold for genuine waves.
+    Vec3 stroke_right =
+        normalized({a.head_right.x + b.head_right.x, 0.0, a.head_right.z + b.head_right.z});
+    if (length(stroke_right) < 0.5)
+      stroke_right = b.head_right;
+    const double apparent_direction = b.lateral - a.lateral;
+    const double controller_lateral = dot(b.relative_position - a.relative_position, stroke_right);
+    if (controller_lateral * apparent_direction <= 0.0 ||
+        std::abs(controller_lateral) < reversal_hysteresis) {
+      diagnostic_.lateral_travel_m = lateral_travel;
+      diagnostic_.decision = GestureDecision::InsufficientStroke;
+      return false;
+    }
+
     double lateral_path = 0.0;
     double orthogonal_path = 0.0;
     for (std::size_t point_index = *it + 1; point_index <= *(it + 1); ++point_index) {
