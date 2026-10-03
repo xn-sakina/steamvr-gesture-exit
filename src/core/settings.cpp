@@ -197,7 +197,7 @@ SettingsLoadResult SettingsStore::load() const {
   }
   const auto hand = parse_hand(hand_text.asString());
   const auto language = parse_language(language_text.asString());
-  std::optional<GestureSensitivity> sensitivity{GestureSensitivity::Normal};
+  std::optional<GestureSensitivity> sensitivity{GestureSensitivity::High};
   if (!legacy) {
     const auto& sensitivity_text = root["gestureSensitivity"];
     sensitivity = sensitivity_text.isString()

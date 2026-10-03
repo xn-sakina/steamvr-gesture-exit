@@ -644,7 +644,7 @@ void settings_round_trip_and_recovery() {
   const auto migrated = store.load();
   CHECK(migrated.status == SettingsLoadStatus::Loaded);
   CHECK(migrated.settings.version == Settings::current_version);
-  CHECK(migrated.settings.gesture_sensitivity == GestureSensitivity::Normal);
+  CHECK(migrated.settings.gesture_sensitivity == GestureSensitivity::High);
   std::filesystem::remove_all(root, ec);
 }
 
@@ -1170,12 +1170,12 @@ void dashboard_actions_change_only_the_intended_setting() {
   Settings settings;
   CHECK(settings.countdown_seconds == 3);
   CHECK(settings.control_timeout_seconds == 5);
-  CHECK(settings.gesture_sensitivity == GestureSensitivity::Normal);
+  CHECK(settings.gesture_sensitivity == GestureSensitivity::High);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetRightHand));
   CHECK(settings.configured_hand == Hand::Right);
   CHECK(settings.countdown_seconds == 3);
-  CHECK(apply_dashboard_action(settings, DashboardAction::SetSensitivityHigh));
-  CHECK(settings.gesture_sensitivity == GestureSensitivity::High);
+  CHECK(apply_dashboard_action(settings, DashboardAction::SetSensitivityNormal));
+  CHECK(settings.gesture_sensitivity == GestureSensitivity::Normal);
   CHECK(apply_dashboard_action(settings, DashboardAction::SetCountdown15));
   CHECK(settings.countdown_seconds == 15);
   CHECK(apply_dashboard_action(settings, DashboardAction::IncreaseControlTimeout));

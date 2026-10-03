@@ -104,7 +104,7 @@ The Dashboard Panel provides User Settings, first-use help, and lightweight diag
 - If the target exits or no longer matches the confirmed Exit Target before execution, clear the flow without affecting another application.
 - If force close fails, show a short HUD error, update Last Exit to failed, record the Diagnostic Log entry, and do not retry indefinitely or expand process scope.
 - Keep Dashboard Panel as the surface for User Settings, first-use help, and lightweight diagnostics. It is not part of the in-game exit flow.
-- Expose only Configured Hand, Gesture Sensitivity (Low, Normal, High; Normal by default), Exit Countdown duration, Exit Control timeout, Countdown Sound, and Language as MVP User Settings.
+- Expose only Configured Hand, Gesture Sensitivity (Low, Normal, High; High by default), Exit Countdown duration, Exit Control timeout, Countdown Sound, and Language as MVP User Settings.
 - Save User Settings immediately per Windows user. Do not require Apply or Save.
 - If settings are missing, corrupted, or version-incompatible, recover to defaults, log the recovery, and show a short Dashboard status.
 - Language Auto should prefer SteamVR or Steam runtime language, then OS UI language, then English. Manual English or Chinese overrides Auto.

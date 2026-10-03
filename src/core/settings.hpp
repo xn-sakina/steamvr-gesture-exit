@@ -17,7 +17,7 @@ struct Settings {
   int control_timeout_seconds{5};
   bool countdown_sound{true};
   Language language{Language::Auto};
-  GestureSensitivity gesture_sensitivity{GestureSensitivity::Normal};
+  GestureSensitivity gesture_sensitivity{GestureSensitivity::High};
 
   [[nodiscard]] static Settings defaults() noexcept;
   [[nodiscard]] std::optional<std::string> validation_error() const;

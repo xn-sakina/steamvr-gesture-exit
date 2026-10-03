@@ -29,7 +29,7 @@ The hand selected by the user for detecting the Farewell Gesture.
 _Avoid_: dominant hand, active hand, right hand
 
 **Gesture Sensitivity**:
-The user-selected amount of clean Farewell Gesture evidence required before showing the Exit Control. Low, Normal, and High adjust accepted stroke extent, lateral dominance, path efficiency, rhythm consistency, endpoint stability, and aggregate confidence; Normal is the default. Every level still requires three committed reversals and preserves the same tracking, active-input, plausible-speed, arm-reach, head-relative, and behind-head safety boundaries. Sensitivity never imposes a hand-height, standing-posture, overhead, forward-reach, or palm-orientation requirement.
+The user-selected amount of clean Farewell Gesture evidence required before showing the Exit Control. Low, Normal, and High adjust accepted stroke extent, lateral dominance, path efficiency, rhythm consistency, endpoint stability, and aggregate confidence; High is the default. Every level still requires three committed reversals and preserves the same tracking, active-input, plausible-speed, arm-reach, head-relative, and behind-head safety boundaries. Sensitivity never imposes a hand-height, standing-posture, overhead, forward-reach, or palm-orientation requirement.
 _Avoid_: pose difficulty, safety level, gesture mode
 
 **Opposite Hand Pointer**:
