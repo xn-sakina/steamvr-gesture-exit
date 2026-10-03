@@ -8,6 +8,42 @@
 
 namespace steamvr_gesture_exit::core {
 
+namespace {
+
+constexpr Vec3 scaled(const Vec3 value, const double amount) noexcept {
+  return {value.x * amount, value.y * amount, value.z * amount};
+}
+
+constexpr Vec3 added(const Vec3 a, const Vec3 b) noexcept {
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+constexpr Vec3 crossed(const Vec3 a, const Vec3 b) noexcept {
+  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+struct HeadAxes {
+  Vec3 forward{};
+  Vec3 right{};
+  Vec3 up{};
+};
+
+HeadAxes head_axes(const GestureSample& sample) noexcept {
+  Vec3 forward = normalized(sample.headset_forward);
+  if (length(forward) < 0.5)
+    forward = {0.0, 0.0, -1.0};
+
+  Vec3 right = sample.headset_right - scaled(forward, dot(sample.headset_right, forward));
+  if (length(right) < 0.5) {
+    const Vec3 reference = std::abs(forward.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{0.0, 0.0, -1.0};
+    right = crossed(forward, reference);
+  }
+  right = normalized(right);
+  return {forward, right, normalized(crossed(right, forward))};
+}
+
+}  // namespace
+
 GestureConfig gesture_config(const GestureSensitivity sensitivity) noexcept {
   GestureConfig config{};
   switch (sensitivity) {
@@ -51,6 +87,8 @@ std::string_view to_string(GestureDecision decision) noexcept {
       return "too_far";
     case GestureDecision::BehindHead:
       return "behind_head";
+    case GestureDecision::OutsideView:
+      return "outside_view";
     case GestureDecision::WaitingForSamples:
       return "waiting_for_samples";
     case GestureDecision::InsufficientStroke:
@@ -106,8 +144,10 @@ bool GestureDetector::pose_is_eligible(const GestureSample& sample) noexcept {
   }
   const Vec3 from_head = sample.hand_position - sample.headset_position;
   const double distance = length(from_head);
+  const Vec3 forward = head_axes(sample).forward;
+  const double forward_distance = dot(from_head, forward);
   diagnostic_.head_distance_m = distance;
-  diagnostic_.behind_head_m = -dot(from_head, normalized(sample.headset_forward));
+  diagnostic_.behind_head_m = -forward_distance;
   if (distance < config_.minimum_head_distance_metres) {
     diagnostic_.decision = GestureDecision::TooClose;
     return false;
@@ -118,6 +158,14 @@ bool GestureDetector::pose_is_eligible(const GestureSample& sample) noexcept {
   }
   if (diagnostic_.behind_head_m > config_.maximum_behind_head_metres) {
     diagnostic_.decision = GestureDecision::BehindHead;
+    return false;
+  }
+  // Repeated motion only represents a farewell toward the current gaze when
+  // the hand is in the gaze-facing half-space. This is posture invariant and
+  // rejects waving toward a different direction without introducing a
+  // sensitivity-dependent angular threshold.
+  if (forward_distance <= 0.0) {
+    diagnostic_.decision = GestureDecision::OutsideView;
     return false;
   }
   // A generic controller pose has no portable anatomical palm direction.
@@ -168,15 +216,10 @@ bool GestureDetector::motion_matches() noexcept {
   std::vector<Point> points;
   points.reserve(samples_.size());
   for (const auto& sample : samples_) {
-    Vec3 head_forward = normalized({sample.headset_forward.x, 0.0, sample.headset_forward.z});
-    if (length(head_forward) < 0.5)
-      head_forward = {0.0, 0.0, -1.0};
-    Vec3 head_right = normalized({head_forward.z, 0.0, -head_forward.x});
-    if (length(head_right) < 0.5)
-      head_right = {1.0, 0.0, 0.0};
+    const HeadAxes axes = head_axes(sample);
     const Vec3 relative = sample.hand_position - sample.headset_position;
-    points.push_back({sample.time, dot(relative, head_right), relative.y,
-                      dot(relative, head_forward), sample.input_active, relative, head_right});
+    points.push_back({sample.time, dot(relative, axes.right), dot(relative, axes.up),
+                      dot(relative, axes.forward), sample.input_active, relative, axes.right});
   }
 
   // A short time-aware low-pass removes tracking shimmer without erasing a
@@ -282,12 +325,11 @@ bool GestureDetector::motion_matches() noexcept {
     // the shared axis prevents head rotation from becoming controller motion.
     // Reusing reversal hysteresis avoids changing the existing full-stroke
     // threshold for genuine waves.
-    Vec3 stroke_right =
-        normalized({a.head_right.x + b.head_right.x, 0.0, a.head_right.z + b.head_right.z});
-    if (length(stroke_right) < 0.5)
-      stroke_right = b.head_right;
+    Vec3 stroke_axis = normalized(added(a.head_right, b.head_right));
+    if (length(stroke_axis) < 0.5)
+      stroke_axis = b.head_right;
     const double apparent_direction = b.lateral - a.lateral;
-    const double controller_lateral = dot(b.relative_position - a.relative_position, stroke_right);
+    const double controller_lateral = dot(b.relative_position - a.relative_position, stroke_axis);
     if (controller_lateral * apparent_direction <= 0.0 ||
         std::abs(controller_lateral) < reversal_hysteresis) {
       diagnostic_.lateral_travel_m = lateral_travel;

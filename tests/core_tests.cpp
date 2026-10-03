@@ -64,8 +64,66 @@ bool completes_exit(const Effects& effects) {
 }
 
 GestureSample sample(int milliseconds, Vec3 hand, Vec3 forward = {0, 0, -1}, bool tracked = true,
-                     Vec3 headset = {}, bool input_active = false) {
-  return {at(milliseconds), tracked, hand, headset, forward, input_active};
+                     Vec3 headset = {}, bool input_active = false, Vec3 right = {}) {
+  if (length(right) < 0.5) {
+    const Vec3 reference = std::abs(forward.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{0.0, 0.0, -1.0};
+    right = normalized({forward.y * reference.z - forward.z * reference.y,
+                        forward.z * reference.x - forward.x * reference.z,
+                        forward.x * reference.y - forward.y * reference.x});
+  }
+  return {at(milliseconds), tracked, hand, headset, forward, input_active, right};
+}
+
+Vec3 add(Vec3 a, Vec3 b) {
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Vec3 scale(Vec3 value, double amount) {
+  return {value.x * amount, value.y * amount, value.z * amount};
+}
+
+Vec3 cross(Vec3 a, Vec3 b) {
+  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+Vec3 head_up(Vec3 forward, Vec3 right) {
+  return normalized(cross(right, forward));
+}
+
+bool run_oriented_wave(Vec3 forward, Vec3 right, double axis_angle, bool translate = false,
+                       bool input_active = false,
+                       GestureSensitivity sensitivity = GestureSensitivity::Normal) {
+  forward = normalized(forward);
+  right = normalized(right);
+  const Vec3 up = head_up(forward, right);
+  const Vec3 wave_axis = add(scale(right, std::cos(axis_angle)), scale(up, std::sin(axis_angle)));
+  GestureDetector detector(gesture_config(sensitivity));
+  for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const Vec3 headset =
+        translate ? Vec3{0.18 * seconds, -0.07 * seconds, 0.11 * seconds} : Vec3{0.0, 0.0, 0.0};
+    const Vec3 centre = add(headset, add(scale(forward, 0.55), scale(up, -0.18)));
+    const double offset = 0.12 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+    const Vec3 hand = add(centre, scale(wave_axis, offset));
+    if (detector.update(sample(milliseconds, hand, forward, true, headset, input_active, right)))
+      return true;
+  }
+  return false;
+}
+
+bool run_oriented_extrema(Vec3 forward, Vec3 right, double stroke, GestureSensitivity sensitivity) {
+  forward = normalized(forward);
+  right = normalized(right);
+  const Vec3 centre = add(scale(forward, 0.55), scale(head_up(forward, right), -0.18));
+  GestureDetector detector(gesture_config(sensitivity));
+  bool recognized = false;
+  for (int index = 0; index < 5; ++index) {
+    const double offset = index % 2 == 0 ? 0.0 : stroke;
+    recognized = detector.update(sample(index * 250, add(centre, scale(right, offset)), forward,
+                                        true, {}, false, right)) ||
+                 recognized;
+  }
+  return recognized;
 }
 
 void gesture_recognizes_valid_wave() {
@@ -137,6 +195,83 @@ void gesture_uses_head_relative_right_axis() {
   CHECK(detector.update(sample(1000, moved(-0.08), forward)));
 }
 
+void gesture_is_invariant_to_body_posture() {
+  constexpr double pi = 3.141592653589793;
+  struct Posture {
+    Vec3 forward;
+    Vec3 right;
+    double wave_axis_angle;
+  };
+  const std::array<Posture, 9> postures{{
+      // Upright, supine, prone, and both side-lying orientations.
+      {{0.0, 0.0, -1.0}, {1.0, 0.0, 0.0}, 0.0},
+      {{0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}, pi / 12.0},
+      {{0.0, -1.0, 0.0}, {1.0, 0.0, 0.0}, -pi / 10.0},
+      {{0.0, 0.0, -1.0}, {0.0, 1.0, 0.0}, pi / 9.0},
+      {{0.0, 0.0, -1.0}, {0.0, -1.0, 0.0}, -pi / 9.0},
+      // Looking left/right and compound lean + bend orientations.
+      {{-1.0, 0.0, 0.0}, {0.0, 0.0, -1.0}, pi / 8.0},
+      {{1.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, -pi / 8.0},
+      {normalized({0.58, 0.64, -0.50}), normalized({0.65, -0.75, -0.21}), pi / 10.0},
+      {normalized({-0.52, -0.61, -0.60}), normalized({0.74, -0.66, 0.03}), -pi / 10.0},
+  }};
+
+  for (const Posture& posture : postures) {
+    CHECK(std::abs(dot(posture.forward, posture.right)) < 0.02);
+    for (const auto sensitivity :
+         {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+      CHECK(run_oriented_wave(posture.forward, posture.right, posture.wave_axis_angle, false, false,
+                              sensitivity));
+      CHECK(run_oriented_wave(posture.forward, posture.right, posture.wave_axis_angle, true, false,
+                              sensitivity));
+      CHECK(
+          !run_oriented_wave(posture.forward, posture.right, pi / 3.0, false, false, sensitivity));
+    }
+    // The pre-existing sensitivity boundaries remain identical after an
+    // arbitrary rigid rotation of the player and the whole gesture.
+    CHECK(run_oriented_extrema(posture.forward, posture.right, 0.090, GestureSensitivity::High));
+    CHECK(!run_oriented_extrema(posture.forward, posture.right, 0.090, GestureSensitivity::Normal));
+    CHECK(run_oriented_extrema(posture.forward, posture.right, 0.110, GestureSensitivity::Normal));
+    CHECK(!run_oriented_extrema(posture.forward, posture.right, 0.110, GestureSensitivity::Low));
+  }
+}
+
+void gesture_requires_wave_to_match_current_gaze() {
+  constexpr double pi = 3.141592653589793;
+
+  // These are clean farewell trajectories directed toward -Z, but the HMD is
+  // facing away, sideways, or upward. The motion must not count as intent
+  // toward the current gaze direction.
+  for (const Vec3 gaze : {Vec3{0.0, 0.0, 1.0}, Vec3{1.0, 0.0, 0.0}, Vec3{0.0, 1.0, 0.0}}) {
+    GestureDetector detector;
+    const Vec3 gaze_right =
+        std::abs(gaze.y) < 0.9 ? normalized(cross(gaze, {0.0, 1.0, 0.0})) : Vec3{1.0, 0.0, 0.0};
+    bool recognized = false;
+    for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+      const double seconds = static_cast<double>(milliseconds) / 1000.0;
+      const Vec3 hand{0.12 * std::sin(2.0 * pi * 2.5 * seconds), -0.18, -0.55};
+      recognized = detector.update(sample(milliseconds, hand, gaze, true, {}, false, gaze_right)) ||
+                   recognized;
+    }
+    CHECK(!recognized);
+  }
+
+  // Even with the controller in front, oscillating toward/away from the gaze
+  // is not a farewell sweep in the gaze-facing plane.
+  GestureDetector depth_motion;
+  bool recognized = false;
+  for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const Vec3 hand{0.0, -0.18, -0.55 + 0.12 * std::sin(2.0 * pi * 2.5 * seconds)};
+    recognized = depth_motion.update(sample(milliseconds, hand)) || recognized;
+  }
+  CHECK(!recognized);
+
+  // Posture independence must not bypass the existing active-game-input
+  // safety invariant.
+  CHECK(!run_oriented_wave({0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}, pi / 10.0, false, true));
+}
+
 void gesture_rejects_head_shake_with_controller_jitter() {
   for (const auto sensitivity :
        {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
@@ -155,6 +290,41 @@ void gesture_rejects_head_shake_with_controller_jitter() {
     }
     CHECK(!recognized);
     CHECK(detector.diagnostic().decision == GestureDecision::InsufficientStroke);
+  }
+
+  // The same false-positive mechanism must stay rejected when the player is
+  // upright, supine, or looking sideways and rolls the HMD around its gaze.
+  struct Posture {
+    Vec3 forward;
+    Vec3 right;
+  };
+  for (const Posture posture : std::array<Posture, 3>{{
+           {{0.0, 0.0, -1.0}, {1.0, 0.0, 0.0}},
+           {{0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}},
+           {{-1.0, 0.0, 0.0}, {0.0, 0.0, -1.0}},
+       }}) {
+    const Vec3 up = head_up(posture.forward, posture.right);
+    const Vec3 controller =
+        add(scale(posture.forward, 0.50), add(scale(posture.right, 0.30), scale(up, -0.45)));
+    for (const auto sensitivity :
+         {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+      GestureDetector detector(gesture_config(sensitivity));
+      bool recognized = false;
+      for (int milliseconds = 0; milliseconds <= 1200; milliseconds += 10) {
+        const double seconds = static_cast<double>(milliseconds) / 1000.0;
+        const double roll = 0.30 * std::sin(2.0 * 3.141592653589793 * 2.5 * seconds);
+        const Vec3 rolling_right =
+            add(scale(posture.right, std::cos(roll)), scale(up, std::sin(roll)));
+        const Vec3 jittered =
+            add(controller, add(scale(posture.right, 0.004 * std::sin(37.0 * seconds)),
+                                scale(up, 0.003 * std::sin(29.0 * seconds))));
+        recognized = detector.update(sample(milliseconds, jittered, posture.forward, true, {},
+                                            false, rolling_right)) ||
+                     recognized;
+      }
+      CHECK(!recognized);
+      CHECK(detector.diagnostic().decision == GestureDecision::InsufficientStroke);
+    }
   }
 
   GestureDetector turning_with_body;
@@ -1370,6 +1540,8 @@ int main() {
       {"gesture recognizes center crossing wave", gesture_recognizes_center_crossing_wave},
       {"gesture recognizes sampled controller wave", gesture_recognizes_sampled_controller_wave},
       {"gesture uses head relative right axis", gesture_uses_head_relative_right_axis},
+      {"gesture is invariant to body posture", gesture_is_invariant_to_body_posture},
+      {"gesture requires wave to match current gaze", gesture_requires_wave_to_match_current_gaze},
       {"gesture rejects head shake with controller jitter",
        gesture_rejects_head_shake_with_controller_jitter},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},

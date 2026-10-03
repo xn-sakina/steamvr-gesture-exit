@@ -1301,7 +1301,8 @@ int RuntimeApp::run() {
     } else
       gesture = gesture_.update({now, configured.tracked && frame.headset_tracked,
                                  cv(configured.position), cv(frame.headset_position),
-                                 cv(frame.headset_forward), configured.input_active});
+                                 cv(frame.headset_forward), configured.input_active,
+                                 cv(frame.headset_right)});
     const auto& gesture_diagnostic = gesture_.diagnostic();
     const std::string gesture_decision =
         dashboard_visible ? "dashboard_open"

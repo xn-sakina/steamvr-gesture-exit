@@ -48,6 +48,9 @@ struct GestureSample {
   // (button pressed or a legacy OpenVR axis displaced). An intentional
   // Farewell Gesture is button-free.
   bool input_active{};
+  // The tracked HMD +X axis. Supplying it keeps gesture geometry invariant
+  // when the player is lying down, leaning, or rolling their head.
+  Vec3 headset_right{1.0, 0.0, 0.0};
 };
 
 enum class GestureDecision {
@@ -56,6 +59,7 @@ enum class GestureDecision {
   TooClose,
   TooFar,
   BehindHead,
+  OutsideView,
   WaitingForSamples,
   InsufficientStroke,
   InsufficientReversals,

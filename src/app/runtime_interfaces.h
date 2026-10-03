@@ -47,7 +47,7 @@ struct TrackingFrame {
   bool headset_tracked = false;
   bool headset_pose_valid = false;
   int headset_tracking_result = -1;
-  Vec3 headset_position{}, headset_forward{};
+  Vec3 headset_position{}, headset_forward{}, headset_right{};
   HandPose left{}, right{};
 };
 // Windows process creation FILETIME; PID alone is never an identity.

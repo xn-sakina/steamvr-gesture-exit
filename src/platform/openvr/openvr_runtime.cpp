@@ -159,6 +159,7 @@ app::TrackingFrame OpenVrRuntime::sample_tracking() const {
     if (f.headset_tracked) {
       f.headset_position = position(h.mDeviceToAbsoluteTracking);
       f.headset_forward = axis(h.mDeviceToAbsoluteTracking, 2, -1);
+      f.headset_right = axis(h.mDeviceToAbsoluteTracking, 0);
     }
   }
   return f;
