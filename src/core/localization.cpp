@@ -12,7 +12,7 @@ struct TextPair {
   std::string_view chinese;
 };
 
-constexpr std::array<TextPair, 63> strings{{
+constexpr std::array<TextPair, 65> strings{{
     {"SteamVR Gesture Exit", "SteamVR手势退出"},
     {"Exit", "退出"},
     {"Exit current game?", "退出当前游戏？"},
@@ -37,10 +37,10 @@ constexpr std::array<TextPair, 63> strings{{
     {"Running Status", "运行状态"},
     {"Current Game", "当前游戏"},
     {"Game to Exit", "将退出的游戏"},
-    {"Controller to Wave", "挥手手柄"},
+    {"Controller Status", "手柄状态"},
     {"Other Controller", "另一只手柄"},
-    {"Controller Detected", "已识别到手柄"},
-    {"Controller Not Detected", "未识别到手柄"},
+    {"Available", "可用"},
+    {"Not Detected", "未识别"},
     {"Last Exit", "上次退出"},
     {"App Version", "应用版本"},
     {"Unavailable", "不可用"},
@@ -54,7 +54,7 @@ constexpr std::array<TextPair, 63> strings{{
     {"English", "English"},
     {"Chinese", "中文"},
     {"Found", "已找到"},
-    {"Identifying the current game...", "正在识别当前游戏..."},
+    {"Identifying the current game...", "正在获取游戏信息"},
     {"Unable to retrieve the game currently running in SteamVR.", "无法获取 SteamVR 正在运行的游戏。"},
     {"No VR game is currently running.", "当前没有打开 VR 游戏。"},
     {"Current VR game not found.", "未找到当前 VR 游戏。"},
@@ -62,7 +62,9 @@ constexpr std::array<TextPair, 63> strings{{
     {"Unable to identify the current game.", "未识别当前游戏。"},
     {"Unable to read information about the current game.", "无法读取当前游戏信息。"},
     {"The current game is not supported.", "当前游戏不支持。"},
-    {"No game detected.", "未识别到游戏。"},
+    {"No game running", "未启动游戏"},
+    {"Recognition failed", "识别失败"},
+    {"Current game not supported", "当前游戏不支持"},
     {"The game has closed or could not be found.", "游戏已关闭或无法找到。"},
     {"You do not have permission to close this game.", "没有权限关闭这个游戏程序。"},
     {"Unable to confirm whether the game is still running.", "无法确认游戏是否仍在运行。"},

@@ -311,49 +311,24 @@ core::Vec3 cv(Vec3 v) {
 std::wstring onoff(bool value, core::Language language) {
   return widen(core::localize(value ? core::StringId::On : core::StringId::Off, language));
 }
-core::StringId game_reason(platform::windows::CurrentVrGameStatus status) {
+core::StringId unavailable_game_status(platform::windows::CurrentVrGameStatus status) {
   using S = platform::windows::CurrentVrGameStatus;
   switch (status) {
-    case S::Available:
-      return core::StringId::Ready;
-    case S::ApplicationsUnavailable:
-      return core::StringId::NoApplicationsInterface;
     case S::Resolving:
       return core::StringId::ResolvingCurrentGame;
     case S::SceneNotRunning:
-      return core::StringId::NoSceneApplication;
-    case S::SceneProcessUnavailable:
-      return core::StringId::SceneProcessUnavailable;
-    case S::SelfProcessRejected:
-      return core::StringId::SelfProcessRejected;
-    case S::ApplicationKeyUnavailable:
-      return core::StringId::ApplicationKeyUnavailable;
-    case S::ApplicationMetadataUnavailable:
-      return core::StringId::ApplicationMetadataUnavailable;
-    case S::UnsafeApplication:
-      return core::StringId::UnsafeApplication;
-  }
-  return core::StringId::Unavailable;
-}
-core::StringId target_reason(platform::windows::ExitTargetStatus status) {
-  using S = platform::windows::ExitTargetStatus;
-  switch (status) {
-    case S::Available:
-      return core::StringId::Ready;
-    case S::CurrentGameUnavailable:
       return core::StringId::CurrentGameUnavailable;
-    case S::ProcessUnavailable:
-      return core::StringId::ProcessUnavailable;
-    case S::ProcessAccessDenied:
-      return core::StringId::ProcessAccessDenied;
-    case S::ProcessIdentityUnavailable:
-      return core::StringId::ProcessIdentityUnavailable;
-    case S::ProcessPathUnavailable:
-      return core::StringId::ProcessPathUnavailable;
-    case S::UnsafeProcess:
-      return core::StringId::UnsafeProcess;
+    case S::SelfProcessRejected:
+    case S::UnsafeApplication:
+      return core::StringId::CurrentGameUnsupported;
+    case S::Available:
+    case S::ApplicationsUnavailable:
+    case S::SceneProcessUnavailable:
+    case S::ApplicationKeyUnavailable:
+    case S::ApplicationMetadataUnavailable:
+      return core::StringId::GameRecognitionFailed;
   }
-  return core::StringId::Unavailable;
+  return core::StringId::GameRecognitionFailed;
 }
 }  // namespace
 RuntimeApp::RuntimeApp()
@@ -562,12 +537,10 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
     }
   }
   const bool game_available = resolution.game.has_value();
-  const bool target_available = resolution.target.has_value();
-  const std::wstring game_value =
-      game_available ? resolution.game->display_name : text(game_reason(resolution.game_status));
-  const std::wstring target_value = target_available
-                                        ? resolution.target->display_name
-                                        : text(target_reason(resolution.target_status));
+  const bool controllers_available = configured.tracked && opposite.pointer_available();
+  const std::wstring game_value = game_available
+                                      ? resolution.game->display_name
+                                      : text(unavailable_game_status(resolution.game_status));
   std::wstring last = text(core::StringId::NoExitRecord);
   if (last_successful_exit_at_) {
     const auto timestamp = local_timestamp(*last_successful_exit_at_);
@@ -577,19 +550,11 @@ void RuntimeApp::update_dashboard(const platform::windows::TargetResolution& res
   model.statuses = {{text(core::StringId::CurrentVrGame), game_value,
                      game_available ? platform::openvr::DashboardStatusTone::Available
                                     : platform::openvr::DashboardStatusTone::Neutral},
-                    {text(core::StringId::ExitTarget), target_value,
-                     target_available ? platform::openvr::DashboardStatusTone::Available
-                                      : platform::openvr::DashboardStatusTone::Neutral},
                     {text(core::StringId::HandTracking),
-                     configured.tracked ? text(core::StringId::ControllerTracked)
-                                        : text(core::StringId::ControllerNotTracked),
-                     configured.tracked ? platform::openvr::DashboardStatusTone::Available
-                                        : platform::openvr::DashboardStatusTone::Neutral},
-                    {text(core::StringId::OppositePointer),
-                     opposite.pointer_available() ? text(core::StringId::ControllerTracked)
-                                                  : text(core::StringId::ControllerNotTracked),
-                     opposite.pointer_available() ? platform::openvr::DashboardStatusTone::Available
-                                                  : platform::openvr::DashboardStatusTone::Neutral},
+                     controllers_available ? text(core::StringId::ControllerTracked)
+                                           : text(core::StringId::ControllerNotTracked),
+                     controllers_available ? platform::openvr::DashboardStatusTone::Available
+                                           : platform::openvr::DashboardStatusTone::Neutral},
                     {text(core::StringId::LastExit), last,
                      last_successful_exit_at_ ? platform::openvr::DashboardStatusTone::Available
                                               : platform::openvr::DashboardStatusTone::Neutral},

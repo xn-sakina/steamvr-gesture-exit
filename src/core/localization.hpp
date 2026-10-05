@@ -57,6 +57,8 @@ enum class StringId {
   ApplicationMetadataUnavailable,
   UnsafeApplication,
   CurrentGameUnavailable,
+  GameRecognitionFailed,
+  CurrentGameUnsupported,
   ProcessUnavailable,
   ProcessAccessDenied,
   ProcessIdentityUnavailable,

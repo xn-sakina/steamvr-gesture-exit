@@ -786,9 +786,15 @@ void localization_resolves_auto_and_manual() {
   CHECK(localize(StringId::ConfirmTitle, Language::ChineseSimplified) == "退出当前游戏？");
   CHECK(localize(StringId::ExitGame, Language::ChineseSimplified) == "退出");
   CHECK(localize(StringId::Dismiss, Language::ChineseSimplified) == "取消");
-  CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "挥手手柄");
-  CHECK(localize(StringId::OppositePointer, Language::ChineseSimplified) == "另一只手柄");
-  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "已识别到手柄");
+  CHECK(localize(StringId::HandTracking, Language::ChineseSimplified) == "手柄状态");
+  CHECK(localize(StringId::ControllerTracked, Language::ChineseSimplified) == "可用");
+  CHECK(localize(StringId::ControllerNotTracked, Language::ChineseSimplified) == "未识别");
+  CHECK(localize(StringId::CurrentGameUnavailable, Language::ChineseSimplified) == "未启动游戏");
+  CHECK(localize(StringId::ResolvingCurrentGame, Language::ChineseSimplified) ==
+        "正在获取游戏信息");
+  CHECK(localize(StringId::GameRecognitionFailed, Language::ChineseSimplified) == "识别失败");
+  CHECK(localize(StringId::CurrentGameUnsupported, Language::ChineseSimplified) ==
+        "当前游戏不支持");
   CHECK(localize(StringId::HelpOppositeHand, Language::English) ==
         "When the app panel appears, use the other controller to press the Exit button.");
   CHECK(localize(StringId::SettingsSaved, Language::ChineseSimplified) == "配置已修改");
