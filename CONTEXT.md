@@ -45,7 +45,7 @@ The compact, low-distraction, rounded in-world control that appears in the Oppos
 _Avoid_: exit button, quit button, wrist button
 
 **Opposite-side View Zone**:
-The side of the user's view at the moment the control appears corresponding to the Opposite Hand Pointer: right side after a left-hand Farewell Gesture and left side after a right-hand Farewell Gesture. It selects the initial world-space position without attaching the Exit Control to the HMD or either moving controller.
+The side of the user's view at the moment the control appears corresponding to the Opposite Hand Pointer: right side after a left-hand Farewell Gesture and left side after a right-hand Farewell Gesture. Placement uses the full HMD forward, right, and up axes, including pitch and roll, so the control remains in the intended view when looking down, reclining, or lying on either side; its top aligns with the player's view. It selects the initial world-space position without attaching the Exit Control to the HMD or either moving controller.
 _Avoid_: real wrist, hand bone, watch position, controller-attached panel
 
 **Exit Countdown**:

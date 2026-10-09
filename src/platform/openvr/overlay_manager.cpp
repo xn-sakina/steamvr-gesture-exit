@@ -1,4 +1,5 @@
 #include "platform/openvr/overlay_manager.hpp"
+#include "core/exit_control_pose.hpp"
 #include "platform/windows/paths.hpp"
 #include <array>
 #include <cmath>
@@ -134,32 +135,17 @@ vr::HmdMatrix34_t hud_transform() {
 }
 vr::HmdMatrix34_t control_transform(const core::Hand configured_hand,
                                     const app::TrackingFrame& frame) {
-  Float3 forward = normalized({frame.headset_forward.x, 0.0f, frame.headset_forward.z});
-  if (length(forward) < 0.5f)
-    forward = {0.0f, 0.0f, -1.0f};
-  const Float3 world_up{0.0f, 1.0f, 0.0f};
-  const Float3 head_right = normalized(cross(forward, world_up));
-  const float side = configured_hand == core::Hand::Left ? 0.28f : -0.28f;
-  const Float3 head{frame.headset_position.x, frame.headset_position.y, frame.headset_position.z};
-  const Float3 panel = head + head_right * side + forward * 0.68f + world_up * -0.08f;
-
-  // Aim the panel back toward the eye position. This introduces a modest
-  // inward yaw and upward pitch, instead of leaving a side panel parallel to
-  // the HMD image plane. The absolute transform is captured only on first show.
-  const Float3 z_axis = normalized(head - panel);
-  const Float3 x_axis = normalized(cross(world_up, z_axis));
-  const Float3 y_axis = normalized(cross(z_axis, x_axis));
-  // The dialog centre remains at the legacy position while the transparent
-  // canvas extends toward the avatar. A left-hand gesture presents on the
-  // right and mirrors the avatar/message direction.
-  const bool avatar_on_right = configured_hand == core::Hand::Left;
-  constexpr float panel_centre_offset_metres = 0.0275f;
-  const float local_offset = avatar_on_right ? -panel_centre_offset_metres
-                                             : panel_centre_offset_metres;
-  const Float3 overlay = panel - x_axis * local_offset;
-  return {{{x_axis.x, y_axis.x, z_axis.x, overlay.x},
-           {x_axis.y, y_axis.y, z_axis.y, overlay.y},
-           {x_axis.z, y_axis.z, z_axis.z, overlay.z}}};
+  const auto pose = core::exit_control_pose(
+      configured_hand,
+      {frame.headset_position.x, frame.headset_position.y, frame.headset_position.z},
+      {frame.headset_forward.x, frame.headset_forward.y, frame.headset_forward.z},
+      {frame.headset_right.x, frame.headset_right.y, frame.headset_right.z});
+  return {{{static_cast<float>(pose.right.x), static_cast<float>(pose.up.x),
+            static_cast<float>(pose.back.x), static_cast<float>(pose.position.x)},
+           {static_cast<float>(pose.right.y), static_cast<float>(pose.up.y),
+            static_cast<float>(pose.back.y), static_cast<float>(pose.position.y)},
+           {static_cast<float>(pose.right.z), static_cast<float>(pose.up.z),
+            static_cast<float>(pose.back.z), static_cast<float>(pose.position.z)}}};
 }
 }  // namespace
 bool OverlayManager::fail(const char* operation, vr::EVROverlayError result) {

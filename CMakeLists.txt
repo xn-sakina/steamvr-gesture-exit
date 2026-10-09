@@ -163,6 +163,7 @@ endif()
 add_library(steamvr_gesture_exit_core STATIC
     src/core/types.cpp
     src/core/gesture_detector.cpp
+    src/core/exit_control_pose.cpp
     src/core/settings.cpp
     src/core/settings_persistence.cpp
     src/core/state_machine.cpp

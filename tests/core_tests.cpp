@@ -1,6 +1,7 @@
 #include "core/diagnostics.hpp"
 #include "core/dashboard_ui.hpp"
 #include "core/gesture_detector.hpp"
+#include "core/exit_control_pose.hpp"
 #include "core/last_exit_store.hpp"
 #include "core/localization.hpp"
 #include "core/settings.hpp"
@@ -1130,6 +1131,46 @@ void pointer_availability_uses_tracked_controller() {
   CHECK(hand.pointer_direction().y == -0.5f);
 }
 
+void exit_control_stays_in_opposite_side_view_for_every_posture() {
+  // Pitch through both vertical poles and roll through either side and upside
+  // down. Combined yaw/pitch/roll covers bent and diagonal lying postures too.
+  const Vec3 head{1.2, 0.8, -2.3};
+  for (const double yaw : {0.0, 0.7, -1.8}) {
+    for (const double pitch : {-1.5707963267948966, -1.4, -0.6, 0.0, 0.6, 1.4,
+                               1.5707963267948966}) {
+      for (const double roll : {-1.5707963267948966, -0.4, 0.0, 0.4,
+                                1.5707963267948966, 3.141592653589793}) {
+        const Vec3 forward{std::sin(yaw) * std::cos(pitch), std::sin(pitch),
+                           -std::cos(yaw) * std::cos(pitch)};
+        const Vec3 level_right{std::cos(yaw), 0.0, std::sin(yaw)};
+        const Vec3 level_up = cross(level_right, forward);
+        const Vec3 right = add(scale(level_right, std::cos(roll)),
+                               scale(level_up, std::sin(roll)));
+        const Vec3 up = cross(right, forward);
+        for (const auto hand : {Hand::Left, Hand::Right}) {
+          const auto pose = exit_control_pose(hand, head, forward, right);
+          const double side = hand == Hand::Left ? 1.0 : -1.0;
+          // Recover the visible dialog centre from the avatar canvas offset.
+          const Vec3 panel = add(pose.position, scale(pose.right, -side * 0.0275));
+          const Vec3 offset = panel - head;
+          CHECK(std::abs(dot(offset, forward) - 0.68) < 1e-9);
+          CHECK(std::abs(dot(offset, right) - side * 0.28) < 1e-9);
+          CHECK(std::abs(dot(offset, up) + 0.08) < 1e-9);
+          CHECK(dot(normalized(offset), forward) > 0.9);
+          CHECK(length(pose.back - normalized(head - panel)) < 1e-9);
+          CHECK(std::abs(length(pose.right) - 1.0) < 1e-9);
+          CHECK(std::abs(length(pose.up) - 1.0) < 1e-9);
+          CHECK(std::abs(length(pose.back) - 1.0) < 1e-9);
+          CHECK(length(cross(pose.right, pose.up) - pose.back) < 1e-9);
+          CHECK(std::abs(dot(pose.right, pose.up)) < 1e-9);
+          CHECK(dot(pose.up, up) > 0.9);
+          CHECK(dot(pose.right, right) > 0.9);
+        }
+      }
+    }
+  }
+}
+
 void wrist_pose_smoothing_follows_and_resets_safely() {
   WristPoseSmoother smoother;
   const WristPose origin{{0, 1, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
@@ -1635,6 +1676,8 @@ int main() {
       {"diagnostics bounded rotation", diagnostics_rotate_at_a_fixed_size},
       {"VR game classifier safety", vr_game_classifier_accepts_games_and_rejects_runtime_apps},
       {"pointer uses tracked controller", pointer_availability_uses_tracked_controller},
+      {"exit control follows posture and opposite side",
+       exit_control_stays_in_opposite_side_view_for_every_posture},
       {"wrist pose smoothing", wrist_pose_smoothing_follows_and_resets_safely},
       {"dashboard semantic targets", dashboard_controls_are_visible_semantic_targets},
       {"dashboard tabs", dashboard_tabs_have_distinct_large_targets},
