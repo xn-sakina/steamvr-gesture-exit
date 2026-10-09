@@ -41,6 +41,8 @@ struct GestureConfig {
 struct GestureSample {
   TimePoint time{};
   bool tracked{};
+  // Both positions must use the same stable tracking origin (SteamVR standing
+  // space at runtime), never per-frame HMD-local coordinates.
   Vec3 hand_position{};
   Vec3 headset_position{};
   Vec3 headset_forward{};

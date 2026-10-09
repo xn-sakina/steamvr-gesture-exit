@@ -360,6 +360,63 @@ void gesture_rejects_head_shake_with_controller_jitter() {
   CHECK(recognized);
 }
 
+// Model yaw about the neck, not about the tracking origin: the HMD has
+// translation even though the resting controller has none. Small controller
+// motion can also be phase-correlated with the head (lap motion / pose noise).
+bool run_head_motion_trace(GestureSensitivity sensitivity, double hand_amplitude,
+                           double neck_radius, double drift = 0.0, bool input_active = false,
+                           int interval_ms = 10, double yaw_amplitude = 0.35) {
+  GestureDetector detector(gesture_config(sensitivity));
+  bool recognized = false;
+  for (int milliseconds = 0; milliseconds <= 2400; milliseconds += interval_ms) {
+    const double seconds = static_cast<double>(milliseconds) / 1000.0;
+    const double oscillation = std::sin(2.0 * 3.141592653589793 * 2.0 * seconds);
+    const double yaw = yaw_amplitude * oscillation;
+    const Vec3 forward{std::sin(yaw), 0.0, -std::cos(yaw)};
+    const Vec3 headset{neck_radius * std::sin(yaw), 1.65,
+                      neck_radius * (1.0 - std::cos(yaw))};
+    const Vec3 controller{0.15 - hand_amplitude * oscillation + drift * seconds,
+                         1.05 + 0.002 * std::sin(29.0 * seconds), -0.50};
+    recognized =
+        detector.update(sample(milliseconds, controller, forward, true, headset, input_active)) ||
+        recognized;
+  }
+  return recognized;
+}
+
+void gesture_rejects_neck_pivot_with_resting_hand() {
+  for (const auto sensitivity :
+       {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+    for (const int interval : {7, 11, 22}) {
+      CHECK(!run_head_motion_trace(sensitivity, 0.0, 0.12, 0.0, false, interval));
+      CHECK(!run_head_motion_trace(sensitivity, 0.004, 0.12, 0.0, false, interval));
+      CHECK(!run_head_motion_trace(sensitivity, 0.004, 0.12, 0.06, false, interval));
+    }
+  }
+}
+
+void gesture_rejects_head_amplified_small_hand_motion() {
+  for (const auto sensitivity :
+       {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+    // Five centimetres peak-to-peak: below every full-stroke threshold but
+    // above the old 38% corroboration gate. Head yaw must not supply the rest.
+    CHECK(!run_head_motion_trace(sensitivity, 0.025, 0.0));
+    CHECK(!run_head_motion_trace(sensitivity, 0.025, 0.12));
+  }
+}
+
+void gesture_preserves_real_wave_during_head_motion() {
+  for (const auto sensitivity :
+       {GestureSensitivity::Low, GestureSensitivity::Normal, GestureSensitivity::High}) {
+    for (const int interval : {7, 11, 22}) {
+      CHECK(run_head_motion_trace(sensitivity, 0.09, 0.12, 0.0, false, interval, 0.18));
+      CHECK(!run_head_motion_trace(sensitivity, 0.09, 0.12, 0.0, true, interval, 0.18));
+    }
+  }
+  CHECK(run_head_motion_trace(GestureSensitivity::High, 0.045, 0.12, 0.0, false, 10, 0.18));
+  CHECK(run_head_motion_trace(GestureSensitivity::Normal, 0.055, 0.12, 0.0, false, 10, 0.18));
+}
+
 void gesture_rejects_unsafe_or_weak_motion() {
   GestureDetector jitter;
   for (int i = 0; i < 8; ++i) {
@@ -1550,6 +1607,11 @@ int main() {
       {"gesture requires wave to match current gaze", gesture_requires_wave_to_match_current_gaze},
       {"gesture rejects head shake with controller jitter",
        gesture_rejects_head_shake_with_controller_jitter},
+      {"gesture rejects neck pivot with resting hand", gesture_rejects_neck_pivot_with_resting_hand},
+      {"gesture rejects head amplified small hand motion",
+       gesture_rejects_head_amplified_small_hand_motion},
+      {"gesture preserves real wave during head motion",
+       gesture_preserves_real_wave_during_head_motion},
       {"gesture rejects unsafe or weak motion", gesture_rejects_unsafe_or_weak_motion},
       {"gesture accepts seated postures", gesture_accepts_real_seated_postures},
       {"gesture recognizes lazy fast low wave", gesture_recognizes_lazy_fast_low_wave},

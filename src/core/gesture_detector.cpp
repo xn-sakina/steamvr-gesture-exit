@@ -211,6 +211,7 @@ bool GestureDetector::motion_matches() noexcept {
     double depth = 0;
     bool input_active = false;
     Vec3 relative_position{};
+    Vec3 tracking_position{};
     Vec3 head_right{};
   };
   std::vector<Point> points;
@@ -219,7 +220,8 @@ bool GestureDetector::motion_matches() noexcept {
     const HeadAxes axes = head_axes(sample);
     const Vec3 relative = sample.hand_position - sample.headset_position;
     points.push_back({sample.time, dot(relative, axes.right), dot(relative, axes.up),
-                      dot(relative, axes.forward), sample.input_active, relative, axes.right});
+                      dot(relative, axes.forward), sample.input_active, relative,
+                      sample.hand_position, axes.right});
   }
 
   // A short time-aware low-pass removes tracking shimmer without erasing a
@@ -236,6 +238,9 @@ bool GestureDetector::motion_matches() noexcept {
         points[index - 1].vertical + alpha * (points[index].vertical - points[index - 1].vertical);
     points[index].depth =
         points[index - 1].depth + alpha * (points[index].depth - points[index - 1].depth);
+    points[index].tracking_position =
+        added(points[index - 1].tracking_position,
+              scaled(points[index].tracking_position - points[index - 1].tracking_position, alpha));
   }
 
   const auto [minimum, maximum] =
@@ -295,6 +300,7 @@ bool GestureDetector::motion_matches() noexcept {
   const std::size_t peak_count = static_cast<std::size_t>(config_.required_reversals + 1);
   const auto first = peaks.end() - static_cast<std::ptrdiff_t>(peak_count);
   double lateral_travel = 0.0;
+  double tracking_lateral_travel = 0.0;
   double maximum_ratio = 0.0;
   double minimum_efficiency = 1.0;
   double maximum_speed = 0.0;
@@ -316,15 +322,10 @@ bool GestureDetector::motion_matches() noexcept {
     const Point& b = points[*(it + 1)];
     const double lateral = std::abs(b.lateral - a.lateral);
 
-    // The head-relative axes intentionally rotate with the player, but that
-    // also means head yaw can manufacture an apparent lateral stroke around a
-    // nearly stationary controller. Keep the established trajectory model and
-    // require each accepted stroke to be corroborated by a small, same-way
-    // controller displacement measured through one shared axis. Using the
-    // hand-to-head delta preserves whole-body translation cancellation, while
-    // the shared axis prevents head rotation from becoming controller motion.
-    // Reusing reversal hysteresis avoids changing the existing full-stroke
-    // threshold for genuine waves.
+    // Use one axis for both endpoints so rotating the head cannot rotate a
+    // stationary controller into a stroke. Relative displacement still rejects
+    // whole-body translation, but cannot prove hand motion: neck-pivot HMD
+    // translation alone changes hand-minus-head by several centimetres.
     Vec3 stroke_axis = normalized(added(a.head_right, b.head_right));
     if (length(stroke_axis) < 0.5)
       stroke_axis = b.head_right;
@@ -336,6 +337,22 @@ bool GestureDetector::motion_matches() noexcept {
       diagnostic_.decision = GestureDecision::InsufficientStroke;
       return false;
     }
+
+    // Corroborate EVERY alternating stroke with smoothed controller motion in
+    // the shared SteamVR tracking space, without subtracting the HMD position.
+    // Require the existing full-stroke floor, not reversal hysteresis: otherwise
+    // small lap motion / tracking jitter plus head yaw can supply a false wave.
+    // Same-way displacement also prevents one-way drift from validating a
+    // sequence of head-generated reversals. No head-speed veto is needed.
+    const double tracking_lateral = dot(b.tracking_position - a.tracking_position, stroke_axis);
+    if (tracking_lateral * apparent_direction <= 0.0 ||
+        std::abs(tracking_lateral) < config_.minimum_stroke_metres) {
+      diagnostic_.lateral_travel_m = lateral_travel;
+      diagnostic_.decision = GestureDecision::InsufficientStroke;
+      return false;
+    }
+
+    tracking_lateral_travel += std::abs(tracking_lateral);
 
     double lateral_path = 0.0;
     double orthogonal_path = 0.0;
@@ -397,7 +414,8 @@ bool GestureDetector::motion_matches() noexcept {
     diagnostic_.decision = GestureDecision::TooBrief;
     return false;
   }
-  if (lateral_travel < config_.minimum_total_lateral_travel_metres) {
+  if (lateral_travel < config_.minimum_total_lateral_travel_metres ||
+      tracking_lateral_travel < config_.minimum_total_lateral_travel_metres) {
     diagnostic_.decision = GestureDecision::InsufficientStroke;
     return false;
   }
