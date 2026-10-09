@@ -884,6 +884,18 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
   auto& active_tab = s.dashboard_brushes[8];
   auto& good = s.dashboard_brushes[9];
   auto& bad = s.dashboard_brushes[10];
+  const auto status_row_rect = [&](size_t index) {
+    constexpr float content_top = 100.0f;
+    constexpr float row_gap = 8.0f;
+    // Match the settings cards: 20 px inside the panel's 8 px outer inset.
+    constexpr float bottom_padding = 28.0f;
+    const float count = static_cast<float>(m.statuses.size());
+    const float height =
+        (static_cast<float>(s.h) - bottom_padding - content_top - row_gap * (count - 1)) /
+        count;
+    const float top = content_top + (height + row_gap) * static_cast<float>(index);
+    return D2D1::RectF(44, top, 980, top + height);
+  };
   // The panel, cards and logo change only with the tab. Keep their GPU result
   // and copy it before drawing the current labels and selection state.
   if (!s.dashboard_background) {
@@ -923,6 +935,10 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
                              : m.active_tab == core::DashboardTab::Status ? m.statuses.size()
                                                                           : m.help_lines.size();
     for (size_t i = 0; i < row_count; ++i) {
+      if (m.active_tab == core::DashboardTab::Status) {
+        base->FillRectangle(status_row_rect(i), base_card.Get());
+        continue;
+      }
       const bool help = m.active_tab == core::DashboardTab::Help;
       const float row_height = help ? 116.0f : 56.0f;
       const float top = 96.0f + row_height * static_cast<float>(i);
@@ -990,15 +1006,15 @@ bool D3dOverlayRenderer::render_dashboard(const std::string& id, const Dashboard
     }
   } else if (m.active_tab == core::DashboardTab::Status) {
     for (size_t i = 0; i < m.statuses.size(); ++i) {
-      const float top = 96.0f + 56.0f * static_cast<float>(i);
+      const auto rect = status_row_rect(i);
       const auto& status = m.statuses[i];
       t->DrawTextW(status.label.c_str(), static_cast<UINT32>(status.label.size()),
-                   impl_->label.Get(), D2D1::RectF(64, top + 4, 344, top + 52), white.Get());
+                   impl_->label.Get(), D2D1::RectF(64, rect.top, 344, rect.bottom), white.Get());
       auto* tone = status.tone == DashboardStatusTone::Available     ? good.Get()
                    : status.tone == DashboardStatusTone::Unavailable ? bad.Get()
                                                                      : white.Get();
       t->DrawTextW(status.value.c_str(), static_cast<UINT32>(status.value.size()),
-                   impl_->label.Get(), D2D1::RectF(356, top + 4, 956, top + 52), tone);
+                   impl_->label.Get(), D2D1::RectF(356, rect.top, 956, rect.bottom), tone);
     }
   } else {
     for (size_t i = 0; i < m.help_lines.size(); ++i) {
