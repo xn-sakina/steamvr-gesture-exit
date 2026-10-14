@@ -3,6 +3,7 @@
 node_modules/
 /openvr
 /out
+/.claude/
 /.agents/
 /docs/windows-development.md
 /docs/windows-distribution.md
