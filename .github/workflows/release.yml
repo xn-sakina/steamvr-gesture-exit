@@ -22,7 +22,8 @@ permissions:
 jobs:
   build-windows:
     name: Build Windows x64
-    runs-on: windows-latest
+    # CMakePresets.json requires Visual Studio 2022; keep the runner aligned.
+    runs-on: windows-2022
     env:
       VERSION: ${{ inputs.version }}
       OPENVR_VERSION: 2.15.6
