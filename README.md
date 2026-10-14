@@ -12,7 +12,7 @@
 
 [Download the latest Windows release](https://github.com/xn-sakina/steamvr-gesture-exit/releases)
 
-SteamVR Gesture Exit is a Windows plugin that gives your SteamVR sessions a smoother, more memorable way to end.
+SteamVR Gesture Exit is a SteamVR add-on that lets you wave goodbye, strike a pose, and exit VRChat and other supported VR games in style.
 
 ## What it does
 
@@ -34,7 +34,7 @@ The interface supports English and Chinese.
 
 ## Supported games
 
-The plugin is designed mainly for VRChat, where a good exit can be part of the moment. It also works with other reviewed social and multiplayer VR titles.
+The add-on is designed mainly for VRChat, where a good exit can be part of the moment. It also works with other reviewed social and multiplayer VR titles.
 
 See the current [supported VR games](config/supported_vr_games.json). If your favorite VR game is missing, feel free to open a PR and add it to the list.
 
