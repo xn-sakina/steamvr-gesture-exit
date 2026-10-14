@@ -15,9 +15,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
 
 jobs:
   build-windows:
@@ -101,11 +98,6 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: just build-installer
-
-      - name: Attest Windows installer
-        uses: actions/attest@v4
-        with:
-          subject-path: out/installer/steamvr-gesture-exit-v${{ env.VERSION }}-windows-x64-setup.exe
 
       - name: Upload Windows release asset
         uses: actions/upload-artifact@v4
